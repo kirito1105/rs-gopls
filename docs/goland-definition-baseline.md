@@ -1,0 +1,35 @@
+# GoLand 定义跳转基线
+
+基线采集于 2026-11-25。项目为 `localchat/server`，修订为 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。GoLand 为 2026.3，构建号 `GO-263.7307.354`。项目声明 Go 1.25.0，采集时 GoLand 自动选择 Go 1.27.4 SDK。本组目标只涉及项目代码和已固定版本的 `gorilla/mux`。
+
+[跳转数据](../tools/fixtures/localchat-goland.tsv) 记录了 20 次查询。GoLand 返回 19 个文件位置和 1 个包级导航对象。查询坐标和标识符范围使用从零开始的 UTF-16 行列，范围的结束位置不包含在内。外部依赖位置以 `$GOMODCACHE` 为根。
+
+| 查询 | GoLand 落点 | 上一阶段 rs-gopls |
+| --- | --- | --- |
+| `internal/app/user.go:79` 的 `u.Sanitize()` | `internal/model/user.go:103` | 空结果 |
+| `internal/app/card_action_test.go:28` 的 `tree[0].AttachmentID` | `internal/app/card_action.go:59` | 空结果 |
+| `internal/store/sqlitestore/code_review_store_test.go:31` 的 `items[0].Id` | `internal/model/code_review.go:77` | 空结果 |
+
+另有两种编辑器导航行为需要区别对待。
+
+- 对 `mux.Router` 的限定符 `mux`，GoLand 给出 `gorilla/mux` 的包导航对象，带包目录和包名。LSP 文件位置的验收单独报告这一项。
+- 对 `api.go` 里的 `"github.com/gorilla/mux"` 导入字面量，GoLand 的定义动作计算结果落在字面量自身。rs-gopls 与 gopls 当前返回被导入包中的包声明。这项保留在语料中，记录两种行为。
+
+## 重新采集
+
+用目标构建的 GoLand 打开 `localchat/server`，等待项目索引完成。从 rs-gopls 仓库执行以下命令。脚本在已经打开的 GoLand 进程中调用 **Go to Declaration** 的目标计算链，记录候选的真实导航请求。它使用只读编辑器视图。
+
+```powershell
+$project = 'E:\Code\localchat\server'
+$goland = 'E:\Apps\goland-2026.3.0.1.win\bin\goland64.exe'
+$capture = (Resolve-Path .\tools\capture_goland_definitions.groovy).Path
+$directory = Join-Path $env:TEMP 'rs-gopls-goland-baseline'
+New-Item -ItemType Directory -Path $directory -Force | Out-Null
+$queries = Get-Content .\tools\fixtures\localchat-goland.tsv -Encoding utf8 | Select-Object -Skip 1 |
+    ForEach-Object { $_.Split("`t")[0..4] -join "`t" }
+@($project) + @($queries) | Set-Content -LiteralPath (Join-Path $directory 'queries.tsv') -Encoding utf8NoBOM
+Start-Process -FilePath $goland -ArgumentList @('ideScript', ('"{0}"' -f $capture)) -WindowStyle Hidden -Wait
+Get-Content -LiteralPath (Join-Path $directory 'destinations.tsv') -Encoding utf8
+```
+
+输出首行为构建号。其余每行包含用例 ID、目标类型、目标路径、起始行列、落点标识符和结束行列。比较时按工作区根或模块缓存根归一化路径。GoLand 的桌面交互和候选展示可按相同查询位置手动核对。[GoLand 导航文档](https://www.jetbrains.com/help/go/navigating-through-the-source-code.html#navigate-between-code-elements)

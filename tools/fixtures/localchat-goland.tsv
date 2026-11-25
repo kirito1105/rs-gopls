@@ -1,0 +1,21 @@
+id	query_path	query_line	query_character	query_token	target_kind	target_path	target_line	target_character	target_end_line	target_end_character	target_token
+context	internal/api/api.go	18	26	Context	file	internal/api/context.go	14	5	14	12	Context
+api	internal/api/api.go	64	10	API	file	internal/api/api.go	20	5	20	8	API
+routes-type	internal/api/api.go	22	10	Routes	file	internal/api/api.go	25	5	25	11	Routes
+corsmiddleware	internal/api/api.go	72	13	corsMiddleware	file	internal/api/api.go	132	5	132	19	corsMiddleware
+execpath	internal/api/api.go	156	42	execPath	file	internal/api/api.go	155	1	155	9	execPath
+writeerror	internal/api/api.go	172	4	WriteError	file	internal/api/context.go	107	5	107	15	WriteError
+getmuxvars	internal/api/api.go	208	12	GetMuxVars	file	internal/api/context.go	127	5	127	15	GetMuxVars
+routes-field	internal/api/api.go	74	6	Routes	file	internal/api/api.go	22	1	22	7	Routes
+apiroot	internal/api/api.go	74	13	APIRoot	file	internal/api/api.go	27	1	27	8	APIRoot
+inituser	internal/api/api.go	111	6	initUser	file	internal/api/user.go	11	16	11	24	initUser
+getsession	internal/api/api.go	228	30	GetSession	file	internal/app/session.go	4	14	4	24	GetSession
+send	internal/api/api.go	280	7	Send	file	internal/web/websocket.go	62	19	62	23	Send
+config	internal/api/api.go	287	29	Config	file	internal/app/app.go	22	14	22	20	Config
+range-member	internal/app/user.go	78	4	Sanitize	file	internal/model/user.go	102	15	102	23	Sanitize
+slice-index-member	internal/app/card_action_test.go	27	12	AttachmentID	file	internal/app/card_action.go	58	1	58	13	AttachmentID
+test-package-slice-member	internal/store/sqlitestore/code_review_store_test.go	30	32	Id	file	internal/model/code_review.go	76	1	76	3	Id
+interface-method	internal/app/session.go	5	37	Get	file	internal/store/store.go	124	1	124	4	Get
+third-party-method	internal/api/api.go	74	51	Subrouter	file	$GOMODCACHE/github.com/gorilla/mux@v1.8.1/route.go	493	16	493	25	Subrouter
+package-qualifier	internal/api/api.go	27	18	mux	package	$GOMODCACHE/github.com/gorilla/mux@v1.8.1					mux
+import-path	internal/api/api.go	10	4	"github.com/gorilla/mux"	file	internal/api/api.go	10	1	10	25	"github.com/gorilla/mux"
