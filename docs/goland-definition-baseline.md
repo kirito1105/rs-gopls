@@ -90,3 +90,22 @@ python -B .\tools\compare_workspace_definitions.py .\target\release\rs-gopls.exe
 ~~~powershell
 python -B .\tools\compare_graph_refresh.py .\target\release\rs-gopls.exe --sessions 5 --iterations 10 --json .\target\final-graph-refresh.json
 ~~~
+
+## 第二阶段发布验收
+
+最终发布源代码为 `9afa8ec`。`localchat/server` 上的两份 GoLand 基线合计 21 个文件位置全部命中，包级导航对象单独记录。合成语义套件通过 124 个位置，原有真实项目套件通过 16 个位置。7 组工作区用例涵盖 Go Modules、`go.work`、GOPATH、测试包、后台刷新、未保存新文件及关闭缓冲区后的磁盘位置。Rust 检查、测试、Clippy 和 Zed 扩展的 Wasm 检查均通过。
+
+| 工作负载 | rs-gopls | 上一阶段 rs-gopls | gopls v0.24.0 |
+| --- | ---: | ---: | ---: |
+| localchat 首次正确跳转 P50 | 570 ms | 557 ms | 1,365 ms |
+| localchat 原有路径范围编辑 P95 | 0.50 ms | 0.47 ms | 20.31 ms |
+| localchat 新增容器与回调路径范围编辑 P95 | 0.36 ms | — | 35.40 ms |
+| Go SDK 范围编辑 P95 | 2.47 ms | 2.28 ms | 90.40 ms |
+| Go SDK 关闭依赖缓冲区后 P95 | 3.77 ms | 18.23 ms | 138.44 ms |
+| 临时模块保存 go.mod 后首次正确跳转 P95 | 69.38 ms | — | 303.82 ms |
+
+原有 localchat 场景用最终发布版重跑。三套服务各通过 505 次精确范围校验，其中每套 400 次调用方范围编辑。新增 localchat 和 SDK 的完整对照使用缓存修复提交 `7d53361`，分别每套通过 605 次精确校验。包图场景两套服务各通过 50 次保存后的精确跳转，途中无旧落点、空结果或错误。后来提交的 `9afa8ec` 增加了内部测试包对未保存新文件的验证，最终发布版重新通过所有正确性套件。
+
+两套服务使用同一 Go 1.25.0 工具链，gopls 采用 `Save` 诊断配置，五次独立会话共用系统和 Go 缓存。启动中位数和原有路径 P95 均在相对上一阶段的阈值内。关闭 SDK 依赖缓冲区的尾延迟在缓存修复前曾达到 19.36 ms，修复后以同样的依赖覆盖与恢复场景复测。
+
+Zed 1.29.3 使用隔离配置打开 `localchat/server`，窗口为 `server — api.go`。进程父子关系确认该窗口的语言服务器为 `rs-gopls-cd5d4b5ee1da4f03.exe`，SHA-256 为 `CD5D4B5EE1DA4F037DD4C0CE3AECC0502067A4D71B706D614FA499820C6B9418`，进程来自同一发布构建。跳转范围由上述 stdio 套件验收。
