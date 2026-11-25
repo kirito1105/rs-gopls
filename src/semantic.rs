@@ -3,13 +3,16 @@ use std::collections::{HashMap, hash_map::Entry};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use lsp_types::{FileChangeType, Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::scope::lexical_binding;
-use crate::symbols::{self, FileSymbols, Symbol, SymbolKind, TypeDetails, TypeRef};
+use crate::symbols::{
+    self, Container, FileSymbols, InlineType, Symbol, SymbolKind, TypeDetails, TypeRef, TypeRefKind,
+};
 use crate::workspace::{Package, Workspace, path_key};
 
 struct FileIndex {
@@ -26,8 +29,8 @@ enum ReferenceQuery<'tree> {
         name: Node<'tree>,
     },
     Import(Node<'tree>),
-    LiteralField {
-        ty: Node<'tree>,
+    LiteralKey {
+        value: Node<'tree>,
         name: Node<'tree>,
     },
 }
@@ -164,39 +167,35 @@ impl Engine {
 
         match reference {
             ReferenceQuery::Name(name) => {
-                let identifier = node_text(name, &source.text);
-                if let Some((import, _)) = source.imported_package(workspace, from, identifier) {
-                    return Ok(Some((path.to_owned(), import.binding)));
-                }
-                if let Some(location) = indexes.find(from, |index| {
-                    index
-                        .symbols
-                        .declaration(identifier)
-                        .map(|symbol| symbol.range)
-                })? {
-                    return Ok(Some(location));
-                }
-                if is_exported(identifier) {
-                    return indexes.find_dot_import(workspace, from, &source.imports, identifier);
-                }
-                if is_predeclared(identifier) {
-                    let file = workspace.builtin_source(&self.root)?;
-                    let definition = indexes.file_index(file)?.symbols.declaration(identifier);
-                    return Ok(definition.map(|symbol| (file.to_owned(), symbol.range)));
-                }
-                Ok(None)
+                let mut resolver = Resolver {
+                    workspace,
+                    indexes,
+                    source_path: path,
+                };
+                resolver.name_location(from, source, name, &self.root)
             }
             ReferenceQuery::Member { receiver, name } => {
-                let mut resolver = Resolver { workspace, indexes };
+                let mut resolver = Resolver {
+                    workspace,
+                    indexes,
+                    source_path: path,
+                };
                 let member =
                     resolver.selector(from, source, receiver, node_text(name, &source.text), 0)?;
                 Ok(member.map(ResolvedSymbol::location))
             }
-            ReferenceQuery::LiteralField { ty, name } => {
-                let mut resolver = Resolver { workspace, indexes };
-                let Some(ty) = resolver.source_type(from, source, ty) else {
+            ReferenceQuery::LiteralKey { value, name } => {
+                let mut resolver = Resolver {
+                    workspace,
+                    indexes,
+                    source_path: path,
+                };
+                let Some(ty) = resolver.literal_type(from, source, value, 0)? else {
                     return Ok(None);
                 };
+                if resolver.container(ty.clone())?.is_some() {
+                    return resolver.name_location(from, source, name, &self.root);
+                }
                 let member = resolver.member(from, &ty, node_text(name, &source.text), false)?;
                 let member =
                     member.filter(|found| matches!(found.symbol.kind, SymbolKind::Value(_)));
@@ -281,16 +280,71 @@ const MAX_TYPE_DEPTH: usize = 32;
 #[derive(Clone)]
 struct TypeIdentity<'w> {
     package: &'w Package,
-    name: String,
+    kind: TypeKind<'w>,
     pointers: u8,
-    arguments: Vec<Option<TypeIdentity<'w>>>,
     addressable: bool,
     type_expression: bool,
 }
 
-impl TypeIdentity<'_> {
-    fn key(&self) -> (*const Package, String) {
-        (std::ptr::from_ref(self.package), self.name.clone())
+#[derive(Clone)]
+enum TypeKind<'w> {
+    Named {
+        name: String,
+        arguments: Vec<Option<TypeIdentity<'w>>>,
+    },
+    Container(Box<Container<TypeIdentity<'w>>>),
+    Inline {
+        file: PathBuf,
+        shape: Arc<InlineType>,
+        substitutions: Substitutions<'w>,
+    },
+}
+
+#[derive(Clone, Eq, PartialEq)]
+enum TypeKey {
+    Named(*const Package, String),
+    Inline(PathBuf, Position),
+}
+
+impl<'w> TypeIdentity<'w> {
+    fn new(package: &'w Package, kind: TypeKind<'w>, pointers: u8) -> Self {
+        Self {
+            package,
+            kind,
+            pointers,
+            addressable: false,
+            type_expression: false,
+        }
+    }
+
+    fn named(package: &'w Package, name: &str) -> Self {
+        Self::new(
+            package,
+            TypeKind::Named {
+                name: name.to_owned(),
+                arguments: Vec::new(),
+            },
+            0,
+        )
+    }
+
+    fn key(&self) -> Option<TypeKey> {
+        match &self.kind {
+            TypeKind::Named { name, .. } => Some(TypeKey::Named(
+                std::ptr::from_ref(self.package),
+                name.clone(),
+            )),
+            TypeKind::Inline { file, shape, .. } => {
+                Some(TypeKey::Inline(file.clone(), shape.origin.start))
+            }
+            TypeKind::Container(_) => None,
+        }
+    }
+
+    fn project_properties(&mut self, from: &Self) {
+        self.pointers = self.pointers.saturating_add(from.pointers);
+        self.addressable = from.addressable;
+        self.type_expression = from.type_expression;
     }
 }
 
@@ -312,9 +366,97 @@ type Substitutions<'w> = Vec<(String, Option<TypeIdentity<'w>>)>;
 struct Resolver<'w, 'idx> {
     workspace: &'w Workspace,
     indexes: IndexReader<'idx>,
+    source_path: &'idx Path,
 }
 
 impl<'w> Resolver<'w, '_> {
+    fn name_location(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        name: Node<'_>,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        let identifier = node_text(name, &source.text);
+        if let Some(binding) = lexical_binding(name, identifier, &source.text) {
+            return Ok(Some((
+                self.source_path.to_owned(),
+                source.range(binding.name),
+            )));
+        }
+        if let Some((import, _)) = source.imported_package(self.workspace, from, identifier) {
+            return Ok(Some((self.source_path.to_owned(), import.binding)));
+        }
+        if let Some(location) = self.indexes.find(from, |index| {
+            index
+                .symbols
+                .declaration(identifier)
+                .map(|symbol| symbol.range)
+        })? {
+            return Ok(Some(location));
+        }
+        if is_exported(identifier) {
+            return self
+                .indexes
+                .find_dot_import(self.workspace, from, &source.imports, identifier);
+        }
+        if is_predeclared(identifier) {
+            let file = self.workspace.builtin_source(root)?;
+            let definition = self
+                .indexes
+                .file_index(file)?
+                .symbols
+                .declaration(identifier);
+            return Ok(definition.map(|symbol| (file.to_owned(), symbol.range)));
+        }
+        Ok(None)
+    }
+
+    fn literal_type(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        value: Node<'_>,
+        depth: usize,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        if depth >= MAX_TYPE_DEPTH {
+            return Ok(None);
+        }
+        let Some(parent) = value.parent() else {
+            return Ok(None);
+        };
+        if parent.kind() == "composite_literal" {
+            return Ok(parent
+                .child_by_field_name("type")
+                .and_then(|ty| self.source_type(from, source, ty)));
+        }
+        let Some(container_element) = parent.parent() else {
+            return Ok(None);
+        };
+        let (surrounding, map_key) = if container_element.kind() == "keyed_element" {
+            (
+                container_element.parent(),
+                container_element.child_by_field_name("key") == Some(parent),
+            )
+        } else {
+            (Some(container_element), false)
+        };
+        let Some(surrounding) = surrounding else {
+            return Ok(None);
+        };
+        if surrounding.kind() != "literal_value" {
+            return Ok(None);
+        }
+        let Some(ty) = self.literal_type(from, source, surrounding, depth + 1)? else {
+            return Ok(None);
+        };
+        Ok(match self.container(ty)? {
+            Some((Container::Slice(ty) | Container::Array(ty), 0)) => Some(ty),
+            Some((Container::Map { key, value }, 0)) => Some(if map_key { key } else { value }),
+            _ => None,
+        })
+    }
+
     fn selector(
         &mut self,
         from: &'w Package,
@@ -352,7 +494,6 @@ impl<'w> Resolver<'w, '_> {
         if ty.pointers > 1 {
             return Ok(None);
         }
-        type TypeKey = (*const Package, String);
         let mut frontier: Vec<(TypeIdentity<'w>, Vec<TypeKey>)> = vec![(ty.clone(), Vec::new())];
 
         // A unique match at the shallowest embedding depth wins. Distinct
@@ -362,16 +503,15 @@ impl<'w> Resolver<'w, '_> {
             let mut found = None;
             let mut blocked = false;
             for (mut owner, mut visited) in frontier {
-                loop {
-                    let key = owner.key();
+                let mut inherited = false;
+                while let Some(key) = owner.key() {
                     if owner.pointers > 1 || visited.contains(&key) {
                         break;
                     }
                     visited.push(key);
 
                     if (is_exported(name) || std::ptr::eq(from, owner.package))
-                        && let Some(mut symbol) =
-                            self.find_symbol(owner.package, name, Some(&owner.name))?
+                        && let Some(mut symbol) = self.direct_member(&owner, name, inherited)?
                     {
                         if found.is_some() || blocked {
                             return Ok(None);
@@ -388,24 +528,25 @@ impl<'w> Resolver<'w, '_> {
                         break;
                     }
 
-                    let Some((file, details)) = self.type_info(&owner)? else {
+                    let Some((file, details, substitutions)) = self.type_context(&owner)? else {
                         break;
                     };
-                    let substitutions = type_substitutions(&owner, &details.parameters, &[]);
                     let index = self.indexes.file_index(&file)?;
-                    if let Some(alias) = details.alias {
+                    if let Some(base) = details.alias.or_else(|| {
+                        inherited = true;
+                        details.underlying
+                    }) {
                         let Some(mut target) = materialize_type(
                             self.workspace,
                             owner.package,
+                            &file,
                             &index.imports,
-                            alias,
+                            base,
                             &substitutions,
                         ) else {
                             break;
                         };
-                        target.pointers = target.pointers.saturating_add(owner.pointers);
-                        target.addressable = owner.addressable;
-                        target.type_expression = owner.type_expression;
+                        target.project_properties(&owner);
                         owner = target;
                         continue;
                     }
@@ -414,6 +555,7 @@ impl<'w> Resolver<'w, '_> {
                             let Some(mut target) = materialize_type(
                                 self.workspace,
                                 owner.package,
+                                &file,
                                 &index.imports,
                                 embedded,
                                 &substitutions,
@@ -437,12 +579,110 @@ impl<'w> Resolver<'w, '_> {
         Ok(None)
     }
 
-    fn type_info(&mut self, ty: &TypeIdentity<'w>) -> Result<Option<(PathBuf, TypeDetails)>> {
-        for file in &ty.package.files {
+    fn direct_member(
+        &mut self,
+        ty: &TypeIdentity<'w>,
+        name: &str,
+        inherited: bool,
+    ) -> Result<Option<ResolvedSymbol<'w>>> {
+        match &ty.kind {
+            TypeKind::Named { name: owner, .. } => {
+                let member = self.find_symbol(ty.package, name, Some(owner))?;
+                if inherited
+                    && member
+                        .as_ref()
+                        .is_some_and(|member| matches!(member.symbol.kind, SymbolKind::Function(_)))
+                    && !self
+                        .type_info(ty.package, owner)?
+                        .is_some_and(|(_, details)| details.interface)
+                {
+                    return Ok(None);
+                }
+                Ok(member)
+            }
+            TypeKind::Inline { file, shape, .. } => {
+                Ok(shape.members.get(name).map(|symbol| ResolvedSymbol {
+                    package: ty.package,
+                    file: file.clone(),
+                    symbol: symbol.clone(),
+                    receiver: None,
+                }))
+            }
+            TypeKind::Container(_) => Ok(None),
+        }
+    }
+
+    fn type_context(
+        &mut self,
+        ty: &TypeIdentity<'w>,
+    ) -> Result<Option<(PathBuf, TypeDetails, Substitutions<'w>)>> {
+        match &ty.kind {
+            TypeKind::Named { name, .. } => {
+                Ok(self.type_info(ty.package, name)?.map(|(file, details)| {
+                    let substitutions = type_substitutions(ty, &details.parameters, &[]);
+                    (file, details, substitutions)
+                }))
+            }
+            TypeKind::Inline {
+                file,
+                shape,
+                substitutions,
+            } => Ok(Some((
+                file.clone(),
+                TypeDetails {
+                    embedded: shape.embedded.clone(),
+                    ..TypeDetails::default()
+                },
+                substitutions.clone(),
+            ))),
+            TypeKind::Container(_) => Ok(None),
+        }
+    }
+
+    fn type_info(
+        &mut self,
+        package: &Package,
+        name: &str,
+    ) -> Result<Option<(PathBuf, TypeDetails)>> {
+        for file in &package.files {
             let index = &self.indexes.file_index(file)?.symbols;
-            if let Some(details) = index.type_details(&ty.name) {
+            if let Some(details) = index.type_details(name) {
                 return Ok(Some((file.clone(), details.clone())));
             }
+        }
+        Ok(None)
+    }
+
+    fn container(
+        &mut self,
+        mut ty: TypeIdentity<'w>,
+    ) -> Result<Option<(Container<TypeIdentity<'w>>, u8)>> {
+        if ty.type_expression {
+            return Ok(None);
+        }
+        for _ in 0..MAX_TYPE_DEPTH {
+            if let TypeKind::Container(container) = ty.kind {
+                return Ok(Some((*container, ty.pointers)));
+            }
+            let Some((file, details, substitutions)) = self.type_context(&ty)? else {
+                return Ok(None);
+            };
+            let Some(reference) = details.alias.or(details.underlying) else {
+                return Ok(None);
+            };
+            let imports = &self.indexes.file_index(&file)?.imports;
+            let Some(mut underlying) = materialize_type(
+                self.workspace,
+                ty.package,
+                &file,
+                imports,
+                reference,
+                &substitutions,
+            ) else {
+                return Ok(None);
+            };
+            underlying.project_properties(&ty);
+            ty = underlying;
         }
         Ok(None)
     }
@@ -485,6 +725,31 @@ impl<'w> Resolver<'w, '_> {
         if expression.kind() == "call_expression" {
             return self.call_result(from, source, expression, depth + 1, result_index);
         }
+        if expression.kind() == "range_clause" {
+            let Some(operand) = expression.child_by_field_name("right") else {
+                return Ok(None);
+            };
+            let Some(ty) = self.infer_type(from, source, operand, depth + 1, 0)? else {
+                return Ok(None);
+            };
+            return Ok(match (self.container(ty)?, result_index) {
+                (Some((Container::Array(element), 0 | 1)), 1)
+                | (Some((Container::Slice(element), 0)), 1)
+                | (Some((Container::Map { value: element, .. }, 0)), 1)
+                | (
+                    Some((
+                        Container::Channel {
+                            element,
+                            receive: true,
+                        },
+                        0,
+                    )),
+                    0,
+                ) => Some(element),
+                (Some((Container::Map { key, .. }, 0)), 0) => Some(key),
+                _ => None,
+            });
+        }
         if result_index != 0 {
             return Ok(None);
         }
@@ -518,6 +783,43 @@ impl<'w> Resolver<'w, '_> {
                     .child_by_field_name("type")
                     .and_then(|ty| self.source_type(from, source, ty)))
             }
+            "index_expression" | "slice_expression" => {
+                let Some(operand) = expression.child_by_field_name("operand") else {
+                    return Ok(None);
+                };
+                let Some(ty) = self.infer_type(from, source, operand, depth + 1, 0)? else {
+                    return Ok(None);
+                };
+                let Some((container, pointers)) = self.container(ty.clone())? else {
+                    return Ok(None);
+                };
+                if expression.kind() == "slice_expression" {
+                    return Ok(match (container, pointers) {
+                        (Container::Slice(_), 0) => Some(TypeIdentity {
+                            addressable: false,
+                            ..ty
+                        }),
+                        (Container::Array(element), 0 | 1) if ty.addressable || pointers == 1 => {
+                            Some(TypeIdentity::new(
+                                ty.package,
+                                TypeKind::Container(Box::new(Container::Slice(element))),
+                                0,
+                            ))
+                        }
+                        _ => None,
+                    });
+                }
+                let (mut element, addressable) = match (container, pointers) {
+                    (Container::Slice(element), 0) => (element, true),
+                    (Container::Array(element), 0 | 1) => {
+                        (element, ty.addressable || pointers == 1)
+                    }
+                    (Container::Map { value, .. }, 0) => (value, false),
+                    _ => return Ok(None),
+                };
+                element.addressable = addressable;
+                Ok(Some(element))
+            }
             "parenthesized_expression" => match expression.named_child(0) {
                 Some(inner) => self.infer_type(from, source, inner, depth + 1, 0),
                 None => Ok(None),
@@ -529,16 +831,28 @@ impl<'w> Resolver<'w, '_> {
                 ) else {
                     return Ok(None);
                 };
-                if !matches!(operator.kind(), "&" | "*") {
+                if !matches!(operator.kind(), "&" | "*" | "<-") {
                     return Ok(None);
                 }
                 let Some(mut ty) = self.infer_type(from, source, operand, depth + 1, 0)? else {
                     return Ok(None);
                 };
-                if operator.kind() == "&" || ty.type_expression {
+                if operator.kind() == "<-" {
+                    return Ok(match self.container(ty)? {
+                        Some((
+                            Container::Channel {
+                                element,
+                                receive: true,
+                            },
+                            0,
+                        )) => Some(element),
+                        _ => None,
+                    });
+                }
+                if operator.kind() == "&" || (operator.kind() == "*" && ty.type_expression) {
                     ty.pointers = ty.pointers.saturating_add(1);
                     ty.addressable = false;
-                } else if ty.pointers > 0 {
+                } else if operator.kind() == "*" && ty.pointers > 0 {
                     ty.pointers -= 1;
                     ty.addressable = !ty.type_expression;
                 } else {
@@ -618,14 +932,9 @@ impl<'w> Resolver<'w, '_> {
                 Some(Some(reference)) => self.type_from_symbol(&target, reference.clone(), false),
                 _ => Ok(None),
             },
-            SymbolKind::Type if result_index == 0 => Ok(Some(TypeIdentity {
-                package: target.package,
-                name: name.to_owned(),
-                pointers: 0,
-                arguments: Vec::new(),
-                addressable: false,
-                type_expression: false,
-            })),
+            SymbolKind::Type if result_index == 0 => {
+                Ok(Some(TypeIdentity::named(target.package, name)))
+            }
             _ => Ok(None),
         }
     }
@@ -636,13 +945,21 @@ impl<'w> Resolver<'w, '_> {
         source: &Source,
         ty: Node<'_>,
     ) -> Option<TypeIdentity<'w>> {
-        let reference = symbols::named_type(ty, &source.text)?;
-        if reference.qualifier.is_none()
-            && lexical_binding(ty, &reference.name, &source.text).is_some()
+        let reference = symbols::type_ref(ty, &source.text, &|node| source.range(node))?;
+        if let TypeRefKind::Named(named) = &reference.kind
+            && named.qualifier.is_none()
+            && lexical_binding(ty, &named.name, &source.text).is_some()
         {
             return None;
         }
-        materialize_type(self.workspace, from, &source.imports, reference, &[])
+        materialize_type(
+            self.workspace,
+            from,
+            self.source_path,
+            &source.imports,
+            reference,
+            &[],
+        )
     }
 
     fn symbol_type(
@@ -659,14 +976,11 @@ impl<'w> Resolver<'w, '_> {
                         .is_none_or(|ty| ty.addressable || ty.pointers > 0);
                 self.type_from_symbol(resolved, reference.clone(), addressable)
             }
-            SymbolKind::Type => Ok(Some(TypeIdentity {
-                package: resolved.package,
-                name: name.to_owned(),
-                pointers: 0,
-                arguments: Vec::new(),
-                addressable: false,
-                type_expression: true,
-            })),
+            SymbolKind::Type => {
+                let mut ty = TypeIdentity::named(resolved.package, name);
+                ty.type_expression = true;
+                Ok(Some(ty))
+            }
             _ => Ok(None),
         }
     }
@@ -677,21 +991,26 @@ impl<'w> Resolver<'w, '_> {
         reference: TypeRef,
         addressable: bool,
     ) -> Result<Option<TypeIdentity<'w>>> {
-        let mut substitutions = Vec::new();
-        if let Some(receiver) = &resolved.receiver
-            && !receiver.arguments.is_empty()
-            && let Some((_, details)) = self.type_info(receiver)?
-        {
-            substitutions = type_substitutions(
-                receiver,
-                &details.parameters,
-                &resolved.symbol.receiver_parameters,
-            );
-        }
+        let substitutions = match resolved.receiver.as_ref().map(|receiver| &receiver.kind) {
+            Some(TypeKind::Named { name, arguments }) if !arguments.is_empty() => {
+                let receiver = resolved.receiver.as_ref().expect("named receiver");
+                match self.type_info(receiver.package, name)? {
+                    Some((_, details)) => type_substitutions(
+                        receiver,
+                        &details.parameters,
+                        &resolved.symbol.receiver_parameters,
+                    ),
+                    None => Vec::new(),
+                }
+            }
+            Some(TypeKind::Inline { substitutions, .. }) => substitutions.clone(),
+            _ => Vec::new(),
+        };
         let index = self.indexes.file_index(&resolved.file)?;
         Ok(materialize_type(
             self.workspace,
             resolved.package,
+            &resolved.file,
             &index.imports,
             reference,
             &substitutions,
@@ -708,8 +1027,10 @@ fn type_substitutions<'w>(
     parameters: &[String],
     receiver_parameters: &[Option<String>],
 ) -> Substitutions<'w> {
-    owner
-        .arguments
+    let TypeKind::Named { arguments, .. } = &owner.kind else {
+        return Vec::new();
+    };
+    arguments
         .iter()
         .enumerate()
         .filter_map(|(index, argument)| {
@@ -726,38 +1047,65 @@ fn type_substitutions<'w>(
 fn materialize_type<'w>(
     workspace: &'w Workspace,
     from: &'w Package,
+    file: &Path,
     imports: &[Import],
     reference: TypeRef,
     substitutions: &[(String, Option<TypeIdentity<'w>>)],
 ) -> Option<TypeIdentity<'w>> {
-    if reference.qualifier.is_none()
-        && let Some((_, argument)) = substitutions
-            .iter()
-            .find(|(name, _)| *name == reference.name)
-    {
-        let mut ty = argument.clone()?;
-        ty.pointers = ty.pointers.saturating_add(reference.pointers);
-        return Some(ty);
-    }
-    let package = match reference.qualifier {
-        Some(qualifier) => imported_package(imports, workspace, from, &qualifier)?.1,
-        None => from,
+    let resolve =
+        |reference| materialize_type(workspace, from, file, imports, reference, substitutions);
+    let (package, kind) = match reference.kind {
+        TypeRefKind::Named(named) => {
+            if named.qualifier.is_none()
+                && let Some((_, argument)) =
+                    substitutions.iter().find(|(name, _)| *name == named.name)
+            {
+                let mut ty = argument.clone()?;
+                ty.pointers = ty.pointers.saturating_add(reference.pointers);
+                return Some(ty);
+            }
+            let package = match named.qualifier {
+                Some(qualifier) => imported_package(imports, workspace, from, &qualifier)?.1,
+                None => from,
+            };
+            let arguments = named
+                .arguments
+                .into_iter()
+                .map(|arg| arg.and_then(resolve))
+                .collect();
+            (
+                package,
+                TypeKind::Named {
+                    name: named.name,
+                    arguments,
+                },
+            )
+        }
+        TypeRefKind::Container(container) => {
+            let container = match *container {
+                Container::Slice(element) => Container::Slice(resolve(element)?),
+                Container::Array(element) => Container::Array(resolve(element)?),
+                Container::Map { key, value } => Container::Map {
+                    key: resolve(key)?,
+                    value: resolve(value)?,
+                },
+                Container::Channel { element, receive } => Container::Channel {
+                    element: resolve(element)?,
+                    receive,
+                },
+            };
+            (from, TypeKind::Container(Box::new(container)))
+        }
+        TypeRefKind::Inline(shape) => (
+            from,
+            TypeKind::Inline {
+                file: file.to_owned(),
+                shape,
+                substitutions: substitutions.to_vec(),
+            },
+        ),
     };
-    let arguments = reference
-        .arguments
-        .into_iter()
-        .map(|argument| {
-            argument.and_then(|ty| materialize_type(workspace, from, imports, ty, substitutions))
-        })
-        .collect();
-    Some(TypeIdentity {
-        package,
-        name: reference.name,
-        pointers: reference.pointers,
-        arguments,
-        addressable: false,
-        type_expression: false,
-    })
+    Some(TypeIdentity::new(package, kind, reference.pointers))
 }
 
 fn read_source(parser: &mut Parser, path: &Path) -> Result<Source> {
@@ -896,16 +1244,10 @@ impl Source {
                 node.kind() == "keyed_element" && node.child_by_field_name("key") == Some(parent)
             });
         if named && field_key {
-            let mut ancestor = parent.parent().and_then(|node| node.parent());
-            while let Some(node) = ancestor {
-                if node.kind() == "composite_literal" {
-                    return node
-                        .child_by_field_name("type")
-                        .map(|ty| ReferenceQuery::LiteralField { ty, name: leaf });
-                }
-                ancestor = node.parent();
+            let value = parent.parent()?.parent()?;
+            if value.kind() == "literal_value" {
+                return Some(ReferenceQuery::LiteralKey { value, name: leaf });
             }
-            return None;
         }
         let predeclared_literal = matches!(leaf.kind(), "nil" | "true" | "false" | "iota");
         (named || predeclared_literal || is_declaration_name(leaf))

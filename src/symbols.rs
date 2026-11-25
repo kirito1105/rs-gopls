@@ -1,14 +1,43 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use lsp_types::Range;
 use tree_sitter::{Node, Tree};
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
+    pub(crate) pointers: u8,
+    pub(crate) kind: TypeRefKind,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum TypeRefKind {
+    Named(NamedType),
+    Container(Box<Container<TypeRef>>),
+    Inline(Arc<InlineType>),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NamedType {
     pub(crate) qualifier: Option<String>,
     pub(crate) name: String,
-    pub(crate) pointers: u8,
     pub(crate) arguments: Vec<Option<TypeRef>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum Container<T> {
+    Slice(T),
+    Array(T),
+    Map { key: T, value: T },
+    Channel { element: T, receive: bool },
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct InlineType {
+    pub(crate) origin: Range,
+    pub(crate) interface: bool,
+    pub(crate) members: HashMap<String, Symbol>,
+    pub(crate) embedded: Vec<TypeRef>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +71,8 @@ pub(crate) enum SymbolKind {
 #[derive(Clone, Default)]
 pub(crate) struct TypeDetails {
     pub(crate) alias: Option<TypeRef>,
+    pub(crate) underlying: Option<TypeRef>,
+    pub(crate) interface: bool,
     pub(crate) embedded: Vec<TypeRef>,
     pub(crate) parameters: Vec<String>,
 }
@@ -107,7 +138,7 @@ impl Indexer<'_> {
             "type_spec" | "type_alias" => self.type_declaration(declaration),
             "function_declaration" => {
                 if let Some(name) = declaration.child_by_field_name("name") {
-                    let results = function_results(declaration, self.text);
+                    let results = function_results(declaration, self.text, self.range);
                     self.insert_declaration(name, SymbolKind::Function(results), false);
                 }
             }
@@ -123,7 +154,7 @@ impl Indexer<'_> {
             .filter(|node| node.kind() == "identifier")
             .collect();
         let ty = declaration.child_by_field_name("type");
-        let explicit_type = ty.and_then(|node| named_type(node, self.text));
+        let explicit_type = ty.and_then(|node| type_ref(node, self.text, self.range));
         let values: Vec<_> = if ty.is_none() {
             declaration
                 .child_by_field_name("value")
@@ -140,7 +171,7 @@ impl Indexer<'_> {
         let paired_values = names.len() == values.len();
         for (index, name) in names.into_iter().enumerate() {
             let ty = if paired_values {
-                composite_value_type(values[index], self.text)
+                composite_value_type(values[index], self.text, self.range)
             } else {
                 explicit_type.clone()
             };
@@ -177,100 +208,29 @@ impl Indexer<'_> {
             parameters: type_parameters(declaration, self.text),
             ..TypeDetails::default()
         };
+        let underlying = type_ref(ty, self.text, self.range);
         if declaration.kind() == "type_alias" {
-            details.alias = named_type(ty, self.text);
-        }
-        let ty = unparenthesized_type(ty);
-        if let Some(ty) = ty {
-            match ty.kind() {
-                "struct_type" => self.struct_members(owner, ty, &mut details),
-                "interface_type" => self.interface_members(owner, ty, &mut details),
-                _ => {}
+            details.alias = underlying;
+        } else if let Some(TypeRef {
+            pointers: 0,
+            kind: TypeRefKind::Inline(inline),
+        }) = underlying
+        {
+            details.interface = inline.interface;
+            details.embedded = inline.embedded.clone();
+            let members = self.symbols.members.entry(owner.to_owned()).or_default();
+            for (name, symbol) in &inline.members {
+                members
+                    .entry(name.clone())
+                    .or_insert_with(|| symbol.clone());
             }
+        } else {
+            details.underlying = underlying;
         }
         self.symbols
             .types
             .entry(owner.to_owned())
             .or_insert(details);
-    }
-
-    fn struct_members(&mut self, owner: &str, ty: Node<'_>, details: &mut TypeDetails) {
-        let mut cursor = ty.walk();
-        let Some(list) = ty
-            .named_children(&mut cursor)
-            .find(|node| node.kind() == "field_declaration_list")
-        else {
-            return;
-        };
-        let mut cursor = list.walk();
-        for field in list
-            .named_children(&mut cursor)
-            .filter(|node| node.kind() == "field_declaration")
-        {
-            let field_type = field.child_by_field_name("type");
-            let ty = field_type.and_then(|node| named_type(node, self.text));
-            let mut name_cursor = field.walk();
-            let mut names = field
-                .children_by_field_name("name", &mut name_cursor)
-                .filter(|node| node.kind() == "field_identifier")
-                .peekable();
-            if names.peek().is_some() {
-                for name in names {
-                    let symbol =
-                        Symbol::new((self.range)(name), SymbolKind::Value(ty.clone()), true);
-                    self.insert_member(owner, name, symbol);
-                }
-            } else if let (Some(mut ty), Some(syntax)) =
-                (ty, field_type.and_then(named_type_syntax))
-            {
-                // In an embedded field declaration, the optional star belongs to the field,
-                // not its named type child.
-                if field
-                    .children(&mut field.walk())
-                    .any(|child| child.kind() == "*")
-                {
-                    ty.pointers += 1;
-                }
-                let name = syntax.name;
-                let symbol = Symbol::new(
-                    (self.range)(name),
-                    SymbolKind::Value(Some(ty.clone())),
-                    true,
-                );
-                self.insert_member(owner, name, symbol);
-                details.embedded.push(ty);
-            }
-        }
-    }
-
-    fn interface_members(&mut self, owner: &str, ty: Node<'_>, details: &mut TypeDetails) {
-        let mut cursor = ty.walk();
-        for element in ty.named_children(&mut cursor) {
-            match element.kind() {
-                "method_elem" => {
-                    if let Some(name) = element.child_by_field_name("name") {
-                        let results = function_results(element, self.text);
-                        let symbol =
-                            Symbol::new((self.range)(name), SymbolKind::Function(results), false);
-                        self.insert_member(owner, name, symbol);
-                    }
-                }
-                "type_elem" => {
-                    // A union or an approximation constrains a type set, without embedding a method set.
-                    let mut cursor = element.walk();
-                    let mut terms = element
-                        .named_children(&mut cursor)
-                        .filter(|term| !term.is_extra());
-                    if let Some(term) = terms.next()
-                        && terms.next().is_none()
-                        && let Some(ty) = named_type(term, self.text)
-                    {
-                        details.embedded.push(ty);
-                    }
-                }
-                _ => {}
-            }
-        }
     }
 
     fn method_declaration(&mut self, declaration: Node<'_>) {
@@ -292,28 +252,35 @@ impl Indexer<'_> {
         }
         let Some(owner) = parameter
             .child_by_field_name("type")
-            .and_then(|ty| named_type(ty, self.text))
+            .and_then(|ty| type_ref(ty, self.text, self.range))
         else {
             return;
         };
-        if owner.qualifier.is_some() || owner.pointers > 1 {
+        let TypeRefKind::Named(named) = owner.kind else {
+            return;
+        };
+        if named.qualifier.is_some() || owner.pointers > 1 {
             return;
         }
-        let results = function_results(declaration, self.text);
+        let results = function_results(declaration, self.text, self.range);
         let mut symbol = Symbol::new((self.range)(name), SymbolKind::Function(results), false);
         symbol.pointer_receiver = owner.pointers == 1;
-        symbol.receiver_parameters = owner
+        symbol.receiver_parameters = named
             .arguments
             .into_iter()
             .map(|argument| {
-                argument
-                    .filter(|ty| {
-                        ty.qualifier.is_none() && ty.pointers == 0 && ty.arguments.is_empty()
-                    })
-                    .map(|ty| ty.name)
+                let TypeRef {
+                    pointers: 0,
+                    kind: TypeRefKind::Named(parameter),
+                } = argument?
+                else {
+                    return None;
+                };
+                (parameter.qualifier.is_none() && parameter.arguments.is_empty())
+                    .then_some(parameter.name)
             })
             .collect();
-        self.insert_member(&owner.name, name, symbol);
+        self.insert_member(&named.name, name, symbol);
     }
 
     fn insert_member(&mut self, owner: &str, name: Node<'_>, symbol: Symbol) {
@@ -330,7 +297,44 @@ impl Indexer<'_> {
     }
 }
 
-pub(crate) fn named_type(node: Node<'_>, text: &str) -> Option<TypeRef> {
+pub(crate) fn type_ref(
+    node: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> Option<TypeRef> {
+    let node = unparenthesized_type(node)?;
+    let parse = |field| type_ref(node.child_by_field_name(field)?, text, range);
+    let kind = match node.kind() {
+        "pointer_type" => {
+            let mut inner = type_ref(only_named_child(node)?, text, range)?;
+            inner.pointers = inner.pointers.checked_add(1)?;
+            return Some(inner);
+        }
+        "slice_type" => TypeRefKind::Container(Box::new(Container::Slice(parse("element")?))),
+        "array_type" | "implicit_length_array_type" => {
+            TypeRefKind::Container(Box::new(Container::Array(parse("element")?)))
+        }
+        "map_type" => TypeRefKind::Container(Box::new(Container::Map {
+            key: parse("key")?,
+            value: parse("value")?,
+        })),
+        "channel_type" => TypeRefKind::Container(Box::new(Container::Channel {
+            element: parse("value")?,
+            receive: node
+                .children(&mut node.walk())
+                .filter(|child| !child.is_extra())
+                .nth(1)
+                .is_some_and(|second| second.kind() != "<-"),
+        })),
+        "struct_type" | "interface_type" => {
+            TypeRefKind::Inline(Arc::new(inline_type(node, text, range)))
+        }
+        _ => TypeRefKind::Named(named_type(node, text, range)?),
+    };
+    Some(TypeRef { pointers: 0, kind })
+}
+
+fn named_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) -> Option<NamedType> {
     let syntax = named_type_syntax(node)?;
     let name = node_text(syntax.name, text);
     let qualifier = syntax.qualifier.map(|qualifier| node_text(qualifier, text));
@@ -342,28 +346,103 @@ pub(crate) fn named_type(node: Node<'_>, text: &str) -> Option<TypeRef> {
         .map(|list| {
             list.named_children(&mut list.walk())
                 .filter(|node| node.kind() == "type_elem")
-                .map(|node| only_named_child(node).and_then(|ty| named_type(ty, text)))
+                .map(|node| only_named_child(node).and_then(|ty| type_ref(ty, text, range)))
                 .collect()
         })
         .unwrap_or_default();
-
-    Some(TypeRef {
+    Some(NamedType {
         qualifier: qualifier.map(str::to_owned),
         name: name.to_owned(),
-        pointers: syntax.pointers,
         arguments,
     })
+}
+
+fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) -> InlineType {
+    let mut inline = InlineType {
+        origin: range(node),
+        interface: node.kind() == "interface_type",
+        ..InlineType::default()
+    };
+    let mut cursor = node.walk();
+    if inline.interface {
+        for element in node.named_children(&mut cursor) {
+            match element.kind() {
+                "method_elem" => {
+                    if let Some(name) = element.child_by_field_name("name") {
+                        let results = function_results(element, text, range);
+                        let symbol = Symbol::new(range(name), SymbolKind::Function(results), false);
+                        inline
+                            .members
+                            .entry(node_text(name, text).to_owned())
+                            .or_insert(symbol);
+                    }
+                }
+                "type_elem" => {
+                    // A union or approximation constrains the type set without embedding methods.
+                    if let Some(term) = only_named_child(element)
+                        && let Some(reference) = type_ref(term, text, range)
+                        && matches!(reference.kind, TypeRefKind::Named(_))
+                    {
+                        inline.embedded.push(reference);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return inline;
+    }
+    let Some(list) = node
+        .named_children(&mut cursor)
+        .find(|node| node.kind() == "field_declaration_list")
+    else {
+        return inline;
+    };
+    for field in list
+        .named_children(&mut list.walk())
+        .filter(|node| node.kind() == "field_declaration")
+    {
+        let field_type = field.child_by_field_name("type");
+        let ty = field_type.and_then(|node| type_ref(node, text, range));
+        let mut name_cursor = field.walk();
+        let mut names = field
+            .children_by_field_name("name", &mut name_cursor)
+            .filter(|node| node.kind() == "field_identifier")
+            .peekable();
+        if names.peek().is_some() {
+            for name in names {
+                let key = node_text(name, text);
+                if !key.is_empty() && key != "_" {
+                    let symbol = Symbol::new(range(name), SymbolKind::Value(ty.clone()), true);
+                    inline.members.entry(key.to_owned()).or_insert(symbol);
+                }
+            }
+        } else if let (Some(mut ty), Some(syntax)) = (ty, field_type.and_then(named_type_syntax)) {
+            // The optional star belongs to the embedded field, not its named type child.
+            if field
+                .children(&mut field.walk())
+                .any(|child| child.kind() == "*")
+            {
+                ty.pointers += 1;
+            }
+            let name = syntax.name;
+            let symbol = Symbol::new(range(name), SymbolKind::Value(Some(ty.clone())), true);
+            inline
+                .members
+                .entry(node_text(name, text).to_owned())
+                .or_insert(symbol);
+            inline.embedded.push(ty);
+        }
+    }
+    inline
 }
 
 struct NamedTypeSyntax<'tree> {
     qualifier: Option<Node<'tree>>,
     name: Node<'tree>,
-    pointers: u8,
     arguments: Option<Node<'tree>>,
 }
 
 fn named_type_syntax(mut node: Node<'_>) -> Option<NamedTypeSyntax<'_>> {
-    let mut pointers = 0_u8;
     let mut arguments = None;
     loop {
         node = match node.kind() {
@@ -371,7 +450,6 @@ fn named_type_syntax(mut node: Node<'_>) -> Option<NamedTypeSyntax<'_>> {
                 return Some(NamedTypeSyntax {
                     qualifier: None,
                     name: node,
-                    pointers,
                     arguments,
                 });
             }
@@ -379,13 +457,8 @@ fn named_type_syntax(mut node: Node<'_>) -> Option<NamedTypeSyntax<'_>> {
                 return Some(NamedTypeSyntax {
                     qualifier: Some(node.child_by_field_name("package")?),
                     name: node.child_by_field_name("name")?,
-                    pointers,
                     arguments,
                 });
-            }
-            "pointer_type" => {
-                pointers = pointers.checked_add(1)?;
-                only_named_child(node)?
             }
             "parenthesized_type" => only_named_child(node)?,
             "generic_type" => {
@@ -428,12 +501,16 @@ fn only_named_child(node: Node<'_>) -> Option<Node<'_>> {
     children.next().is_none().then_some(child)
 }
 
-fn composite_value_type(mut value: Node<'_>, text: &str) -> Option<TypeRef> {
+fn composite_value_type(
+    mut value: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> Option<TypeRef> {
     let mut pointers = 0_u8;
     loop {
         value = match value.kind() {
             "composite_literal" => {
-                let mut ty = named_type(value.child_by_field_name("type")?, text)?;
+                let mut ty = type_ref(value.child_by_field_name("type")?, text, range)?;
                 ty.pointers = ty.pointers.checked_add(pointers)?;
                 return Some(ty);
             }
@@ -451,12 +528,16 @@ fn composite_value_type(mut value: Node<'_>, text: &str) -> Option<TypeRef> {
     }
 }
 
-fn function_results(function: Node<'_>, text: &str) -> Vec<Option<TypeRef>> {
+fn function_results(
+    function: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> Vec<Option<TypeRef>> {
     let Some(result) = function.child_by_field_name("result") else {
         return Vec::new();
     };
     if result.kind() != "parameter_list" {
-        return vec![named_type(result, text)];
+        return vec![type_ref(result, text, range)];
     }
     let mut results = Vec::new();
     let mut cursor = result.walk();
@@ -466,7 +547,7 @@ fn function_results(function: Node<'_>, text: &str) -> Vec<Option<TypeRef>> {
     {
         let ty = parameter
             .child_by_field_name("type")
-            .and_then(|node| named_type(node, text));
+            .and_then(|node| type_ref(node, text, range));
         let mut name_cursor = parameter.walk();
         let count = parameter
             .children_by_field_name("name", &mut name_cursor)

@@ -233,8 +233,13 @@ fn initializer_at(list: Option<Node<'_>>, index: usize) -> (Option<Node<'_>>, us
 }
 
 fn left_binding<'tree>(node: Node<'tree>, name: &str, text: &str) -> Option<Binding<'tree>> {
-    let (_, name) = identifier_in_list(node.child_by_field_name("left")?, name, text)?;
-    Some(binding(name, None, None, 0))
+    let (index, name) = identifier_in_list(node.child_by_field_name("left")?, name, text)?;
+    let initializer = if node.kind() == "range_clause" {
+        Some(node)
+    } else {
+        node.child_by_field_name("right")
+    };
+    Some(binding(name, None, initializer, index))
 }
 
 fn identifier_in_list<'tree>(

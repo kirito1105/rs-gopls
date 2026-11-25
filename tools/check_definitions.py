@@ -100,6 +100,88 @@ func checkShadow() {
     _ = [[literal-shadow-use:true]]
 }
 """,
+    "containers.go": """package main
+import helper "example.test/definition/service"
+
+type Item struct {
+    [[container-field:Label]] string
+    [[container-view:View]] struct{ [[nested-inline-field:Title]] string }
+}
+func (*Item) [[container-pointer-method:Set]]() {}
+type NamedItems []Item
+type NamedArray [1]Item
+type NamedMap map[string]Item
+type DefinedItem Item
+type DefinedRunner helper.Runner
+type EmbeddedItem struct { Item }
+type DefinedEmbeddedItem EmbeddedItem
+type NamedChan <-chan Item
+type mapKey string
+const [[literal-map-key-const:entry]] mapKey = "entry"
+
+func getItems() NamedItems { return nil }
+func containers(sendOnly chan <-Item, ch NamedChan, values NamedMap, array *NamedArray) {
+    _ = getItems()[0].[[slice-index-field:Label]]
+    _ = array[0].[[pointer-array-field:Label]]
+    _ = values["entry"].[[map-index-field:Label]]
+    found, _ := values["entry"]
+    _ = found.[[map-assignment:Label]]
+    for _, item := range getItems() {
+        _ = item.[[range-slice-field:Label]]
+    }
+    for _, item := range values {
+        _ = item.[[range-map-field:Label]]
+    }
+    mapKeys := map[Item]int{}
+    for item := range mapKeys {
+        _ = item.[[range-map-key:Label]]
+    }
+    for item := range ch {
+        _ = item.[[range-channel:Label]]
+    }
+    select {
+    case item, _ := <-ch:
+        _ = item.[[select-channel:Label]]
+        item.[[select-pointer-method:Set]]()
+    default:
+    }
+    fromChannel := <-ch
+    _ = fromChannel.[[receive-channel:Label]]
+    _ = (<-sendOnly).[[send-only-none:Label]]
+    getItems()[0].[[slice-addressable:Set]]()
+    values["entry"].[[map-not-addressable:Set]]()
+    found.[[map-copy-addressable:Set]]()
+    var pointerValues map[string]*Item
+    pointerValues["entry"].[[map-pointer-value:Set]]()
+    ([1]Item{})[0].[[array-not-addressable:Set]]()
+    array[0].[[pointer-array-addressable:Set]]()
+
+    var nested struct{ [[inline-field:Inner]] Item }
+    _ = nested.[[anonymous-selector:Inner]]
+    _ = nested.Inner.[[anonymous-chain:Label]]
+    _ = found.[[anonymous-field-chain:View]].[[anonymous-nested:Title]]
+    _ = helper.Inline().[[cross-file-inline:Entry]]
+    _ = helper.Inline().Entry.[[cross-file-inline-chain:Text]]
+    {
+        _ = (struct{ /* 🙂 */ [[inline-shadow-left:Same]] int }{}).[[inline-shadow-left-use:Same]]
+    }
+    {
+        _ = (struct{ [[inline-shadow-right:Same]] string }{}).[[inline-shadow-right-use:Same]]
+    }
+
+    _ = DefinedItem{}.[[defined-field:Label]]
+    DefinedItem{}.[[defined-method-absent:Set]]()
+    _ = DefinedEmbeddedItem{}.[[defined-promoted-field:Label]]
+    var runner DefinedRunner
+    runner.[[defined-interface-method:Run]]()
+    var inlineRunner interface{ [[inline-interface-decl:Run]]() Item }
+    _ = inlineRunner.[[inline-interface-method:Run]]().[[inline-interface-result:Label]]
+
+    _ = []Item{{[[elided-struct-field:Label]]: "one"}}
+    _ = map[mapKey]Item{[[literal-map-key-use:entry]]: {[[elided-map-field:Label]]: "two"}}
+    _ = map[Item]int{{[[elided-map-key-field:Label]]: "three"}: 3}
+}
+""",
     "helpers.go": """package main
 
 type [[private-type:context]] struct{}
@@ -117,6 +199,9 @@ func (s *Service) [[run:Run]]() {}
 func (s *Service) Next() *Service { return s }
 func [[create:Create]]() *Service { return &Service{} }
 func Pair() (*Service, error) { return Create(), nil }
+
+type Record struct{ [[cross-file-inline-final:Text]] string }
+func Inline() struct{ [[cross-file-inline-field:Entry]] Record } { panic("placeholder") }
 """,
     "dotuse/dotuse.go": """package dotuse
 import . "example.test/definition/service"
@@ -161,6 +246,42 @@ FIXTURE_CASES = (
     (3, "dot-function", "create"),
     (3, "dot-type", "service-type"),
     (3, "dot-ambiguous", None),
+    (4, "slice-index-field", "container-field"),
+    (4, "pointer-array-field", "container-field"),
+    (4, "map-index-field", "container-field"),
+    (4, "map-assignment", "container-field"),
+    (4, "range-slice-field", "container-field"),
+    (4, "range-map-field", "container-field"),
+    (4, "range-map-key", "container-field"),
+    (4, "range-channel", "container-field"),
+    (4, "select-channel", "container-field"),
+    (4, "select-pointer-method", "container-pointer-method"),
+    (4, "receive-channel", "container-field"),
+    (4, "send-only-none", None),
+    (4, "slice-addressable", "container-pointer-method"),
+    (4, "map-not-addressable", None),
+    (4, "map-copy-addressable", "container-pointer-method"),
+    (4, "map-pointer-value", "container-pointer-method"),
+    (4, "array-not-addressable", None),
+    (4, "pointer-array-addressable", "container-pointer-method"),
+    (4, "anonymous-selector", "inline-field"),
+    (4, "anonymous-chain", "container-field"),
+    (4, "anonymous-field-chain", "container-view"),
+    (4, "anonymous-nested", "nested-inline-field"),
+    (4, "cross-file-inline", "cross-file-inline-field"),
+    (4, "cross-file-inline-chain", "cross-file-inline-final"),
+    (4, "inline-shadow-left-use", "inline-shadow-left"),
+    (4, "inline-shadow-right-use", "inline-shadow-right"),
+    (4, "defined-field", "container-field"),
+    (4, "defined-method-absent", None),
+    (4, "defined-promoted-field", "container-field"),
+    (4, "defined-interface-method", "interface-declaration"),
+    (4, "inline-interface-method", "inline-interface-decl"),
+    (4, "inline-interface-result", "container-field"),
+    (4, "elided-struct-field", "container-field"),
+    (4, "literal-map-key-use", "literal-map-key-const"),
+    (4, "elided-map-field", "container-field"),
+    (4, "elided-map-key-field", "container-field"),
 )
 BUILTIN_CASES = (
     ("builtin-int", "type [[int]] int"),
@@ -303,18 +424,34 @@ def builtin_cases(root, sites):
     return [(source, sites[source], locate(builtin, target)) for source, target in BUILTIN_CASES]
 
 
+CONTAINER_WORKSPACE_CASES = (
+    ("range member", "internal/app/user.go", "u.[[Sanitize]]()",
+     "internal/model/user.go", "func (u *User) [[Sanitize]]("),
+    ("slice index member", "internal/app/card_action_test.go", "tree[0].[[AttachmentID]]",
+     "internal/app/card_action.go", "[[AttachmentID]] string"),
+    ("test package slice member", "internal/store/sqlitestore/code_review_store_test.go", "items[0].[[Id]] != fixedItem.Id",
+     "internal/model/code_review.go", '[[Id]] string             `json:"id"` ReviewId string'),
+)
+
+
 def workspace_cases(root, stage):
-    return [
+    cases = [
         (label, locate(root / API, source), locate(root / target_path, target))
         for minimum, label, source, target_path, target in WORKSPACE_CASES
         if minimum <= stage
     ]
+    if stage >= 4:
+        cases.extend(
+            (label, locate(root / source_path, source), locate(root / target_path, target))
+            for label, source_path, source, target_path, target in CONTAINER_WORKSPACE_CASES
+        )
+    return cases
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
-    parser.add_argument("--stage", type=int, choices=(1, 2, 3), default=1)
+    parser.add_argument("--stage", type=int, choices=(1, 2, 3, 4), default=1)
     parser.add_argument("--workspace", type=Path, help="localchat/server root for additional real-world checks")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()
@@ -330,7 +467,7 @@ def main():
                 for stage, source, target in FIXTURE_CASES
                 if stage <= args.stage
             ]
-            if args.stage == 3:
+            if args.stage >= 3:
                 cases.extend(builtin_cases(root, sites))
             success = exercise(
                 args.candidate, root, cases, args.timeout,
