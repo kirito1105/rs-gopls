@@ -187,7 +187,7 @@ func containers(sendOnly chan <-Item, ch NamedChan, values NamedMap, array *Name
 type [[private-type:context]] struct{}
 func [[private-function:registerRoutes]]() {}
 """,
-    "service/service.go": """package [[service-package:service]]
+    "service/service.go": """package service
 
 type [[service-type:Service]] struct{}
 type Alias = Service
@@ -224,7 +224,7 @@ FIXTURE_CASES = (
     (1, "shadow-use", "shadow-declaration"),
     (1, "private-use", "private-function"),
     (1, "private-type-use", "private-type"),
-    (1, "import", "service-package"),
+    (1, "import", "import"),
     (1, "imported-function", "create"),
     (1, "default-import-use", "default-import"),
     (2, "method-use", "initialize"),
@@ -335,13 +335,9 @@ def check_location(client, source, target):
         uri = result.get("targetUri", result.get("uri"))
         selection = result.get("targetSelectionRange", result.get("range"))
         expected = target.selection()
-        starts = [expected["start"]]
-        # Import definitions can select either the package name or its whole clause.
-        if source.text[source.start] == '"' and target.text[target.start - 8:target.start] == "package ":
-            starts.append(position_at(target.text, target.start - 8))
         if (
             uri and path_from_uri(uri) == target.path and selection
-            and selection["start"] in starts and selection["end"] == expected["end"]
+            and selection == expected
         ):
             return
     raise RuntimeError(f"expected {target.path} at {target.selection()}, received {response!r}")

@@ -79,7 +79,6 @@ pub(crate) struct TypeDetails {
 
 #[derive(Default)]
 pub(crate) struct FileSymbols {
-    pub(crate) package_range: Option<Range>,
     declarations: HashMap<String, Symbol>,
     members: HashMap<String, HashMap<String, Symbol>>,
     types: HashMap<String, TypeDetails>,
@@ -123,12 +122,6 @@ impl Indexer<'_> {
     fn declaration(&mut self, declaration: Node<'_>) {
         let mut cursor = declaration.walk();
         match declaration.kind() {
-            "package_clause" => {
-                self.symbols.package_range = declaration
-                    .named_children(&mut cursor)
-                    .find(|node| node.kind() == "package_identifier")
-                    .map(self.range);
-            }
             "var_declaration" | "var_spec_list" | "const_declaration" | "type_declaration" => {
                 for spec in declaration.named_children(&mut cursor) {
                     self.declaration(spec);

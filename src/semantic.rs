@@ -28,7 +28,6 @@ enum ReferenceQuery<'tree> {
         receiver: Node<'tree>,
         name: Node<'tree>,
     },
-    Import(Node<'tree>),
     LiteralKey {
         value: Node<'tree>,
         name: Node<'tree>,
@@ -159,7 +158,7 @@ impl Engine {
         let Some(from) = workspace.package_of_file(path) else {
             return Ok(None);
         };
-        let mut indexes = IndexReader {
+        let indexes = IndexReader {
             parser: &mut self.parser,
             documents: &self.documents,
             disk_index: &mut self.disk_index,
@@ -200,15 +199,6 @@ impl Engine {
                 let member =
                     member.filter(|found| matches!(found.symbol.kind, SymbolKind::Value(_)));
                 Ok(member.map(ResolvedSymbol::location))
-            }
-            ReferenceQuery::Import(literal) => {
-                let Some(import_path) = import_path(node_text(literal, &source.text)) else {
-                    return Ok(None);
-                };
-                let Some(target) = workspace.resolve_import(from, &import_path) else {
-                    return Ok(None);
-                };
-                indexes.find(target, |index| index.symbols.package_range)
             }
         }
     }
@@ -1225,7 +1215,7 @@ impl Source {
                     && path.start_byte() <= offset
                     && offset < path.end_byte()
                 {
-                    return Some(ReferenceQuery::Import(path));
+                    return Some(ReferenceQuery::Name(path));
                 }
                 break;
             }
@@ -1372,6 +1362,9 @@ fn is_declaration_name(node: Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return false;
     };
+    if parent.kind() == "import_spec" {
+        return parent.child_by_field_name("path") == Some(node);
+    }
     if !matches!(
         parent.kind(),
         "field_declaration"

@@ -13,7 +13,7 @@
 GoLand 的默认 Ctrl+B 调用 **Go to Declaration or Usages**。同一组查询中，有 19 项与纯声明动作的结果一致，另有 1 项进入查找用法。
 
 - 对 `mux.Router` 的限定符 `mux`，GoLand 给出 `gorilla/mux` 的包导航对象，带包目录和包名。LSP 文件位置的验收单独报告这一项。
-- 对 `api.go` 里的 `"github.com/gorilla/mux"` 导入字面量，GoLand 的纯声明动作落在字面量自身，默认 Ctrl+B 进入查找用法。rs-gopls 与 gopls 当前返回被导入包中的包声明。
+- 对 `api.go` 里的 `"github.com/gorilla/mux"` 导入字面量，GoLand 的纯声明动作落在字面量自身，默认 Ctrl+B 进入查找用法。上一阶段 rs-gopls 和 gopls v0.24.0 返回被导入包的包声明。当前 rs-gopls 的纯定义结果与 GoLand 一致。
 
 ## 重新采集
 
