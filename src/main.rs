@@ -1,3 +1,4 @@
+mod scope;
 mod semantic;
 mod workspace;
 

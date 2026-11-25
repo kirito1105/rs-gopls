@@ -7,16 +7,31 @@ use anyhow::{Context, Result, bail};
 use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
-use crate::workspace::{Workspace, path_key};
+use crate::scope::lexical_binding;
+use crate::workspace::{Package, Workspace, path_key};
 
-type Declarations = HashMap<String, Range>;
+#[derive(Default)]
+struct FileIndex {
+    package_range: Option<Range>,
+    declarations: HashMap<String, Range>,
+}
+
+#[derive(Clone, Copy)]
+enum ReferenceQuery<'tree> {
+    Name(Node<'tree>),
+    Member {
+        receiver: Node<'tree>,
+        name: Node<'tree>,
+    },
+    Import(Node<'tree>),
+}
 
 pub struct Engine {
     root: PathBuf,
     workspace: Option<Workspace>,
     parser: Parser,
     documents: HashMap<PathBuf, Source>,
-    disk_index: HashMap<PathBuf, Declarations>,
+    disk_index: HashMap<PathBuf, FileIndex>,
 }
 
 impl Engine {
@@ -74,9 +89,20 @@ impl Engine {
             return Ok(None);
         };
 
-        let Some((qualifier, symbol)) = source.qualified_reference(position) else {
+        let Some(reference) = source.reference_at(position) else {
             return Ok(None);
         };
+        if let ReferenceQuery::Name(name) = reference {
+            let declaration = if is_declaration_name(name) {
+                Some(name)
+            } else {
+                lexical_binding(name, node_text(name, &source.text), &source.text)
+                    .map(|binding| binding.name)
+            };
+            if let Some(declaration) = declaration {
+                return Ok(Some((path.to_owned(), source.range(declaration))));
+            }
+        }
         if self.workspace.is_none() {
             self.workspace = Some(Workspace::load(&self.root)?);
         }
@@ -84,29 +110,83 @@ impl Engine {
         let Some(from) = workspace.package_of_file(path) else {
             return Ok(None);
         };
-        let Some(target) = source.imports.iter().find_map(|import| {
-            let package = workspace.resolve_import(from, &import.path)?;
-            let name = import.alias.as_deref().unwrap_or(&package.name);
-            (name == qualifier).then_some(package)
-        }) else {
-            return Ok(None);
+        let mut indexes = IndexReader {
+            parser: &mut self.parser,
+            documents: &self.documents,
+            disk_index: &mut self.disk_index,
         };
 
-        for file in &target.files {
-            let key = path_key(file);
-            let declarations = if let Some(source) = self.documents.get(&key) {
-                source.declarations()
-            } else {
-                match self.disk_index.entry(key) {
-                    Entry::Occupied(entry) => entry.into_mut(),
-                    Entry::Vacant(entry) => {
-                        let source = read_source(&mut self.parser, file)?;
-                        entry.insert(source.collect_declarations())
+        match reference {
+            ReferenceQuery::Name(name) => {
+                let identifier = node_text(name, &source.text);
+                if let Some((import, package)) =
+                    source.imported_package(workspace, from, identifier)
+                {
+                    if let Some(binding) = import.binding {
+                        return Ok(Some((path.to_owned(), binding)));
                     }
+                    return indexes.find(package, |index| index.package_range);
                 }
-            };
-            if let Some(range) = declarations.get(symbol) {
-                return Ok(Some((file.clone(), *range)));
+                indexes.find(from, |index| index.declarations.get(identifier).copied())
+            }
+            ReferenceQuery::Member { receiver, name } => {
+                let symbol = node_text(name, &source.text);
+                if !matches!(receiver.kind(), "identifier" | "package_identifier")
+                    || !is_exported(symbol)
+                {
+                    return Ok(None);
+                }
+                let qualifier = node_text(receiver, &source.text);
+                if lexical_binding(receiver, qualifier, &source.text).is_some() {
+                    return Ok(None);
+                }
+                let Some((_, target)) = source.imported_package(workspace, from, qualifier) else {
+                    return Ok(None);
+                };
+                indexes.find(target, |index| index.declarations.get(symbol).copied())
+            }
+            ReferenceQuery::Import(literal) => {
+                let Some(import_path) = import_path(node_text(literal, &source.text)) else {
+                    return Ok(None);
+                };
+                let Some(target) = workspace.resolve_import(from, &import_path) else {
+                    return Ok(None);
+                };
+                indexes.find(target, |index| index.package_range)
+            }
+        }
+    }
+}
+
+struct IndexReader<'a> {
+    parser: &'a mut Parser,
+    documents: &'a HashMap<PathBuf, Source>,
+    disk_index: &'a mut HashMap<PathBuf, FileIndex>,
+}
+
+impl IndexReader<'_> {
+    fn file_index(&mut self, file: &Path) -> Result<&FileIndex> {
+        let key = path_key(file);
+        if let Some(source) = self.documents.get(&key) {
+            return Ok(source.declarations());
+        }
+        Ok(match self.disk_index.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let source = read_source(self.parser, file)?;
+                entry.insert(source.collect_declarations())
+            }
+        })
+    }
+
+    fn find(
+        &mut self,
+        package: &Package,
+        lookup: impl Fn(&FileIndex) -> Option<Range>,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        for file in &package.files {
+            if let Some(range) = lookup(self.file_index(file)?) {
+                return Ok(Some((file.clone(), range)));
             }
         }
         Ok(None)
@@ -121,6 +201,7 @@ fn read_source(parser: &mut Parser, path: &Path) -> Result<Source> {
 struct Import {
     alias: Option<String>,
     path: String,
+    binding: Option<Range>,
 }
 
 struct Source {
@@ -128,7 +209,7 @@ struct Source {
     lines: LineIndex,
     tree: Tree,
     imports: Vec<Import>,
-    declarations: OnceCell<Declarations>,
+    declarations: OnceCell<FileIndex>,
 }
 
 impl Source {
@@ -144,7 +225,7 @@ impl Source {
         previous: Option<&Tree>,
     ) -> Result<Self> {
         let tree = parser.parse(&text, previous).context("parsing Go source")?;
-        let imports = imports(tree.root_node(), &text);
+        let imports = imports(tree.root_node(), &text, &lines);
         Ok(Self {
             text,
             lines,
@@ -204,88 +285,132 @@ impl Source {
         Ok(())
     }
 
-    fn qualified_reference(&self, position: Position) -> Option<(&str, &str)> {
+    fn reference_at(&self, position: Position) -> Option<ReferenceQuery<'_>> {
         let offset = self.lines.offset(&self.text, position)?;
         let root = self.tree.root_node();
-        let mut node = root.named_descendant_for_byte_range(offset, offset)?;
-        loop {
+        let leaf = root.named_descendant_for_byte_range(offset, offset)?;
+        let mut current = Some(leaf);
+        while let Some(node) = current {
             let fields = match node.kind() {
                 "selector_expression" => Some(("operand", "field")),
                 "qualified_type" => Some(("package", "name")),
                 _ => None,
             };
-            if let Some((qualifier_field, symbol_field)) = fields
-                && let Some(symbol) = node.child_by_field_name(symbol_field)
-                && symbol.start_byte() <= offset
-                && offset <= symbol.end_byte()
+            if let Some((receiver_field, name_field)) = fields
+                && let Some(name) = node.child_by_field_name(name_field)
+                && name.start_byte() <= offset
+                && offset <= name.end_byte()
             {
-                let qualifier = node.child_by_field_name(qualifier_field)?;
-                if !matches!(qualifier.kind(), "identifier" | "package_identifier") {
-                    return None;
-                }
-                let qualifier = node_text(qualifier, &self.text);
-                let symbol = node_text(symbol, &self.text);
-                return (is_exported(symbol) && !local_binding(node, qualifier, &self.text))
-                    .then_some((qualifier, symbol));
+                let receiver = node.child_by_field_name(receiver_field)?;
+                return Some(ReferenceQuery::Member { receiver, name });
             }
-            node = node.parent()?;
+            if node.kind() == "import_spec" {
+                if let Some(path) = node.child_by_field_name("path")
+                    && path.start_byte() <= offset
+                    && offset < path.end_byte()
+                {
+                    return Some(ReferenceQuery::Import(path));
+                }
+                break;
+            }
+            if node.kind() == "comment" {
+                return None;
+            }
+            current = node.parent();
         }
+        let parent = leaf.parent()?;
+        let named = matches!(
+            leaf.kind(),
+            "identifier" | "type_identifier" | "package_identifier"
+        );
+        let field_key = parent.kind() == "literal_element"
+            && parent.parent().is_some_and(|node| {
+                node.kind() == "keyed_element" && node.child_by_field_name("key") == Some(parent)
+            });
+        ((named && !field_key) || is_declaration_name(leaf)).then_some(ReferenceQuery::Name(leaf))
     }
 
-    fn declarations(&self) -> &Declarations {
+    fn imported_package<'a>(
+        &self,
+        workspace: &'a Workspace,
+        from: &Package,
+        qualifier: &str,
+    ) -> Option<(&Import, &'a Package)> {
+        self.imports.iter().find_map(|import| {
+            let package = workspace.resolve_import(from, &import.path)?;
+            let name = import.alias.as_deref().unwrap_or(&package.name);
+            (name == qualifier).then_some((import, package))
+        })
+    }
+
+    fn range(&self, node: Node<'_>) -> Range {
+        Range::new(
+            self.lines.position(&self.text, node.start_byte()),
+            self.lines.position(&self.text, node.end_byte()),
+        )
+    }
+
+    fn declarations(&self) -> &FileIndex {
         self.declarations
             .get_or_init(|| self.collect_declarations())
     }
 
-    fn collect_declarations(&self) -> Declarations {
+    fn collect_declarations(&self) -> FileIndex {
         let root = self.tree.root_node();
         let mut cursor = root.walk();
-        let mut declarations = HashMap::new();
+        let mut result = FileIndex::default();
         for declaration in root.named_children(&mut cursor) {
+            if declaration.kind() == "package_clause" {
+                result.package_range = declaration.named_child(0).map(|name| self.range(name));
+            }
             visit_declaration_names(declaration, &mut |name| {
-                let symbol = node_text(name, &self.text);
-                if is_exported(symbol) {
-                    declarations.entry(symbol.to_owned()).or_insert_with(|| {
-                        Range::new(
-                            self.lines.position(&self.text, name.start_byte()),
-                            self.lines.position(&self.text, name.end_byte()),
-                        )
-                    });
-                }
+                result
+                    .declarations
+                    .entry(node_text(name, &self.text).to_owned())
+                    .or_insert_with(|| self.range(name));
             });
         }
-        declarations
+        result
     }
 }
 
-fn imports(root: Node<'_>, text: &str) -> Vec<Import> {
-    fn collect(node: Node<'_>, text: &str, result: &mut Vec<Import>) {
+fn import_path(literal: &str) -> Option<String> {
+    if let Some(raw) = literal.strip_prefix('`').and_then(|s| s.strip_suffix('`')) {
+        Some(raw.replace('\r', ""))
+    } else {
+        serde_json::from_str(literal).ok()
+    }
+}
+
+fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
+    fn collect(node: Node<'_>, text: &str, lines: &LineIndex, result: &mut Vec<Import>) {
         match node.kind() {
             "import_declaration" | "import_spec_list" => {
                 let mut cursor = node.walk();
                 for child in node.named_children(&mut cursor) {
-                    collect(child, text, result);
+                    collect(child, text, lines, result);
                 }
             }
             "import_spec" => {
                 let Some(path) = node.child_by_field_name("path") else {
                     return;
                 };
-                let literal = node_text(path, text);
-                let path = if let Some(raw) =
-                    literal.strip_prefix('`').and_then(|s| s.strip_suffix('`'))
-                {
-                    Some(raw.replace('\r', ""))
-                } else {
-                    serde_json::from_str::<String>(literal).ok()
-                };
-                let alias = node
-                    .child_by_field_name("name")
-                    .map(|name| node_text(name, text).to_owned());
-                if let Some(path) = path
+                let alias = node.child_by_field_name("name");
+                let binding = alias.map(|node| {
+                    Range::new(
+                        lines.position(text, node.start_byte()),
+                        lines.position(text, node.end_byte()),
+                    )
+                });
+                let alias = alias.map(|node| node_text(node, text).to_owned());
+                if let Some(path) = import_path(node_text(path, text))
                     && !matches!(alias.as_deref(), Some("_" | "."))
                 {
-                    result.push(Import { alias, path });
+                    result.push(Import {
+                        alias,
+                        path,
+                        binding,
+                    });
                 }
             }
             _ => {}
@@ -295,103 +420,9 @@ fn imports(root: Node<'_>, text: &str) -> Vec<Import> {
     let mut result = Vec::new();
     let mut cursor = root.walk();
     for node in root.named_children(&mut cursor) {
-        collect(node, text, &mut result);
+        collect(node, text, lines, &mut result);
     }
     result
-}
-
-fn local_binding<'tree>(selector: Node<'tree>, name: &str, text: &str) -> bool {
-    let offset = selector.start_byte();
-    let binds = |node: Node<'tree>| {
-        let mut found = false;
-        visit_declaration_names(node, &mut |candidate| {
-            found |= node_text(candidate, text) == name;
-        });
-        found
-    };
-    let list_binds = |list: Node<'tree>| {
-        let mut cursor = list.walk();
-        list.named_children(&mut cursor)
-            .any(|node| node.kind() == "identifier" && node_text(node, text) == name)
-    };
-    let after_binding = |node: Node<'tree>| node.end_byte() <= offset && binds(node);
-
-    let mut child = selector;
-    while let Some(scope) = child.parent() {
-        let shadowed = match scope.kind() {
-            "statement_list" | "var_spec_list" | "const_declaration" | "type_declaration" => {
-                let mut previous = child.prev_named_sibling();
-                let mut found = false;
-                while let Some(node) = previous {
-                    if binds(node) {
-                        found = true;
-                        break;
-                    }
-                    previous = node.prev_named_sibling();
-                }
-                found
-            }
-            "if_statement" | "expression_switch_statement" | "for_clause" => scope
-                .child_by_field_name("initializer")
-                .is_some_and(after_binding),
-            "for_statement" if child.kind() == "block" => {
-                let mut cursor = scope.walk();
-                scope
-                    .named_children(&mut cursor)
-                    .any(|clause| match clause.kind() {
-                        "for_clause" => clause
-                            .child_by_field_name("initializer")
-                            .is_some_and(after_binding),
-                        "range_clause" => {
-                            has_short_operator(clause)
-                                && clause.child_by_field_name("left").is_some_and(list_binds)
-                        }
-                        _ => false,
-                    })
-            }
-            "type_switch_statement" => {
-                scope
-                    .child_by_field_name("initializer")
-                    .is_some_and(after_binding)
-                    || (matches!(child.kind(), "type_case" | "default_case")
-                        && in_case_body(child, offset)
-                        && scope.child_by_field_name("alias").is_some_and(list_binds))
-            }
-            "communication_case" if child.kind() == "statement_list" => scope
-                .child_by_field_name("communication")
-                .filter(|node| node.kind() == "receive_statement" && has_short_operator(*node))
-                .and_then(|node| node.child_by_field_name("left"))
-                .is_some_and(list_binds),
-            "function_declaration" | "method_declaration" | "func_literal"
-                if child.kind() == "block" =>
-            {
-                ["parameters", "receiver", "result", "type_parameters"]
-                    .iter()
-                    .filter_map(|field| scope.child_by_field_name(*field))
-                    .any(binds)
-            }
-            "function_declaration" | "type_spec" | "type_alias" => scope
-                .child_by_field_name("type_parameters")
-                .filter(|list| list.start_byte() <= offset)
-                .is_some_and(binds),
-            _ => false,
-        };
-        if shadowed {
-            return true;
-        }
-        child = scope;
-    }
-    false
-}
-
-fn in_case_body(case: Node<'_>, offset: usize) -> bool {
-    let mut cursor = case.walk();
-    case.named_children(&mut cursor)
-        .any(|node| node.kind() == "statement_list" && node.start_byte() <= offset)
-}
-fn has_short_operator(node: Node<'_>) -> bool {
-    let mut cursor = node.walk();
-    node.children(&mut cursor).any(|child| child.kind() == ":=")
 }
 
 fn visit_declaration_names<'tree>(node: Node<'tree>, visit: &mut impl FnMut(Node<'tree>)) {
@@ -435,6 +466,32 @@ fn visit_declaration_names<'tree>(node: Node<'tree>, visit: &mut impl FnMut(Node
         }
         _ => {}
     }
+}
+
+fn is_declaration_name(node: Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    if !matches!(
+        parent.kind(),
+        "field_declaration"
+            | "function_declaration"
+            | "method_declaration"
+            | "method_elem"
+            | "parameter_declaration"
+            | "variadic_parameter_declaration"
+            | "type_parameter_declaration"
+            | "type_alias"
+            | "type_spec"
+            | "const_spec"
+            | "var_spec"
+    ) {
+        return false;
+    }
+    let mut cursor = parent.walk();
+    parent
+        .children_by_field_name("name", &mut cursor)
+        .any(|name| name == node)
 }
 
 fn is_exported(symbol: &str) -> bool {
@@ -515,7 +572,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_exported_symbols_in_grouped_declarations() {
+    fn indexes_public_and_private_symbols_in_grouped_declarations() {
         let mut engine = Engine::new(PathBuf::new());
         let source = Source::parse(
             &mut engine.parser,
@@ -523,11 +580,11 @@ mod tests {
             None,
         )
         .unwrap();
-        let names = source.declarations();
+        let names = &source.declarations().declarations;
         for name in ["First", "Second", "Third", "Fifth", "Sixth"] {
             assert!(names.contains_key(name), "missing {name}");
         }
-        assert!(!names.contains_key("fourth"));
+        assert!(names.contains_key("fourth"));
     }
 
     #[test]
@@ -544,7 +601,16 @@ mod tests {
         let source = Source::parse(&mut engine.parser, text.into(), None).unwrap();
         let queries: Vec<_> = text
             .match_indices("Foo")
-            .map(|(offset, _)| source.qualified_reference(source.lines.position(text, offset)))
+            .map(|(offset, _)| {
+                let query = source.reference_at(source.lines.position(text, offset))?;
+                let ReferenceQuery::Member { receiver, name } = query else {
+                    return None;
+                };
+                let qualifier = node_text(receiver, text);
+                lexical_binding(receiver, qualifier, text)
+                    .is_none()
+                    .then_some((qualifier, node_text(name, text)))
+            })
             .collect();
         assert_eq!(
             queries,
