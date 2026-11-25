@@ -76,3 +76,9 @@ python -B .\tools\compare_workspace_definitions.py .\target\release\rs-gopls.exe
 调用方范围编辑和首次正确跳转达到了计划设定的回退阈值。两个工作区共有查询的编辑 P95 也达到了比 gopls 低 20% 的目标。这里统计的是定义跳转负载，gopls 使用 `Save` 诊断设置，Go 缓存在进程之间共享。构建图变化和冷 Go 缓存需要独立场景。
 
 重现 SDK 场景时，将 Go 1.25.0 的 `bin` 放在当前进程 `PATH` 首位，并设置 `GOTOOLCHAIN=local`。使用 SDK 的 `src` 作为 `--workspace`，用 `--fixture .\tools\fixtures\net-http-go1.25.tsv` 指定样本。通过五次 `--case` 指定文件里的用例 ID，另设 `--dependency-iterations 20`。
+
+### 函数值的真实项目用例
+
+同一 GoLand 构建另外验证了 `internal/api/docmost_test.go` 中 `call("wrong").Code`，以及 `internal/app/svn_feature_tag_admin.go` 中 `slices.Contains` 的声明跳转。两个 GoLand 动作在这两个位置均返回相同目标。参照位置见[回调与泛型函数用例](../tools/fixtures/localchat-goland-calls.tsv)。
+
+这些目标来自 SDK 包，按各自的 `GOROOT` 解析文件。Go 1.27.4 与 Go 1.25.0 在本组标识符上的 UTF-16 范围一致。容器版本在回调用例上返回空结果，加入函数值支持后两个用例均通过。

@@ -1,0 +1,3 @@
+id	query_path	query_line	query_character	query_token	target_kind	target_path	target_line	target_character	target_end_line	target_end_character	target_token
+callback-result	internal/api/docmost_test.go	56	26	Code	file	$GOROOT/src/net/http/httptest/recorder.go	27	1	27	5	Code
+generic-package-function	internal/app/svn_feature_tag_admin.go	17	43	Contains	file	$GOROOT/src/slices/slices.go	116	5	116	13	Contains

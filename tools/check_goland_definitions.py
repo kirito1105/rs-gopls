@@ -24,6 +24,7 @@ COLUMNS = tuple(
     "target_line target_character target_end_line target_end_character target_token".split()
 )
 CACHE_PREFIX = "$GOMODCACHE/"
+SDK_PREFIX = "$GOROOT/"
 ERROR_STATUSES = {"missing", "wrong", "unexpected", "request-error"}
 
 
@@ -59,12 +60,12 @@ def utf16_offset(text, line, character):
     raise ValueError(f"invalid UTF-16 character {character} on line {line}")
 
 
-def go_mod_cache(workspace):
+def go_path(workspace, key):
     value = subprocess.check_output(
-        ["go", "env", "GOMODCACHE"], cwd=workspace, encoding="utf-8"
+        ["go", "env", key], cwd=workspace, encoding="utf-8"
     ).strip()
     if not value:
-        raise ValueError("go env GOMODCACHE returned an empty path")
+        raise ValueError(f"go env {key} returned an empty path")
     return Path(value).resolve()
 
 
@@ -102,6 +103,7 @@ def load_cases(fixture: Path, workspace: Path, gomodcache: Path | None = None) -
     workspace = workspace.resolve()
     if gomodcache is not None:
         gomodcache = gomodcache.resolve()
+    goroot = None
     cases = []
     ids = set()
     sources = {}
@@ -135,8 +137,12 @@ def load_cases(fixture: Path, workspace: Path, gomodcache: Path | None = None) -
                 if kind == "file":
                     if target_path.startswith(CACHE_PREFIX):
                         if gomodcache is None:
-                            gomodcache = go_mod_cache(workspace)
+                            gomodcache = go_path(workspace, "GOMODCACHE")
                         path = fixture_path(target_path.removeprefix(CACHE_PREFIX), gomodcache)
+                    elif target_path.startswith(SDK_PREFIX):
+                        if goroot is None:
+                            goroot = go_path(workspace, "GOROOT")
+                        path = fixture_path(target_path.removeprefix(SDK_PREFIX), goroot)
                     else:
                         path = fixture_path(target_path, workspace)
                     text = source(path)
