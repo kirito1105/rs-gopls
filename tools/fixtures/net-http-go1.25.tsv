@@ -1,0 +1,6 @@
+id	query_path	query_line	query_character	query_token	target_kind	target_path	target_line	target_character	target_end_line	target_end_character	target_token
+http-serve	net/http/server.go	3388	11	Serve	file	net/http/server.go	3432	17	3432	22	Serve
+http-serve-tls	net/http/server.go	2987	13	ServeTLS	file	net/http/server.go	3510	17	3510	25	ServeTLS
+http-static-file	net/http/fs.go	993	2	serveFile	file	net/http/fs.go	678	5	678	14	serveFile
+http-external-test	net/http/httputil/example_test.go	18	17	NewServer	file	net/http/httptest/server.go	104	5	104	14	NewServer
+http-internal-test	net/http/fs_test.go	1389	9	NewServeMux	file	net/http/server.go	2618	5	2618	16	NewServeMux

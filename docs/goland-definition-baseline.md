@@ -57,3 +57,22 @@ python -B .\tools\compare_workspace_definitions.py .\target\release\rs-gopls.exe
 ~~~
 
 `--prior` 指向保留的上一阶段发布版，可用于检查 Rust 自身是否回退。报告包含各二进制哈希、工作区修订、工具链、请求目标和少量具有代表性的文件变更路径。活动 gopls 诊断配置为 `Save`。
+
+### 容器类型阶段的实测
+
+下表候选版为 `53c2eb5`，上一阶段版为 `675640b`。两个工作区均使用 Go 1.25.0、gopls v0.24.0、Windows amd64。三套服务在 `localchat/server` 分别通过 1,205 次精确范围校验。标准库以整个 `GOROOT/src` 为工作区，五个 [net/http 源码锚点](../tools/fixtures/net-http-go1.25.tsv) 按 SDK 源码声明选取，三套服务分别通过 605 次校验。两组实验每个服务各启动 5 次，覆盖 400 次调用方范围编辑。依赖覆盖和恢复在 localchat 各 400 次，在 SDK 各 100 次。
+
+| 工作区和指标 | rs-gopls 候选版 | rs-gopls 上一阶段版 | gopls |
+| --- | ---: | ---: | ---: |
+| localchat 首次正确跳转 P50 | 556 ms | 544 ms | 1,347 ms |
+| localchat 调用方范围编辑 P95 | 0.50 ms | 0.47 ms | 20.32 ms |
+| localchat 依赖覆盖 / 恢复 P95 | 0.96 / 2.80 ms | 0.85 / 2.90 ms | 27.16 / 33.77 ms |
+| localchat 进程树采样峰值 | 50.4 MiB | 50.1 MiB | 453.1 MiB |
+| SDK 首次正确跳转 P50 | 1,532 ms | 1,515 ms | 2,343 ms |
+| SDK 调用方范围编辑 P95 | 2.56 ms | 2.51 ms | 106.90 ms |
+| SDK 依赖覆盖 / 恢复 P95 | 2.53 / 20.59 ms | 2.82 / 19.58 ms | 115.81 / 150.20 ms |
+| SDK 进程树采样峰值 | 86.4 MiB | 85.6 MiB | 565.8 MiB |
+
+调用方范围编辑和首次正确跳转达到了计划设定的回退阈值。两个工作区共有查询的编辑 P95 也达到了比 gopls 低 20% 的目标。这里统计的是定义跳转负载，gopls 使用 `Save` 诊断设置，Go 缓存在进程之间共享。构建图变化和冷 Go 缓存需要独立场景。
+
+重现 SDK 场景时，将 Go 1.25.0 的 `bin` 放在当前进程 `PATH` 首位，并设置 `GOTOOLCHAIN=local`。使用 SDK 的 `src` 作为 `--workspace`，用 `--fixture .\tools\fixtures\net-http-go1.25.tsv` 指定样本。通过五次 `--case` 指定文件里的用例 ID，另设 `--dependency-iterations 20`。
