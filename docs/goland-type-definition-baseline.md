@@ -45,3 +45,19 @@ python -B .\tools\compare_workspace_definitions.py $server --workspace $workspac
 ~~~powershell
 python -B .\tools\check_goland_definitions.py .\target\release\rs-gopls.exe --workspace .\tools\fixtures\type-navigation --fixture .\tools\fixtures\type-navigation\goland-types.tsv --method typeDefinition
 ~~~
+
+## 类型定义发布验收
+
+发布版代码为 `ceae273`。真实项目通过 34/34，其中 32 个精确文件范围与两个预期空结果。补充 GoLand 语料通过 24/24。原有 21 个 GoLand 声明位置、124 个合成声明位置、16 个项目锚点及 8 组工作区回归均通过。Zed 隔离窗口 `server — api.go` 加载了 `rs-gopls-cb673e3c5c9109bd.exe`。发布二进制的 stdio 初始化同时声明 `definitionProvider` 和 `typeDefinitionProvider`。
+
+在同一台 Windows 机器上固定 Go 1.27.4，轮换两套服务的运行次序。每套服务有 5 个独立会话、400 次范围编辑、100 次依赖覆盖和 100 次磁盘恢复，共 605 次精确结果。新进程复用 Go 和系统缓存，gopls 诊断配置为 `Save`。
+
+| 类型定义指标 | rs-gopls | gopls v0.24.0 |
+| --- | ---: | ---: |
+| 首次正确结果 P50 | 425.37 ms | 1067.46 ms |
+| 调用方编辑后 P95 | 0.53 ms | 21.08 ms |
+| 依赖覆盖后 P95 | 1.36 ms | 39.10 ms |
+| 关闭编辑器缓冲区后 P95 | 0.48 ms | 44.71 ms |
+| 采样进程树峰值工作集 | 36.8 MiB | 461.0 MiB |
+
+原声明跳转在相同 Go 1.27.4 环境下重跑。新增类型功能后的调用方编辑 P95 为 0.53 ms，同轮第二阶段发布版为 0.51 ms，仍在计划的回退上限内。
