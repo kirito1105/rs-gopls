@@ -36,7 +36,7 @@ python -B .\tools\check_definitions.py $server --stage 3
 python -B .\tools\check_workspace_updates.py $server
 ~~~
 
-Use the optional workspace argument on the first command to check the matching localchat/server source revision. See [the definition roadmap](docs/definition-plan.md) for scope and checks.
+Use the optional workspace argument on the first command to check the matching localchat/server source revision. See the [first-stage definition roadmap](docs/definition-plan.md) for existing coverage and the [next-stage plan](docs/definition-next-phase.md) for upcoming milestones.
 
 ## Test in Zed on Windows
 
