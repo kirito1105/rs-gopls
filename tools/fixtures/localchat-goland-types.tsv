@@ -1,0 +1,35 @@
+id	query_path	query_line	query_character	query_token	target_kind	target_path	target_line	target_character	target_end_line	target_end_character	target_token
+api-receiver-field	internal/api/api.go	228	26	app	file	internal/app/app.go	10	5	10	8	App
+api-receiver-use	internal/api/api.go	228	22	api	file	internal/api/api.go	20	5	20	8	API
+app-field-definition	internal/api/api.go	21	2	app	file	internal/app/app.go	10	5	10	8	App
+route-field	internal/api/api.go	74	6	Routes	file	internal/api/api.go	25	5	25	11	Routes
+route-root-field	internal/api/api.go	74	13	APIRoot	file	$GOMODCACHE/github.com/gorilla/mux@v1.8.1/mux.go	46	5	46	11	Router
+handler-pointer-param	internal/api/api.go	239	18	r	file	$GOROOT/src/net/http/request.go	113	5	113	12	Request
+handler-interface-param	internal/api/api.go	18	34	w	file	$GOROOT/src/net/http/server.go	96	5	96	19	ResponseWriter
+context-pointer-binder	internal/api/api.go	206	2	c	file	internal/api/context.go	14	5	14	12	Context
+named-function-param	internal/api/api.go	204	24	h	file	internal/api/api.go	18	5	18	16	HandlerFunc
+local-string	internal/api/api.go	223	6	token	file	$GOROOT/src/builtin/builtin.go	72	5	72	11	string
+local-cookie	internal/api/api.go	249	10	cookie	file	$GOROOT/src/net/http/cookie.go	25	5	25	11	Cookie
+inferred-session	internal/api/api.go	233	16	session	file	internal/model/session.go	10	5	10	12	Session
+inferred-error	internal/api/api.go	230	18	appErr	file	internal/model/errors.go	9	5	9	13	AppError
+session-field	internal/api/api.go	233	5	Session	file	internal/model/session.go	10	5	10	12	Session
+session-call-token	internal/api/api.go	228	30	GetSession	file	internal/app/session.go	4	39	4	40	(
+store-interface-method	internal/app/session.go	5	20	Store	file	internal/store/store.go	12	5	12	10	Store
+nested-interface-method	internal/app/session.go	5	28	Session	file	internal/store/store.go	122	5	122	17	SessionStore
+interface-result-token	internal/app/session.go	5	38	Get	file	internal/store/store.go	124	30	124	31	(
+named-result-slice	internal/app/session.go	24	9	sessions	file	internal/store/store.go	125	29	125	30	[
+bound-method-receiver	internal/app/app.go	19	59	a	file	internal/app/app.go	10	5	10	8	App
+interface-field	internal/app/app.go	19	66	Store	file	internal/store/store.go	12	5	12	10	Store
+slice-iter-value	internal/app/user.go	78	2	u	file	internal/model/user.go	18	5	18	9	User
+inferred-slice	internal/app/user.go	77	20	users	file	internal/store/store.go	37	46	37	47	[
+inferred-map	internal/app/channel.go	416	9	msgs	file	internal/store/store.go	100	37	100	40	map
+config-call	internal/api/api.go	287	29	Config	file	internal/config/config.go	9	5	9	11	Config
+third-party-ctor	internal/api/api.go	272	14	NewWebConn	file	internal/web/websocket.go	19	5	19	12	WebConn
+unnamed-map-field	internal/api/context.go	17	2	Params	file	internal/api/context.go	17	9	17	12	map
+closure-var	internal/api/docmost_test.go	56	12	call	file	internal/api/docmost_test.go	49	9	49	13	func
+generic-call	internal/app/svn_feature_tag_admin.go	70	28	Compact	file	$GOROOT/src/slices/slices.go	370	13	370	14	S
+import-qualifier	internal/api/api.go	26	19	mux	empty						-
+package-clause	internal/api/api.go	0	9	api	empty						-
+blank-identifier	internal/api/api.go	155	11	_	file	$GOROOT/src/builtin/builtin.go	316	5	316	10	error
+single-result-func	internal/api/api.go	132	6	corsMiddleware	file	$GOROOT/src/net/http/server.go	88	5	88	12	Handler
+explicit-type-name	internal/api/api.go	22	10	Routes	file	internal/api/api.go	25	5	25	11	Routes

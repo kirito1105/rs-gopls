@@ -1,4 +1,5 @@
 import com.intellij.codeInsight.navigation.impl.GtdKt
+import com.intellij.codeInsight.navigation.impl.GttdKt
 import com.intellij.codeInsight.navigation.impl.GtduKt
 import com.intellij.codeInsight.navigation.impl.GTDUActionResult
 import com.intellij.codeInsight.navigation.impl.GtdProvidersKt
@@ -51,6 +52,7 @@ def coords = { doc, int offset ->
 def build = ApplicationInfo.instance.build.asString()
 def results = [build]
 def ctrlBResults = [build]
+def typeResults = [build]
 def append = { List output, String id, List targets ->
     if (targets.isEmpty()) output << "$id\tnone"
     else targets.each { target -> output << ([id, *target].join('\t')) }
@@ -67,7 +69,7 @@ input.drop(1).each { row ->
     def editor
     try {
         edt { editor = editors.createEditor(document, project, file, true) }
-        def (targets, ctrlBTargets) = dumb.runReadActionInSmartMode({
+        def (targets, ctrlBTargets, typeTargets) = dumb.runReadActionInSmartMode({
             def source = psi.findFile(file)
             def leaf = source.findElementAt(offset)
             if (leaf?.text != token) {
@@ -139,10 +141,12 @@ input.drop(1).each { row ->
             def ctrlB = outcome instanceof GTDUActionResult.SU ?
                 [['usages', '', -1, -1, '', -1, -1]] :
                 targetsFor(outcome?.navigationActionResult)
-            [targetsFor(declaration), ctrlB]
+            def type = GttdKt.gotoTypeDeclaration(source, offset)?.result()
+            [targetsFor(declaration), ctrlB, targetsFor(type)]
         } as Computable)
         append(results, id, targets)
         append(ctrlBResults, id, ctrlBTargets)
+        append(typeResults, id, typeTargets)
     } finally {
         if (editor) edt { editors.releaseEditor(editor) }
     }
@@ -156,3 +160,4 @@ def write = { String name, List rows ->
 }
 write('destinations', results)
 write('ctrl-b', ctrlBResults)
+write('type-declarations', typeResults)
