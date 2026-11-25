@@ -4,13 +4,17 @@
 import argparse
 from contextlib import contextmanager
 import math
+import os
 from pathlib import Path
+from queue import Empty
+import shutil
 import subprocess
 import sys
 import tempfile
-from unittest.mock import patch
+import time
 
 from check_definitions import Site, check_location
+from check_goland_definitions import normalize_locations
 from compare_definitions import LspClient, executable
 
 
@@ -33,18 +37,13 @@ def site(path, anchor, text=None):
 
 
 @contextmanager
-def session(executable_path, root, timeout, **env):
-    spawn = subprocess.Popen
-
-    def spawn_with_environment(*args, **kwargs):
-        kwargs["env"] = {**kwargs["env"], "GO111MODULE": "on", **env}
-        return spawn(*args, **kwargs)
-
-    # Reuse the normal client and override only its test process environment.
-    with patch("compare_definitions.subprocess.Popen", side_effect=spawn_with_environment):
-        client = LspClient([executable_path], root, timeout)
+def session(executable_path, root, timeout, *, watch_files=False, **env):
+    environment = {**os.environ, "GO111MODULE": "on", "GOWORK": "off", "GOPROXY": "off", **env}
+    client = LspClient([executable_path], root, timeout, environment=environment)
     try:
-        client.initialize()
+        client.initialize(watch_files=watch_files)
+        if watch_files:
+            acknowledge_file_watches(client)
         yield client
         client.shutdown()
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
@@ -52,7 +51,6 @@ def session(executable_path, root, timeout, **env):
         raise RuntimeError(f"{root}: {exc}" + (f"\n{log}" if log else "")) from exc
     finally:
         client.close()
-
 
 def notify_changes(client, *events):
     client.notify(
@@ -95,7 +93,7 @@ def check_mutations(executable_path, root, timeout):
     first = site(caller, "dep.[[First]]()")
     initial = site(existing, "func [[First]]()")
     remote = site(caller, "remote.[[Remote]]()")
-    with session(executable_path, root, timeout) as client:
+    with session(executable_path, root, timeout, watch_files=True) as client:
         client.open_document(caller, first.text)
         check_location(client, first, initial)
         check_location(client, remote, site(versions[0], "func [[Remote]]()"))
@@ -152,7 +150,7 @@ def check_go_work(executable_path, root, timeout):
         libraries.append(write(root / library / "lib.go", "package lib\n\nfunc Run() {}\n"))
 
     reference = site(caller, "lib.[[Run]]()")
-    with session(executable_path, root, timeout, GOWORK="") as client:
+    with session(executable_path, root, timeout, watch_files=True, GOWORK="") as client:
         client.open_document(caller, reference.text)
         check_location(client, reference, site(libraries[0], "func [[Run]]()"))
         write(work_file, workspace_config("replacement"))
@@ -198,11 +196,317 @@ def check_gopath(executable_path, root, timeout):
         check_location(client, reference, site(declaration, "func [[Run]]()"))
 
 
+
+def next_message(client, deadline):
+    try:
+        message = client.inbox.get(timeout=max(0, deadline - time.monotonic()))
+    except Empty as exc:
+        raise RuntimeError("timed out waiting for an LSP message") from exc
+    if isinstance(message, Exception):
+        raise RuntimeError(f"LSP transport: {message}") from message
+    return message
+
+
+def acknowledge_file_watches(client):
+    deadline = time.monotonic() + client.timeout
+    while True:
+        message = next_message(client, deadline)
+        method = message.get("method")
+        if method == "client/registerCapability":
+            registrations = message["params"]["registrations"]
+            patterns = {
+                watcher["globPattern"]
+                for registration in registrations
+                if registration["method"] == "workspace/didChangeWatchedFiles"
+                for watcher in registration["registerOptions"]["watchers"]
+            }
+            required = {"**/*.go", "**/go.mod", "**/go.sum", "**/go.work", "**/go.work.sum"}
+            if not required.issubset(patterns):
+                raise RuntimeError(f"missing Go file watcher registration: {required - patterns}")
+            client.reply(message)
+            return
+        if method is not None and "id" in message:
+            client.reply(message)
+
+
+def send_definition(client, request_id, reference):
+    client.send(
+        id=request_id, method="textDocument/definition",
+        params={"textDocument": {"uri": reference.path.as_uri()}, "position": reference.cursor()},
+    )
+
+
+def wait_for_response(client, request_id, timeout=None):
+    deadline = time.monotonic() + (client.timeout if timeout is None else timeout)
+    while True:
+        try:
+            message = next_message(client, deadline)
+        except RuntimeError as exc:
+            raise RuntimeError(f"waiting for {request_id}: {exc}") from exc
+        if "method" in message:
+            if "id" in message:
+                client.reply(message)
+            continue
+        if message.get("id") != request_id:
+            raise RuntimeError(f"expected response {request_id} first, received {message!r}")
+        return message
+
+
+def expect_target(response, target):
+    if "error" in response:
+        raise RuntimeError(f"expected definition in {target.path}, received {response['error']}")
+    locations = normalize_locations(response["result"])
+    if (
+        len(locations) != 1
+        or Path(locations[0]["path"]) != target.path
+        or locations[0]["range"] != target.selection()
+    ):
+        raise RuntimeError(f"expected {target.path} {target.selection()}, received {locations!r}")
+
+
+def expect_error(response, code):
+    if response.get("error", {}).get("code") != code:
+        raise RuntimeError(f"expected LSP error {code}, received {response!r}")
+
+
+GO_LIST_RELAY = r"""package main
+
+import (
+    "bytes"
+    "fmt"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "time"
+)
+
+func main() {
+    cmd := exec.Command(os.Getenv("RS_GOPLS_TEST_REAL_GO"), os.Args[1:]...)
+    cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+    if len(os.Args) < 2 || os.Args[1] != "list" {
+        os.Exit(run(cmd))
+    }
+
+    control := os.Getenv("RS_GOPLS_TEST_GO_GATE")
+    log, err := os.OpenFile(filepath.Join(control, "calls"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+    if err != nil {
+        fail(err)
+    }
+    if _, err := fmt.Fprintln(log, "list"); err != nil {
+        fail(err)
+    }
+    log.Close()
+    if os.Remove(filepath.Join(control, "fail")) == nil {
+        fail(fmt.Errorf("injected go list failure"))
+    }
+    if os.Remove(filepath.Join(control, "arm")) != nil {
+        os.Exit(run(cmd))
+    }
+
+    // Capture metadata before signaling that caller and build config may change.
+    var stdout, stderr bytes.Buffer
+    cmd.Stdout, cmd.Stderr = &stdout, &stderr
+    code := run(cmd)
+    if err := os.WriteFile(filepath.Join(control, "ready"), nil, 0600); err != nil {
+        fail(err)
+    }
+
+    deadline := time.Now().Add(30 * time.Second)
+    for {
+        if _, err := os.Stat(filepath.Join(control, "release")); err == nil {
+            break
+        }
+        if time.Now().After(deadline) {
+            fail(fmt.Errorf("timed out waiting for the Go list test gate"))
+        }
+        time.Sleep(10 * time.Millisecond)
+    }
+    os.Stdout.Write(stdout.Bytes())
+    os.Stderr.Write(stderr.Bytes())
+    os.Exit(code)
+}
+
+func run(cmd *exec.Cmd) int {
+    if err := cmd.Run(); err != nil {
+        if exit, ok := err.(*exec.ExitError); ok {
+            return exit.ExitCode()
+        }
+        fail(err)
+    }
+    return 0
+}
+
+func fail(err error) {
+    fmt.Fprintln(os.Stderr, err)
+    os.Exit(1)
+}
+"""
+
+
+def go_list_relay(root, timeout):
+    real_go = shutil.which("go")
+    if not real_go:
+        raise RuntimeError("Go executable not found for the workspace loader relay")
+    relay_file = write(root / "relay.go", GO_LIST_RELAY)
+    relay_path = root / ("go.exe" if os.name == "nt" else "go")
+    subprocess.run(
+        [real_go, "build", "-o", str(relay_path), str(relay_file)],
+        cwd=root, env={**os.environ, "GO111MODULE": "off", "GOWORK": "off", "GOPROXY": "off"},
+        check=True, timeout=timeout,
+    )
+    return {
+        "PATH": str(root) + os.pathsep + os.environ["PATH"],
+        "RS_GOPLS_TEST_REAL_GO": str(Path(real_go).resolve()),
+        "RS_GOPLS_TEST_GO_GATE": str(root),
+    }
+
+
+def wait_for_snapshot(control, timeout):
+    deadline = time.monotonic() + timeout
+    while not (control / "ready").is_file():
+        if time.monotonic() >= deadline:
+            raise RuntimeError("go list relay did not capture a pending snapshot")
+        time.sleep(0.01)
+
+
+def check_async_refresh(executable_path, root, timeout):
+    control = root / "control"
+    environment = go_list_relay(control, timeout)
+    project = root / "project"
+
+    def module_config(replacement):
+        return (
+            "module example.test/refresh\n\ngo 1.22\n"
+            "require example.test/remote v0.0.0\n"
+            f"replace example.test/remote => ./versions/{replacement}\n"
+        )
+
+    go_mod = write(project / "go.mod", module_config("initial"))
+    primary = write(
+        project / "primary.go",
+        'package refresh\nimport "example.test/remote"\n'
+        "func Primary() { local := 1; _ = local; remote.Run() }\n",
+    )
+    editable = write(
+        project / "editable.go",
+        'package refresh\nimport "example.test/remote"\nfunc Editable() { remote.Run() }\n',
+    )
+    targets = {}
+    for name in ("initial", "obsolete", "latest"):
+        dependency = project / "versions" / name
+        write(dependency / "go.mod", "module example.test/remote\n\ngo 1.22\n")
+        target = write(dependency / "remote.go", "package remote\n\nfunc Run() {}\n")
+        targets[name] = site(target, "func [[Run]]()")
+
+    write(project / "changing" / "original.go", "package changing\n")
+    unrelated = write(project / "unrelated" / "caller.go", "package unrelated\nfunc Call() { Keep() }\n")
+    unrelated_target = write(project / "unrelated" / "keep.go", "package unrelated\nfunc Keep() {}\n")
+    dependent = write(
+        project / "dependent" / "caller.go",
+        'package dependent\nimport "example.test/refresh/changing"\nfunc Call() { changing.Added() }\n',
+    )
+
+    graph_query = site(primary, "remote.[[Run]]()")
+    lexical_query = site(primary, "_ = [[local]];")
+    lexical_target = site(primary, "{ [[local]] :=")
+    editable_query = site(editable, "remote.[[Run]]()")
+    with session(executable_path, project, timeout, watch_files=True, **environment) as client:
+        client.open_document(primary, graph_query.text)
+        client.open_document(editable, editable_query.text)
+        check_location(client, graph_query, targets["initial"])
+        initial_calls = (control / "calls").read_text(encoding="utf-8").splitlines()
+
+        write(control / "arm", "")
+        write(go_mod, module_config("obsolete"))
+        notify_changes(client, (go_mod, 2))
+        send_definition(client, "load-obsolete-graph", graph_query)
+
+        try:
+            wait_for_snapshot(control, timeout)
+            send_definition(client, "lexical-while-loading", lexical_query)
+            expect_target(
+                wait_for_response(client, "lexical-while-loading", min(timeout, 5)),
+                lexical_target,
+            )
+
+            send_definition(client, "client-cancel", graph_query)
+            client.notify("$/cancelRequest", id="client-cancel")
+            expect_error(wait_for_response(client, "client-cancel", min(timeout, 5)), -32800)
+
+            send_definition(client, "source-changed", editable_query)
+            client.change_document(editable, 2, "// shifted cursor\n" + editable_query.text)
+            expect_error(wait_for_response(client, "source-changed", min(timeout, 5)), -32801)
+
+            write(go_mod, module_config("latest"))
+            for _ in range(3):
+                notify_changes(client, (go_mod, 2))
+            # This response orders the server's processing before the relay is released.
+            send_definition(client, "events-applied", lexical_query)
+            expect_target(wait_for_response(client, "events-applied", min(timeout, 5)), lexical_target)
+        finally:
+            write(control / "release", "")
+
+        expect_target(wait_for_response(client, "load-obsolete-graph"), targets["latest"])
+        calls = (control / "calls").read_text(encoding="utf-8").splitlines()
+        if len(calls) - len(initial_calls) != 2:
+            raise RuntimeError(f"expected an obsolete load and one coalesced replacement; got {calls!r}")
+
+        (control / "ready").unlink()
+        (control / "release").unlink()
+        write(control / "arm", "")
+        added = write(project / "changing" / "added.go", "package changing\nfunc Added() {}\n")
+        notify_changes(client, (added, 1))
+        try:
+            wait_for_snapshot(control, timeout)
+            send_definition(client, "unaffected-package", site(unrelated, "{ [[Keep]]()"))
+            expect_target(
+                wait_for_response(client, "unaffected-package", min(timeout, 5)),
+                site(unrelated_target, "func [[Keep]]()"),
+            )
+            send_definition(client, "changed-dependency", site(dependent, "changing.[[Added]]()"))
+        finally:
+            write(control / "release", "")
+        expect_target(wait_for_response(client, "changed-dependency"), site(added, "func [[Added]]()"))
+
+        write(control / "fail", "")
+        notify_changes(client, (go_mod, 2))
+        send_definition(client, "failed-load", graph_query)
+        expect_error(wait_for_response(client, "failed-load"), -32803)
+        check_location(client, graph_query, targets["latest"])
+
+
+def check_overlay_new_file(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/overlay\n\ngo 1.22\n")
+    caller = write(
+        root / "caller.go",
+        "package overlay\n\nfunc Existing() {}\nfunc Caller() { Existing(); Added() }\n",
+    )
+    virtual = root / "helper_extra.go"
+    virtual_text = "package overlay\n\nfunc Added() { Existing() }\n"
+    existing = site(caller, "func [[Existing]]()")
+    existing_call = site(caller, "{ [[Existing]]();")
+    added_call = site(caller, "; [[Added]]()")
+    added = site(virtual, "func [[Added]]()", virtual_text)
+    virtual_existing_call = site(virtual, "{ [[Existing]]()", virtual_text)
+    with session(executable_path, root, timeout) as client:
+        client.open_document(caller, existing.text)
+        check_location(client, existing_call, existing)
+        no_definition(client, added_call)
+        client.open_document(virtual, virtual_text)
+        check_location(client, added_call, added)
+        check_location(client, virtual_existing_call, existing)
+        client.close_document(virtual)
+        no_definition(client, added_call)
+    if virtual.exists():
+        raise RuntimeError(f"test overlay unexpectedly wrote {virtual}")
+
 CASES = {
     "mutations": check_mutations,
     "go-work": check_go_work,
     "test-packages": check_test_packages,
     "gopath": check_gopath,
+    "async-refresh": check_async_refresh,
+    "overlay-new-file": check_overlay_new_file,
 }
 
 

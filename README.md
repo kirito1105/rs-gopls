@@ -25,7 +25,7 @@ Launch the resulting executable as a stdio language server with a Go module, a g
 
 Definition lookup covers imports, lexical and package names, and common field and method selections. The resolver follows named and anonymous types, explicit arguments on generic types, aliases, promoted members, container elements, and callable results. It covers range and select bindings, local callbacks, method values and expressions, and package variables initialized by calls. It uses the Go toolchain for active source files and package identities.
 
-The server supports Go Modules, go.work, GOPATH, and test package variants. On clients that support dynamic file-watch registration, it refreshes indexes after changes to Go files and module/workspace files. Open editor buffers take precedence over disk content. Go package metadata follows the on-disk workspace.
+The server supports Go Modules, go.work, GOPATH, and test package variants. On clients that support dynamic file-watch registration, it refreshes indexes after changes to Go files and module/workspace files. Open editor buffers take precedence over disk content, including build-neutral new files in an already loaded package. The server refreshes Go toolchain metadata in the background and keeps local bindings and unaffected packages available while the graph loads.
 
 Generic function calls cover common explicit, partial and inferred arguments, result substitution, constraint methods, and slice and map shape constraints. See the GoLand baseline for the validated editor behavior and workspace revisions.
 

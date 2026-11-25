@@ -1,5 +1,6 @@
+use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -14,7 +15,7 @@ use crate::symbols::{
     self, Container, FileSymbols, FunctionSignature, GenericParameter, InlineType, Symbol,
     SymbolKind, TypeDetails, TypeRef, TypeRefKind,
 };
-use crate::workspace::{Package, Workspace, path_key};
+use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 
 struct FileIndex {
     symbols: FileSymbols,
@@ -35,11 +36,46 @@ enum ReferenceQuery<'tree> {
     },
 }
 
+pub enum DefinitionProgress {
+    Ready(Option<(PathBuf, Range)>),
+    Pending(WorkspaceLoad),
+}
+
+#[derive(Default)]
+enum GraphChanges {
+    #[default]
+    Clean,
+    Packages(HashSet<String>),
+    Global,
+}
+
+impl GraphChanges {
+    fn affects(&self, package: &Package) -> bool {
+        match self {
+            Self::Clean => false,
+            Self::Packages(packages) => packages.contains(&package.id),
+            Self::Global => true,
+        }
+    }
+
+    fn include(&mut self, affected: Option<HashSet<String>>) {
+        match (&mut *self, affected) {
+            (changes, None) => *changes = Self::Global,
+            (Self::Global, _) => {}
+            (Self::Packages(packages), Some(affected)) => packages.extend(affected),
+            (changes, Some(affected)) => *changes = Self::Packages(affected),
+        }
+    }
+}
+
 pub struct Engine {
     root: PathBuf,
     workspace: Option<Workspace>,
+    graph_changes: GraphChanges,
+    generation: u64,
     parser: Parser,
     documents: HashMap<PathBuf, Source>,
+    new_documents: HashSet<PathBuf>,
     disk_index: HashMap<PathBuf, FileIndex>,
     include_tests: bool,
 }
@@ -53,8 +89,11 @@ impl Engine {
         Self {
             root,
             workspace: None,
+            graph_changes: GraphChanges::default(),
+            generation: 0,
             parser,
             documents: HashMap::new(),
+            new_documents: HashSet::new(),
             disk_index: HashMap::new(),
             include_tests: false,
         }
@@ -63,7 +102,13 @@ impl Engine {
     pub fn open(&mut self, path: PathBuf, text: String) -> Result<()> {
         if path.extension().is_some_and(|extension| extension == "go") {
             let key = path_key(&path);
+            let new_file = !path.is_file();
             let source = Source::parse(&mut self.parser, path, text, None)?;
+            if new_file {
+                self.new_documents.insert(key.clone());
+            } else {
+                self.new_documents.remove(&key);
+            }
             self.disk_index.remove(&key);
             self.documents.insert(key, source);
         }
@@ -82,7 +127,37 @@ impl Engine {
     pub fn close(&mut self, path: &Path) {
         let key = path_key(path);
         self.documents.remove(&key);
+        self.new_documents.remove(&key);
         self.disk_index.remove(&key);
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn is_open(&self, path: &Path) -> bool {
+        self.documents.contains_key(&path_key(path))
+    }
+
+    pub fn workspace_load(&self) -> WorkspaceLoad {
+        WorkspaceLoad {
+            generation: self.generation,
+            include_tests: self.include_tests,
+        }
+    }
+
+    pub fn install_workspace(&mut self, load: WorkspaceLoad, workspace: Workspace) -> bool {
+        if load.generation != self.generation {
+            return false;
+        }
+        self.workspace = Some(workspace);
+        self.graph_changes = GraphChanges::Clean;
+        true
+    }
+
+    fn invalidate(&mut self, affected: Option<HashSet<String>>) {
+        self.generation += 1;
+        self.graph_changes.include(affected);
     }
 
     pub fn file_changed(&mut self, path: &Path, change: FileChangeType) {
@@ -91,7 +166,7 @@ impl Engine {
             .and_then(|name| name.to_str())
             .is_some_and(|name| matches!(name, "go.mod" | "go.sum" | "go.work" | "go.work.sum"))
         {
-            self.workspace = None;
+            self.invalidate(None);
             return;
         }
         if path.extension().is_none_or(|extension| extension != "go") {
@@ -99,6 +174,9 @@ impl Engine {
         }
 
         let key = path_key(path);
+        if change == FileChangeType::CREATED && path.is_file() {
+            self.new_documents.remove(&key);
+        }
         let previous = self.disk_index.remove(&key);
         if change == FileChangeType::CHANGED
             && let Some(previous) = previous
@@ -112,14 +190,14 @@ impl Engine {
         }
         // A new, removed, or structurally changed source can change the set
         // of Go files selected by the current build or add an import.
-        self.workspace = None;
+        let affected = self
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.affected_packages(path));
+        self.invalidate(affected);
     }
 
-    pub fn definition(
-        &mut self,
-        path: &Path,
-        position: Position,
-    ) -> Result<Option<(PathBuf, Range)>> {
+    pub fn definition(&mut self, path: &Path, position: Position) -> Result<DefinitionProgress> {
         let disk_source;
         let source = if let Some(source) = self.documents.get(&path_key(path)) {
             source
@@ -127,11 +205,11 @@ impl Engine {
             disk_source = read_source(&mut self.parser, path)?;
             &disk_source
         } else {
-            return Ok(None);
+            return Ok(DefinitionProgress::Ready(None));
         };
 
         let Some(reference) = source.reference_at(position) else {
-            return Ok(None);
+            return Ok(DefinitionProgress::Ready(None));
         };
         if let ReferenceQuery::Name(name) = reference {
             let declaration = if is_declaration_name(name) {
@@ -141,31 +219,68 @@ impl Engine {
                     .map(|binding| binding.name)
             };
             if let Some(declaration) = declaration {
-                return Ok(Some((path.to_owned(), source.range(declaration))));
+                return Ok(DefinitionProgress::Ready(Some((
+                    path.to_owned(),
+                    source.range(declaration),
+                ))));
             }
         }
-        self.include_tests |= path
+        let test_source = path
             .file_name()
             .and_then(|filename| filename.to_str())
             .is_some_and(|filename| filename.ends_with("_test.go"));
-        if self
-            .workspace
-            .as_ref()
-            .is_none_or(|workspace| self.include_tests && !workspace.includes_tests())
-        {
-            self.workspace = Some(Workspace::load(&self.root, self.include_tests)?);
-        }
-        let workspace = self.workspace.as_ref().expect("workspace is loaded");
-        let Some(from) = workspace.package_of_file(path) else {
-            return Ok(None);
+        self.include_tests |= test_source;
+        let load = self.workspace_load();
+        let Some(workspace) = &self.workspace else {
+            return Ok(DefinitionProgress::Pending(load));
         };
+        if test_source && !workspace.includes_tests() {
+            return Ok(DefinitionProgress::Pending(load));
+        }
+        let from = workspace.package_of_file(path).or_else(|| {
+            self.new_documents
+                .contains(&path_key(path))
+                .then(|| draft_package(workspace, source))
+                .flatten()
+        });
+        if !matches!(self.graph_changes, GraphChanges::Clean)
+            && from.is_none_or(|package| {
+                self.graph_changes.affects(package)
+                    || source.imports.iter().any(|import| {
+                        workspace
+                            .resolve_import(package, &import.path)
+                            .is_none_or(|dependency| self.graph_changes.affects(dependency))
+                    })
+            })
+        {
+            return Ok(DefinitionProgress::Pending(load));
+        }
+        let Some(from) = from else {
+            return Ok(DefinitionProgress::Ready(None));
+        };
+        let mut drafts = HashMap::<_, Vec<_>>::new();
+        for path in &self.new_documents {
+            if let Some(document) = self.documents.get(path)
+                && workspace.package_of_file(&document.path).is_none()
+                && let Some(package) = draft_package(workspace, document)
+            {
+                drafts
+                    .entry(package.id.as_str())
+                    .or_default()
+                    .push(&document.path);
+            }
+        }
+        for files in drafts.values_mut() {
+            files.sort_unstable();
+        }
         let indexes = IndexReader {
             parser: &mut self.parser,
             documents: &self.documents,
             disk_index: &mut self.disk_index,
+            drafts,
         };
 
-        match reference {
+        let location = match reference {
             ReferenceQuery::Name(name) => {
                 let mut resolver = Resolver { workspace, indexes };
                 resolver.name_location(from, source, name, &self.root)
@@ -179,27 +294,113 @@ impl Engine {
             ReferenceQuery::LiteralKey { value, name } => {
                 let mut resolver = Resolver { workspace, indexes };
                 let Some(ty) = resolver.literal_type(from, source, value, 0)? else {
-                    return Ok(None);
+                    return Ok(DefinitionProgress::Ready(None));
                 };
                 if resolver.container(ty.clone())?.is_some() {
-                    return resolver.name_location(from, source, name, &self.root);
+                    return resolver
+                        .name_location(from, source, name, &self.root)
+                        .map(DefinitionProgress::Ready);
                 }
                 let member = resolver.member(from, &ty, node_text(name, &source.text), false)?;
                 let member =
                     member.filter(|found| matches!(found.symbol.kind, SymbolKind::Value(_)));
                 Ok(member.map(ResolvedSymbol::location))
             }
+        }?;
+        Ok(DefinitionProgress::Ready(location))
+    }
+}
+
+fn draft_package<'w>(workspace: &'w Workspace, source: &Source) -> Option<&'w Package> {
+    let name = source.path.file_stem()?.to_str()?;
+    let parts = name.split_once('_').map(|(_, suffixes)| suffixes);
+    if name.starts_with(['_', '.'])
+        || name.ends_with("_test")
+        || parts.is_some_and(|suffixes| {
+            suffixes.rsplit('_').next().is_some_and(|part| {
+                matches!(
+                    part,
+                    "aix"
+                        | "android"
+                        | "darwin"
+                        | "dragonfly"
+                        | "freebsd"
+                        | "hurd"
+                        | "illumos"
+                        | "ios"
+                        | "js"
+                        | "linux"
+                        | "netbsd"
+                        | "openbsd"
+                        | "plan9"
+                        | "solaris"
+                        | "wasip1"
+                        | "windows"
+                        | "zos"
+                        | "386"
+                        | "amd64"
+                        | "amd64p32"
+                        | "arm"
+                        | "arm64"
+                        | "loong64"
+                        | "mips"
+                        | "mipsle"
+                        | "mips64"
+                        | "mips64le"
+                        | "ppc64"
+                        | "ppc64le"
+                        | "riscv64"
+                        | "s390x"
+                        | "sparc64"
+                        | "wasm"
+                )
+            })
+        })
+        || source.imports.iter().any(|import| import.path == "C")
+    {
+        return None;
+    }
+    let mut cursor = source.tree.root_node().walk();
+    for node in source.tree.root_node().named_children(&mut cursor) {
+        if node.kind() == "package_clause" {
+            let name = node.named_child(0)?;
+            return workspace.package_of_draft(&source.path, node_text(name, &source.text));
+        }
+        if node.kind() == "comment"
+            && node_text(node, &source.text)
+                .strip_prefix("//")
+                .is_some_and(|text| {
+                    matches!(text.split_whitespace().next(), Some("go:build" | "+build"))
+                })
+        {
+            return None;
         }
     }
+    None
 }
 
 struct IndexReader<'a> {
     parser: &'a mut Parser,
     documents: &'a HashMap<PathBuf, Source>,
     disk_index: &'a mut HashMap<PathBuf, FileIndex>,
+    drafts: HashMap<&'a str, Vec<&'a PathBuf>>,
 }
 
 impl IndexReader<'_> {
+    fn files<'p>(&self, package: &'p Package) -> Cow<'p, [PathBuf]> {
+        match self.drafts.get(package.id.as_str()) {
+            None => Cow::Borrowed(&package.files),
+            Some(files) => Cow::Owned(
+                package
+                    .files
+                    .iter()
+                    .chain(files.iter().copied())
+                    .cloned()
+                    .collect(),
+            ),
+        }
+    }
+
     fn file_index(&mut self, file: &Path) -> Result<&FileIndex> {
         let key = path_key(file);
         if let Some(source) = self.documents.get(&key) {
@@ -219,7 +420,7 @@ impl IndexReader<'_> {
         package: &Package,
         lookup: impl Fn(&FileIndex) -> Option<Range>,
     ) -> Result<Option<(PathBuf, Range)>> {
-        for file in &package.files {
+        for file in self.files(package).iter() {
             if let Some(range) = lookup(self.file_index(file)?) {
                 return Ok(Some((file.clone(), range)));
             }
@@ -631,7 +832,7 @@ impl<'w> Resolver<'w, '_> {
         package: &Package,
         name: &str,
     ) -> Result<Option<(PathBuf, TypeDetails)>> {
-        for file in &package.files {
+        for file in self.indexes.files(package).iter() {
             let index = &self.indexes.file_index(file)?.symbols;
             if let Some(details) = index.type_details(name) {
                 return Ok(Some((file.clone(), details.clone())));
@@ -691,7 +892,7 @@ impl<'w> Resolver<'w, '_> {
         name: &str,
         receiver: Option<&str>,
     ) -> Result<Option<ResolvedSymbol<'w>>> {
-        for file in &package.files {
+        for file in self.indexes.files(package).iter() {
             let index = &self.indexes.file_index(file)?.symbols;
             let symbol = match receiver {
                 Some(ty) => index.member(ty, name),

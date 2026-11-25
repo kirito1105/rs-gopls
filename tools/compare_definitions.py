@@ -127,7 +127,10 @@ class LspClient:
                     raise RuntimeError(f"{method} failed: {message['error']}")
                 return message["result"]
 
-    def initialize(self):
+    def initialize(self, *, watch_files=False):
+        workspace = {"workspaceFolders": True}
+        if watch_files:
+            workspace["didChangeWatchedFiles"] = {"dynamicRegistration": True}
         init = self.request(
             "initialize",
             processId=os.getpid(),
@@ -136,7 +139,7 @@ class LspClient:
             initializationOptions={"diagnosticsTrigger": "Save"},
             capabilities={
                 "general": {"positionEncodings": ["utf-16"]},
-                "workspace": {"workspaceFolders": True},
+                "workspace": workspace,
             },
         )
         capabilities = init["capabilities"]

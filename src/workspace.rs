@@ -1,5 +1,5 @@
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -10,9 +10,17 @@ use serde::Deserialize;
 
 use crate::workspace_roots::list_roots;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WorkspaceLoad {
+    pub generation: u64,
+    pub include_tests: bool,
+}
+
 pub struct Package {
+    pub id: String,
     pub name: String,
     pub files: Vec<PathBuf>,
+    directory: PathBuf,
     import_map: HashMap<String, String>,
     test_variant: bool,
 }
@@ -20,6 +28,7 @@ pub struct Package {
 pub struct Workspace {
     packages: BTreeMap<String, Package>,
     file_packages: HashMap<PathBuf, String>,
+    importers: HashMap<String, Vec<String>>,
     includes_tests: bool,
     builtin_source: OnceCell<Result<PathBuf, String>>,
 }
@@ -43,7 +52,7 @@ impl Workspace {
             .args([
                 "list",
                 "-e",
-                "-json=Dir,ImportPath,Name,GoFiles,CgoFiles,ImportMap,Error,ForTest",
+                "-json=Dir,ImportPath,Name,GoFiles,CgoFiles,Imports,ImportMap,Error,ForTest",
                 "-deps",
             ])
             .args(include_tests.then_some("-test"))
@@ -76,8 +85,11 @@ impl Workspace {
                 stderr.trim()
             );
         }
-        let (packages, package_error) =
-            packages.with_context(|| format!("reading Go packages in {}", root.display()))?;
+        let PackageListing {
+            packages,
+            importers,
+            package_error,
+        } = packages.with_context(|| format!("reading Go packages in {}", root.display()))?;
         if packages.is_empty() {
             let detail = package_error.as_deref().unwrap_or_else(|| stderr.trim());
             if detail.is_empty() {
@@ -101,6 +113,7 @@ impl Workspace {
         Ok(Self {
             packages,
             file_packages,
+            importers,
             includes_tests: include_tests,
             builtin_source: OnceCell::new(),
         })
@@ -127,12 +140,48 @@ impl Workspace {
     }
 
     pub fn resolve_import(&self, from: &Package, import_path: &str) -> Option<&Package> {
-        self.package(
-            from.import_map
-                .get(import_path)
-                .map(String::as_str)
-                .unwrap_or(import_path),
-        )
+        self.package(from.import_id(import_path))
+    }
+
+    pub(crate) fn package_of_draft(&self, path: &Path, name: &str) -> Option<&Package> {
+        let directory = path_key(path.parent()?);
+        let mut packages = self.packages.values().filter(|package| {
+            !package.test_variant && package.directory == directory && package.name == name
+        });
+        let package = packages.next()?;
+        packages.next().is_none().then_some(package)
+    }
+
+    pub(crate) fn affected_packages(&self, path: &Path) -> Option<HashSet<String>> {
+        let directory = path_key(path.parent()?);
+        let mut queue: Vec<_> = self
+            .packages
+            .values()
+            .filter(|package| package.directory == directory)
+            .map(|package| package.id.as_str())
+            .collect();
+        if queue.is_empty() {
+            return None;
+        }
+
+        let mut dirty = HashSet::new();
+        while let Some(id) = queue.pop() {
+            if dirty.insert(id.to_owned())
+                && let Some(importers) = self.importers.get(id)
+            {
+                queue.extend(importers.iter().map(String::as_str));
+            }
+        }
+        Some(dirty)
+    }
+}
+
+impl Package {
+    fn import_id<'a>(&'a self, path: &'a str) -> &'a str {
+        self.import_map
+            .get(path)
+            .map(String::as_str)
+            .unwrap_or(path)
     }
 }
 
@@ -168,6 +217,7 @@ struct ListedPackage {
     name: String,
     go_files: Vec<PathBuf>,
     cgo_files: Vec<PathBuf>,
+    imports: Vec<String>,
     import_map: HashMap<String, String>,
     error: Option<PackageError>,
 }
@@ -178,14 +228,20 @@ struct PackageError {
     err: String,
 }
 
-fn read_packages(reader: impl Read) -> Result<(BTreeMap<String, Package>, Option<String>)> {
-    let mut packages = BTreeMap::new();
-    let mut first_error = None;
+#[derive(Default)]
+struct PackageListing {
+    packages: BTreeMap<String, Package>,
+    importers: HashMap<String, Vec<String>>,
+    package_error: Option<String>,
+}
+
+fn read_packages(reader: impl Read) -> Result<PackageListing> {
+    let mut listing = PackageListing::default();
     let stream = serde_json::Deserializer::from_reader(reader).into_iter::<ListedPackage>();
     for package in stream {
         let package = package.context("decoding go list package metadata")?;
-        if first_error.is_none() {
-            first_error = package.error.map(|error| error.err);
+        if listing.package_error.is_none() {
+            listing.package_error = package.error.map(|error| error.err);
         }
         if package.dir.as_os_str().is_empty()
             || package.import_path.is_empty()
@@ -206,16 +262,33 @@ fn read_packages(reader: impl Read) -> Result<(BTreeMap<String, Package>, Option
         files.sort_unstable();
         files.dedup();
         let import_path = package.import_path;
-        packages
-            .entry(import_path.clone())
-            .or_insert_with(|| Package {
-                name: package.name,
-                files,
-                import_map: package.import_map,
-                test_variant: !package.for_test.is_empty(),
-            });
+        let std::collections::btree_map::Entry::Vacant(slot) =
+            listing.packages.entry(import_path.clone())
+        else {
+            continue;
+        };
+        let owner = slot.insert(Package {
+            id: import_path,
+            name: package.name,
+            files,
+            directory: path_key(&package.dir),
+            import_map: package.import_map,
+            test_variant: !package.for_test.is_empty(),
+        });
+        for import in package.imports {
+            let id = owner.import_id(&import);
+            for dependency in
+                std::iter::once(id).chain((id != import.as_str()).then_some(import.as_str()))
+            {
+                listing
+                    .importers
+                    .entry(dependency.to_owned())
+                    .or_default()
+                    .push(owner.id.clone());
+            }
+        }
     }
-    Ok((packages, first_error))
+    Ok(listing)
 }
 
 pub(crate) fn path_key(path: &Path) -> PathBuf {
