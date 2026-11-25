@@ -7,13 +7,23 @@ use method_sets::{InterfaceMethods, MethodKey};
 type Location = (PathBuf, Range);
 
 pub struct ImplementationSearch {
-    required: InterfaceMethods,
-    anchor: String,
+    direction: Direction,
     selected: Option<MethodKey>,
     declaration: Location,
     packages: VecDeque<String>,
     current: Option<PackageSearch>,
     matches: Vec<Location>,
+}
+
+enum Direction {
+    Implementations {
+        required: InterfaceMethods,
+        anchor: String,
+    },
+    Interfaces {
+        package_id: String,
+        name: String,
+    },
 }
 
 struct PackageSearch {
@@ -27,6 +37,7 @@ struct Candidate {
     name: String,
     location: Location,
     inherits: bool,
+    may_be_interface: bool,
 }
 
 impl ImplementationSearch {
@@ -80,22 +91,31 @@ impl Engine {
         else {
             return Ok(QueryProgress::Ready(Vec::new()));
         };
-        let Some(required) = resolver.interface_methods(&subject.owner)? else {
-            return Ok(QueryProgress::Ready(Vec::new()));
-        };
-
         let mut matches = Vec::new();
-        let same_file = path_key(path) == path_key(&subject.declaration.0);
-        let range = subject.declaration.1;
-        if !same_file || position < range.start || position >= range.end {
-            matches.push(subject.declaration.clone());
-        }
-        let Some(anchor) = required.method_names().min().map(str::to_owned) else {
+        let direction = if let Some(required) = resolver.interface_methods(&subject.owner)? {
+            let same_file = path_key(path) == path_key(&subject.declaration.0);
+            let range = subject.declaration.1;
+            if !same_file || position < range.start || position >= range.end {
+                matches.push(subject.declaration.clone());
+            }
+            let Some(anchor) = required.method_names().min().map(str::to_owned) else {
+                return Ok(QueryProgress::Ready(matches));
+            };
+            Direction::Implementations { required, anchor }
+        } else if let TypeKind::Named { name, .. } = &subject.owner.kind {
+            Direction::Interfaces {
+                package_id: subject.owner.package.id.clone(),
+                name: name.clone(),
+            }
+        } else {
             return Ok(QueryProgress::Ready(matches));
         };
 
         let package = subject.owner.package;
-        let package_only = required.method_names().any(|name| !is_exported(name));
+        let package_only = subject
+            .method
+            .as_ref()
+            .is_some_and(|method| !method.is_exported());
         let packages = workspace
             .navigation_packages()
             .filter(|candidate| {
@@ -105,8 +125,7 @@ impl Engine {
             .collect();
         Ok(QueryProgress::Searching(Search::Implementations(
             ImplementationSearch {
-                required,
-                anchor,
+                direction,
                 selected: subject.method,
                 declaration: subject.declaration,
                 packages,
@@ -153,9 +172,15 @@ impl Engine {
             }
             let current = search.current.as_mut().expect("initialized package search");
             if let Some(file) = current.files.pop() {
-                resolver.collect_implementation_candidates(current, &file, &search.anchor)?;
+                resolver.collect_implementation_candidates(current, &file, &search.direction)?;
             } else if let Some(candidate) = current.candidates.pop() {
-                if (candidate.inherits || current.direct_owners.contains(&candidate.name))
+                let eligible = match search.direction {
+                    Direction::Implementations { .. } => {
+                        candidate.inherits || current.direct_owners.contains(&candidate.name)
+                    }
+                    Direction::Interfaces { .. } => candidate.may_be_interface,
+                };
+                if eligible
                     && let Some(package) = workspace.package(&current.id)
                     && let Some(target) =
                         resolver.match_implementation(package, search, candidate)?
@@ -264,7 +289,7 @@ impl<'w> Resolver<'w, '_> {
         &mut self,
         package: &mut PackageSearch,
         file: &Path,
-        anchor: &str,
+        direction: &Direction,
     ) -> Result<()> {
         let index = match self.indexes.file_index(file) {
             Ok(index) => index,
@@ -277,20 +302,22 @@ impl<'w> Resolver<'w, '_> {
             }
             Err(error) => return Err(error),
         };
-        package
-            .direct_owners
-            .extend(index.symbols.member_owners(anchor).map(str::to_owned));
+        if let Direction::Implementations { anchor, .. } = direction {
+            package
+                .direct_owners
+                .extend(index.symbols.member_owners(anchor).map(str::to_owned));
+        }
         for (name, details) in index.symbols.type_declarations() {
             if let Some(symbol) = index.symbols.declaration(name) {
                 let named = |reference: &TypeRef| matches!(reference.kind, TypeRefKind::Named(_));
-                let inherits = details.alias.as_ref().is_some_and(|alias| {
+                let alias_or_base = details.alias.as_ref().is_some_and(|alias| {
                     named(alias) || matches!(alias.kind, TypeRefKind::Inline(_))
-                }) || details.underlying.as_ref().is_some_and(named)
-                    || !details.embedded.is_empty();
+                }) || details.underlying.as_ref().is_some_and(named);
                 package.candidates.push(Candidate {
                     name: name.to_owned(),
                     location: (file.to_owned(), symbol.range),
-                    inherits,
+                    inherits: alias_or_base || !details.embedded.is_empty(),
+                    may_be_interface: details.interface || alias_or_base,
                 });
             }
         }
@@ -307,15 +334,42 @@ impl<'w> Resolver<'w, '_> {
             return Ok(None);
         }
         let ty = TypeIdentity::named(package, &candidate.name);
-        let Some(matched) =
-            self.satisfies_interface(&search.required, &ty, search.selected.as_ref(), true)?
-        else {
-            return Ok(None);
-        };
-        let target = if search.selected.is_some() {
-            matched.location
-        } else {
-            Some(candidate.location)
+        let selected = search.selected.as_ref();
+        let target = match &search.direction {
+            Direction::Implementations { required, .. } => {
+                let Some(matched) = self.satisfies_interface(required, &ty, selected, true)? else {
+                    return Ok(None);
+                };
+                if selected.is_some() {
+                    matched.location
+                } else {
+                    Some(candidate.location)
+                }
+            }
+            Direction::Interfaces { package_id, name } => {
+                let Some(owner) = self.workspace.package(package_id) else {
+                    return Ok(None);
+                };
+                let Some(required) = self.interface_methods(&ty)? else {
+                    return Ok(None);
+                };
+                if owner.directory_and_name() != package.directory_and_name()
+                    && !required.method_names().any(is_exported)
+                {
+                    return Ok(None);
+                }
+                let concrete = TypeIdentity::named(owner, name);
+                if self
+                    .satisfies_interface(&required, &concrete, selected, true)?
+                    .is_none()
+                {
+                    return Ok(None);
+                }
+                match selected {
+                    Some(method) => required.location(method),
+                    None => Some(candidate.location),
+                }
+            }
         };
         Ok(target.filter(|target| !same_location(target, &search.declaration)))
     }

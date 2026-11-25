@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify definition updates across Go workspace and filesystem changes."""
+"""Verify navigation updates across Go workspace and filesystem changes."""
 
 import argparse
 from contextlib import contextmanager
@@ -15,6 +15,8 @@ import time
 
 from check_definitions import Site, check_location
 from check_goland_definitions import normalize_locations
+from check_goland_implementations import METHOD as IMPLEMENTATION_METHOD
+from check_goland_references import Location
 from compare_definitions import LspClient, executable
 
 
@@ -258,7 +260,10 @@ def wait_for_response(client, request_id, timeout=None):
                 client.reply(message)
             continue
         if message.get("id") != request_id:
-            raise RuntimeError(f"expected response {request_id} first, received {message!r}")
+            raise RuntimeError(
+                f"expected response {request_id!r} first, received {message.get('id')!r} "
+                f"with {response_detail(message)}"
+            )
         return message
 
 
@@ -287,9 +292,19 @@ def expect_location(result, target):
         raise RuntimeError(f"expected {target.path} {target.selection()}, received {locations!r}")
 
 
+def response_detail(response):
+    error = response.get("error")
+    if error is not None:
+        return f"error {error!r}"
+    result = response.get("result")
+    return f"success with {len(result)} items" if isinstance(result, list) else f"success with {result!r}"
+
+
 def expect_error(response, code):
     if response.get("error", {}).get("code") != code:
-        raise RuntimeError(f"expected LSP error {code}, received {response!r}")
+        raise RuntimeError(
+            f"expected LSP error {code} for {response.get('id')!r}, received {response_detail(response)}"
+        )
 
 
 GO_LIST_RELAY = r"""package main
@@ -811,6 +826,159 @@ def check_active_reference_cancel(executable_path, root, timeout):
         check_references(client, target, (shifted, *uses[1:]))
 
 
+def implementation_params(query):
+    return {"textDocument": {"uri": query.path.as_uri()}, "position": query.cursor()}
+
+
+def check_implementations(client, query, *expected):
+    response = client.request(IMPLEMENTATION_METHOD, **implementation_params(query))
+    actual = tuple(
+        Location.from_range(Path(location["path"]), location["range"])
+        for location in normalize_locations(response)
+    )
+    targets = {Location.from_range(target.path, target.selection()) for target in expected}
+    locations = set(actual)
+    if len(actual) != len(targets) or locations != targets:
+        missing = sorted(targets - locations)
+        extra = sorted(locations - targets)
+        raise RuntimeError(
+            f"implementations from {query.path} at {query.cursor()}: expected {len(targets)} locations, "
+            f"got {len(actual)}. Missing {len(missing)} {missing[:3]!r}, extra {len(extra)} {extra[:3]!r}, "
+            f"duplicates {len(actual) - len(locations)}"
+        )
+    return actual
+
+
+def check_implementation_updates(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/implupdates\n\ngo 1.22\n")
+    origin = write(root / "worker.go", "package jobs\n\ntype Worker interface { Work(int) }\n")
+    method = site(origin, "{ [[Work]](int)")
+    interface = site(origin, "type [[Worker]] interface")
+    implementation = write(
+        root / "impl" / "worker.go", "package impl\n\ntype Live struct{}\nfunc (*Live) Work(int) {}\n",
+    )
+    internal = write(
+        implementation.with_name("worker_test.go"),
+        "package impl\n\ntype Internal struct{}\nfunc (Internal) Work(int) {}\n",
+    )
+    external = write(
+        implementation.with_name("external_test.go"),
+        "package impl_test\n\ntype External struct{}\nfunc (External) Work(int) {}\n",
+    )
+    live_type = site(implementation, "type [[Live]] struct")
+    live = site(implementation, "(*Live) [[Work]](int)")
+    internal_method = site(internal, "(Internal) [[Work]](int)")
+    external_method = site(external, "(External) [[Work]](int)")
+    draft_path = implementation.with_name("draft.go")
+    draft = site(draft_path, "(Draft) [[Work]](int)", "package impl\n\ntype Draft struct{}\nfunc (Draft) Work(int) {}\n")
+    prefix = "// shifted in the unsaved implementation\n"
+    first = {"line": 0, "character": 0}
+    shifted = site(implementation, "(*Live) [[Work]](int)", prefix + live.text)
+    initial = (live, internal_method, external_method)
+
+    with session(executable_path, root, timeout, watch_files=True) as client:
+        client.open_document(origin, method.text)
+        original_order = check_implementations(client, method, *initial)
+        if check_implementations(client, method, *initial) != original_order:
+            raise RuntimeError("identical implementation queries returned different orders")
+        check_implementations(
+            client, interface, live_type, site(internal, "type [[Internal]] struct"),
+            site(external, "type [[External]] struct"),
+        )
+
+        client.open_document(implementation, live.text)
+        client.change_document_range(implementation, 2, first, first, prefix)
+        check_implementations(client, method, shifted, internal_method, external_method)
+        client.change_document(implementation, 3, live.text.replace("Work(int)", "Work(string)"))
+        client.open_document(draft_path, draft.text)
+        check_implementations(client, method, draft, internal_method, external_method)
+        client.close_document(draft_path)
+        client.close_document(implementation)
+        check_implementations(client, method, *initial)
+
+        changed_source = method.text.replace("Work(int)", "Work(string)")
+        client.change_document(origin, 2, changed_source)
+        check_implementations(client, site(origin, "{ [[Work]](string)", changed_source))
+        client.close_document(origin)
+        check_implementations(client, method, *initial)
+
+        write(implementation, "//go:build fixture && !fixture\n\n" + live.text)
+        notify_changes(client, (implementation, 2))
+        check_implementations(client, method, internal_method, external_method)
+        write(implementation, live.text)
+        notify_changes(client, (implementation, 2))
+        check_implementations(client, method, *initial)
+
+    if draft_path.exists():
+        raise RuntimeError(f"test overlay unexpectedly wrote {draft_path}")
+
+
+def check_implementation_cancel(executable_path, root, timeout):
+    control = root / "control"
+    environment = go_list_relay(control, timeout)
+    project = root / "project"
+    go_mod = write(project / "go.mod", "module example.test/implcancel\n\ngo 1.22\n")
+    origin = site(write(project / "worker.go", "package jobs\n\ntype Worker interface { Work() }\n"), "{ [[Work]]()")
+    target = site(
+        write(project / "impl" / "worker.go", "package impl\n\ntype Worker struct{}\nfunc (Worker) Work() {}\n"),
+        "(Worker) [[Work]]()",
+    )
+    shifted = site(origin.path, "{ [[Work]]()", "// changed while metadata loaded\n" + origin.text)
+
+    with session(executable_path, project, timeout, watch_files=True, **environment) as client:
+        client.open_document(origin.path, origin.text)
+        check_implementations(client, origin, target)
+        write(control / "arm", "")
+        write(go_mod, go_mod.read_text(encoding="utf-8") + "\n// refresh the package graph\n")
+        notify_changes(client, (go_mod, 2))
+        try:
+            client.send(id="cancel-impl", method=IMPLEMENTATION_METHOD, params=implementation_params(origin))
+            wait_for_snapshot(control, timeout)
+            client.notify("$/cancelRequest", id="cancel-impl")
+            expect_error(wait_for_response(client, "cancel-impl", min(timeout, 5)), -32800)
+
+            client.send(id="changed-impl", method=IMPLEMENTATION_METHOD, params=implementation_params(origin))
+            client.change_document(origin.path, 2, shifted.text)
+            expect_error(wait_for_response(client, "changed-impl", min(timeout, 5)), -32801)
+        finally:
+            write(control / "release", "")
+        check_implementations(client, shifted, target)
+
+
+def check_active_implementation_cancel(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/implbusy\n\ngo 1.22\n")
+    origin = site(write(root / "worker.go", "package jobs\n\ntype Worker interface { Work() }\n"), "{ [[Work]]()")
+    methods = []
+    for number in range(384):
+        worker = f"Worker{number:03d}"
+        path = write(root / f"worker_{number:03d}.go", f"package jobs\ntype {worker} struct{{}}\nfunc ({worker}) Work() {{}}\n")
+        methods.append(site(path, f"({worker}) [[Work]]()"))
+
+    def start_active_search(client, request_id):
+        # The barrier response confirms that the search was dispatched and is still pending.
+        barrier_id = f"{request_id}-barrier"
+        client.send_batch(
+            {"id": request_id, "method": IMPLEMENTATION_METHOD, "params": implementation_params(origin)},
+            {"id": barrier_id, "method": "rs-gopls/testUnknownMethod", "params": {}},
+        )
+        expect_error(wait_for_response(client, barrier_id), -32601)
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(origin.path, origin.text)
+        check_implementations(client, origin, *methods)
+        start_active_search(client, "active-impl")
+        client.notify("$/cancelRequest", id="active-impl")
+        expect_error(wait_for_response(client, "active-impl"), -32800)
+
+        first = methods[0]
+        prefix = "// shifted in the open buffer\n"
+        shifted = site(first.path, "(Worker000) [[Work]]()", prefix + first.text)
+        start_active_search(client, "dirty-impl")
+        client.open_document(first.path, shifted.text)
+        expect_error(wait_for_response(client, "dirty-impl"), -32801)
+        check_implementations(client, origin, shifted, *methods[1:])
+
+
 CASES = {
     "mutations": check_mutations,
     "go-work": check_go_work,
@@ -824,6 +992,9 @@ CASES = {
     "reference-workspace": check_reference_workspace,
     "reference-cancel": check_reference_cancel,
     "reference-active-cancel": check_active_reference_cancel,
+    "implementation-updates": check_implementation_updates,
+    "implementation-cancel": check_implementation_cancel,
+    "implementation-active-cancel": check_active_implementation_cancel,
 }
 
 

@@ -16,6 +16,10 @@ impl MethodKey {
         }
     }
 
+    pub(super) fn is_exported(&self) -> bool {
+        self.package.is_none()
+    }
+
     fn accessible_from(&self, package: &Package) -> bool {
         self.package
             .as_deref()
@@ -39,6 +43,7 @@ struct Method {
 #[derive(Default)]
 pub(super) struct InterfaceMethods {
     methods: BTreeMap<MethodKey, Method>,
+    parameter_bounds: Vec<Vec<BoundTerm>>,
     has_type_terms: bool,
     complete: bool,
 }
@@ -70,7 +75,11 @@ impl<'w> Resolver<'w, '_> {
         ty: &TypeIdentity<'w>,
     ) -> Result<Option<InterfaceMethods>> {
         let ty = self.with_receiver_parameters(ty.clone())?;
-        self.interface_methods_at(ty, 0)
+        let Some(mut result) = self.interface_methods_at(ty.clone(), 0)? else {
+            return Ok(None);
+        };
+        result.parameter_bounds = self.parameter_bounds(&ty)?;
+        Ok(Some(result))
     }
 
     fn interface_methods_at(
@@ -199,7 +208,6 @@ impl<'w> Resolver<'w, '_> {
         allow_pointer: bool,
     ) -> Result<Option<MatchingMethods>> {
         if !required.complete
-            || required.has_type_terms
             || required.methods.is_empty()
             || selected.is_some_and(|key| !required.methods.contains_key(key))
         {
@@ -234,7 +242,126 @@ impl<'w> Resolver<'w, '_> {
                 location = Some(method.location.clone());
             }
         }
+        if !matcher.bindings.is_empty() {
+            let candidate_bounds = self.parameter_bounds(&candidate)?;
+            if !self.valid_bindings(&matcher, &required.parameter_bounds, &candidate_bounds)? {
+                return Ok(None);
+            }
+        }
         Ok(Some(MatchingMethods { location }))
+    }
+
+    fn parameter_bounds(&mut self, ty: &TypeIdentity<'w>) -> Result<Vec<Vec<BoundTerm>>> {
+        let Some((file, details, substitutions)) = self.type_context(ty)? else {
+            return Ok(Vec::new());
+        };
+        let mut parameters = Vec::with_capacity(details.parameters.len());
+        for parameter in details.parameters {
+            let mut bounds = Vec::new();
+            for term in parameter.constraint.terms {
+                let Some(term_ty) =
+                    self.implementation_type(ty.package, &file, term.reference, &substitutions)?
+                else {
+                    bounds.clear();
+                    break;
+                };
+                // A named interface here supplies constraints of its own.
+                // Simple terms describe the permitted substituted types.
+                if self.interface_context(term_ty.clone())?.is_some()
+                    || self.is_predeclared_named(&term_ty, "any")?
+                    || self.is_predeclared_named(&term_ty, "comparable")?
+                    || self.is_predeclared_named(&term_ty, "error")?
+                {
+                    bounds.clear();
+                    break;
+                }
+                let Some(shape) = self.canonical_type(term_ty, ty.package, &file, 0)? else {
+                    bounds.clear();
+                    break;
+                };
+                bounds.push(BoundTerm {
+                    shape,
+                    approximate: term.approximate,
+                });
+            }
+            parameters.push(bounds);
+        }
+        Ok(parameters)
+    }
+
+    fn valid_bindings(
+        &mut self,
+        matcher: &SignatureMatcher,
+        required: &[Vec<BoundTerm>],
+        candidate: &[Vec<BoundTerm>],
+    ) -> Result<bool> {
+        let parameters = [required, candidate];
+        let mut unresolved: HashMap<(bool, usize), Vec<&[BoundTerm]>> = HashMap::new();
+        for (side, parameters) in parameters.into_iter().enumerate() {
+            for (index, bounds) in parameters
+                .iter()
+                .enumerate()
+                .filter(|(_, bounds)| !bounds.is_empty())
+            {
+                match matcher.parameter_binding(side != 0, index) {
+                    Some((side, TypeShape::Parameter(index))) => {
+                        unresolved.entry((side, *index)).or_default().push(bounds);
+                    }
+                    Some((_, shape)) if !self.bounds_accept(bounds, shape)? => return Ok(false),
+                    Some(_) => {}
+                    None => {
+                        unresolved
+                            .entry((side != 0, index))
+                            .or_default()
+                            .push(bounds);
+                    }
+                }
+            }
+        }
+        for lists in unresolved.values().filter(|lists| lists.len() > 1) {
+            let mut compatible = false;
+            for term in lists.iter().flat_map(|terms| terms.iter()) {
+                let mut accepted = true;
+                for terms in lists {
+                    if !self.bounds_accept(terms, &term.shape)? {
+                        accepted = false;
+                        break;
+                    }
+                }
+                if accepted {
+                    compatible = true;
+                    break;
+                }
+            }
+            if !compatible {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn bounds_accept(&mut self, bounds: &[BoundTerm], shape: &TypeShape) -> Result<bool> {
+        if bounds.iter().any(|term| term.shape == *shape) {
+            return Ok(true);
+        }
+        let TypeShape::Named(file, _, name, args) = shape else {
+            return Ok(false);
+        };
+        if !args.is_empty() || !bounds.iter().any(|term| term.approximate) {
+            return Ok(false);
+        }
+        let Some(package) = self.workspace.package_of_file(file) else {
+            return Ok(false);
+        };
+        let Some(base) = self.underlying_type(TypeIdentity::named(package, name))? else {
+            return Ok(false);
+        };
+        let Some(base) = self.canonical_type(base, package, file, 0)? else {
+            return Ok(false);
+        };
+        Ok(bounds
+            .iter()
+            .any(|term| term.approximate && term.shape == base))
     }
 
     fn concrete_method(
@@ -484,7 +611,7 @@ impl<'w> Resolver<'w, '_> {
                         };
                         parameters.push(arg);
                     }
-                    TypeShape::Named(path_key(&file), range, parameters)
+                    TypeShape::Named(path_key(&file), range, name, parameters)
                 } else if is_predeclared_type(&name) && arguments.is_empty() {
                     match name.as_str() {
                         "any" => TypeShape::Interface(Vec::new()),
@@ -614,7 +741,7 @@ struct Signature {
 #[derive(Clone, Eq, PartialEq)]
 enum TypeShape {
     Builtin(String),
-    Named(PathBuf, Range, Vec<TypeShape>),
+    Named(PathBuf, Range, String, Vec<TypeShape>),
     Parameter(usize),
     Pointer(Box<TypeShape>),
     Slice(Box<TypeShape>),
@@ -632,6 +759,11 @@ struct Field {
     embedded: bool,
     tag: Option<String>,
     ty: TypeShape,
+}
+
+struct BoundTerm {
+    shape: TypeShape,
+    approximate: bool,
 }
 
 fn array_length(text: &str) -> Option<u64> {
@@ -654,6 +786,21 @@ struct SignatureMatcher {
 }
 
 impl SignatureMatcher {
+    fn parameter_binding(&self, mut side: bool, mut index: usize) -> Option<(bool, &TypeShape)> {
+        let mut last = None;
+        for _ in 0..MAX_TYPE_DEPTH {
+            let Some((bound_side, bound)) = self.bindings.get(&(side, index)) else {
+                return last;
+            };
+            last = Some((*bound_side, bound));
+            match bound {
+                TypeShape::Parameter(var) => (side, index) = (*bound_side, *var),
+                _ => return last,
+            }
+        }
+        None
+    }
+
     fn signature(
         &mut self,
         left: &Signature,
@@ -706,7 +853,7 @@ impl SignatureMatcher {
         }
         match (left, right) {
             (TypeShape::Builtin(left), TypeShape::Builtin(right)) => left == right,
-            (TypeShape::Named(lp, lr, left), TypeShape::Named(rp, rr, right)) => {
+            (TypeShape::Named(lp, lr, _, left), TypeShape::Named(rp, rr, _, right)) => {
                 lp == rp && lr == rr && self.list(left, a, right, b, depth)
             }
             (TypeShape::Pointer(left), TypeShape::Pointer(right))

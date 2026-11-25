@@ -117,6 +117,13 @@ pub(crate) struct GenericParameter {
 pub(crate) struct TypeConstraint {
     pub(crate) methods: Option<TypeRef>,
     pub(crate) approximation: Option<TypeRef>,
+    pub(crate) terms: Vec<ConstraintTerm>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ConstraintTerm {
+    pub(crate) reference: TypeRef,
+    pub(crate) approximate: bool,
 }
 
 #[derive(Clone, Default)]
@@ -604,7 +611,10 @@ pub(crate) fn type_constraint(
     range: &dyn Fn(Node<'_>) -> Range,
 ) -> TypeConstraint {
     let Some(ty) = only_named_child(constraint) else {
-        return TypeConstraint::default();
+        return TypeConstraint {
+            terms: constraint_terms(constraint, text, range),
+            ..TypeConstraint::default()
+        };
     };
     let methods = match ty.kind() {
         "interface_type" | "qualified_type" | "generic_type" => type_ref(ty, text, range),
@@ -613,17 +623,18 @@ pub(crate) fn type_constraint(
         }
         _ => None,
     };
-    let term = if ty.kind() == "interface_type" {
+    let (term, terms) = if ty.kind() == "interface_type" {
         let mut cursor = ty.walk();
         let mut terms = ty
             .named_children(&mut cursor)
             .filter(|node| node.kind() == "type_elem");
-        let first = terms.next();
-        first
-            .filter(|_| terms.next().is_none())
-            .and_then(only_named_child)
+        let single = terms.next().filter(|_| terms.next().is_none());
+        (
+            single.and_then(only_named_child),
+            single.map_or_else(Vec::new, |term| constraint_terms(term, text, range)),
+        )
     } else {
-        Some(ty)
+        (Some(ty), constraint_terms(constraint, text, range))
     };
     let approximation = term
         .filter(|term| term.kind() == "negated_type")
@@ -632,7 +643,32 @@ pub(crate) fn type_constraint(
     TypeConstraint {
         methods,
         approximation,
+        terms,
     }
+}
+
+fn constraint_terms(
+    element: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> Vec<ConstraintTerm> {
+    element
+        .named_children(&mut element.walk())
+        .filter(|term| !term.is_extra())
+        .map(|term| {
+            let approximate = term.kind() == "negated_type";
+            let ty = if approximate {
+                only_named_child(term)?
+            } else {
+                term
+            };
+            Some(ConstraintTerm {
+                reference: type_ref(ty, text, range)?,
+                approximate,
+            })
+        })
+        .collect::<Option<_>>()
+        .unwrap_or_default()
 }
 
 fn unparenthesized_type(mut node: Node<'_>) -> Option<Node<'_>> {

@@ -56,3 +56,16 @@ Get-Content -LiteralPath (Join-Path $directory 'implementation-locations.tsv') -
 ```powershell
 python -B .\tools\check_goland_implementations.py $server --workspace $project --action implementation
 ```
+
+## 双向查询与回归
+
+真实项目的 20 个查询和补充模块的 29 个查询通过发布版 stdio 验收。运行 `cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked` 和 `cargo build -p rs-gopls --release --locked` 后，用 Cargo 配置的产物目录取得 `$server` 并运行以下检查。
+
+```powershell
+python -B .\tools\check_goland_implementations.py $server --workspace $project
+$fixtureRoot = '.\tools\fixtures\implementation-navigation'
+python -B .\tools\check_goland_implementations.py $server --workspace $fixtureRoot --fixture (Join-Path $fixtureRoot 'goland-implementations.json')
+python -B .\tools\check_workspace_updates.py $server
+```
+
+15 组工作区回归通过，包含签名编辑、关闭后恢复、未保存新实现、磁盘构建条件变化、待加载取消和分批搜索取消。已有 124 个合成声明位置、16 个项目锚点、21 个 GoLand 声明对照、58 个 GoLand 类型定义对照及 34 组引用结果通过。[第三阶段验收记录](plans/2026-11-25-go-navigation-phase-three.md)
