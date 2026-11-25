@@ -44,7 +44,7 @@ def point_in_caller(text, symbol):
 
 
 class LspClient:
-    def __init__(self, command, root, timeout):
+    def __init__(self, command, root, timeout, *, environment=None):
         self.timeout = timeout
         self.next_id = 0
         self.inbox = Queue()
@@ -54,7 +54,7 @@ class LspClient:
             self.process = subprocess.Popen(
                 command,
                 cwd=root,
-                env={**os.environ, "GOWORK": "off", "GOPROXY": "off"},
+                env=environment if environment is not None else {**os.environ, "GOWORK": "off", "GOPROXY": "off"},
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=self.stderr,
@@ -157,6 +157,13 @@ class LspClient:
             "textDocument/didChange",
             textDocument={"uri": path.as_uri(), "version": version},
             contentChanges=[{"text": text}],
+        )
+
+    def change_document_range(self, path, version, start, end, text):
+        self.notify(
+            "textDocument/didChange",
+            textDocument={"uri": path.as_uri(), "version": version},
+            contentChanges=[{"range": {"start": start, "end": end}, "text": text}],
         )
 
     def close_document(self, path):

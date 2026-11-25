@@ -44,3 +44,16 @@ python -B .\tools\check_goland_definitions.py .\target\release\rs-gopls.exe --wo
 ~~~
 
 `--json` 输出每个查询的 GoLand 期望、实际候选及分类。默认严格模式用退出码报告缺失或不同目标。基线 rs-gopls `675640b` 的 19 个文件位置中，15 个一致、3 个为空、1 个不同。gopls v0.24.0 有 18 个一致、1 个不同。两个服务器对 GoLand 包级导航用例均返回当前文件的导入位置。
+
+## 比较 gopls 的性能
+
+使用同一工作区和 Go 工具链，比对候选版、上一阶段版与 gopls。默认每个服务运行 5 个独立进程，每轮测 80 次调用方范围编辑及 80 轮依赖文件覆盖与恢复。每次计时都核对 GoLand 的实际定义范围。报告区分首次查询、暖态编辑与依赖覆盖/恢复，并记录超时、错误和 Windows 进程工作集。进程树工作集为周期采样峰值，新进程共享系统和 Go 缓存。
+
+~~~powershell
+python -B .\tools\compare_workspace_definitions.py .\target\release\rs-gopls.exe `
+    --workspace 'E:\Code\localchat\server' `
+    --prior .\target\release\rs-gopls-675640b.exe `
+    --json .\target\localchat-definition-performance.json
+~~~
+
+`--prior` 指向保留的上一阶段发布版，可用于检查 Rust 自身是否回退。报告包含各二进制哈希、工作区修订、工具链、请求目标和少量具有代表性的文件变更路径。活动 gopls 诊断配置为 `Save`。
