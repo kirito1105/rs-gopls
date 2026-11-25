@@ -1,7 +1,29 @@
 use super::super::*;
+use super::{interface_probe::may_declare_interface_method, method_sets::MethodShape};
+
+pub(super) enum PackageProbe {
+    Method(String),
+    Interface(Rc<HashSet<MethodShape>>),
+}
+
+impl PackageProbe {
+    fn matches(&self, text: &str) -> bool {
+        match self {
+            Self::Method(method) => text.contains(method),
+            Self::Interface(methods) => may_declare_interface_method(text, |name, arity| {
+                methods.iter().any(|method| {
+                    method.name == name
+                        && arity.is_none_or(|arity| {
+                            arity == (method.parameters, method.results, method.variadic)
+                        })
+                })
+            }),
+        }
+    }
+}
 
 pub(super) struct CandidatePackages {
-    pub(super) method: String,
+    pub(super) probe: PackageProbe,
     pub(super) eligible: HashSet<String>,
     pending: Vec<String>,
     current: Option<(String, Vec<PathBuf>)>,
@@ -9,9 +31,9 @@ pub(super) struct CandidatePackages {
 }
 
 impl CandidatePackages {
-    pub(super) fn new(method: &str, packages: &VecDeque<String>) -> Self {
+    pub(super) fn new(probe: PackageProbe, packages: &VecDeque<String>) -> Self {
         Self {
-            method: method.to_owned(),
+            probe,
             eligible: HashSet::new(),
             pending: packages.iter().rev().cloned().collect(),
             current: None,
@@ -50,7 +72,7 @@ impl CandidatePackages {
                     // its package also keeps disk importers that can inherit its methods.
                     resolver.indexes.documents.contains_key(&key)
                         || fs::read_to_string(&file).map_or(true, |text| {
-                            text.contains(&self.method)
+                            self.probe.matches(&text)
                                 || resolver.indexes.disk_index.get(&key).is_some_and(|index| {
                                     // Resolution can use the indexed snapshot until a watch event.
                                     index.fingerprint != text_fingerprint(&text)

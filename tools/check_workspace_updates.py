@@ -969,6 +969,67 @@ def check_implementation_candidate_packages(executable_path, root, timeout):
         check_implementations(client, interface, *on_disk)
 
 
+def check_implementation_reverse_candidates(executable_path, root, timeout):
+    module = "example.test/reversecandidates"
+    write(root / "go.mod", f"module {module}\n\ngo 1.22\n")
+    write(
+        root / "stamper" / "stamper.go",
+        "package stamper\n\ntype Stamper struct{}\nfunc (*Stamper) SealParcel(string) error { return nil }\n",
+    )
+    courier = site(
+        write(
+            root / "courier" / "courier.go",
+            f'package courier\n\nimport "{module}/stamper"\n\n'
+            "type Courier struct { stamper.Stamper }\nfunc (Courier) DeliverParcel(int) bool { return true }\n",
+        ),
+        "type [[Courier]] struct",
+    )
+    delivery = site(
+        write(root / "delivery" / "delivery.go", "package delivery\n\ntype Delivery interface { DeliverParcel(int) bool }\n"),
+        "type [[Delivery]] interface",
+    )
+    sealing = site(
+        write(root / "sealing" / "sealing.go", "package sealing\n\ntype Sealing interface { SealParcel(string) error }\n"),
+        "type [[Sealing]] interface",
+    )
+    embedding = site(
+        write(
+            root / "publicseal" / "seal.go",
+            f'package publicseal\n\nimport "{module}/sealing"\n\ntype PublicSeal interface {{ sealing.Sealing }}\n',
+        ),
+        "type [[PublicSeal]] interface",
+    )
+    alias = site(
+        write(
+            root / "exported" / "alias.go",
+            f'package exported\n\nimport "{module}/publicseal"\n\ntype ExportedSeal = publicseal.PublicSeal\n',
+        ),
+        "type [[ExportedSeal]] =",
+    )
+    write(
+        root / "wrong" / "wrong.go",
+        "package wrong\n\ntype WrongSeal interface { SealParcel(string) bool }\n",
+    )
+    write(root / "special" / "special.go", "package special\n\nconst enabled = true\n")
+    draft = site(
+        root / "special" / "draft.go",
+        "type [[Combined]] interface",
+        "package special\n\ntype Combined interface { DeliverParcel(int) bool; SealParcel(string) error }\n",
+    )
+    on_disk = (delivery, sealing, embedding, alias)
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(courier.path, courier.text)
+        check_implementations(client, courier, *on_disk)
+        client.open_document(draft.path, draft.text)
+        check_implementations(client, courier, *on_disk, draft)
+        client.close_document(draft.path)
+        check_implementations(client, courier, *on_disk)
+
+    if draft.path.exists():
+        raise RuntimeError(f"test overlay unexpectedly wrote {draft.path}")
+
+
 def check_implementation_cancel(executable_path, root, timeout):
     control = root / "control"
     environment = go_list_relay(control, timeout)
@@ -1052,6 +1113,7 @@ CASES = {
     "reference-active-cancel": check_active_reference_cancel,
     "implementation-updates": check_implementation_updates,
     "implementation-candidate-packages": check_implementation_candidate_packages,
+    "implementation-reverse-candidates": check_implementation_reverse_candidates,
     "implementation-cancel": check_implementation_cancel,
     "implementation-active-cancel": check_active_implementation_cancel,
 }

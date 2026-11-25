@@ -131,6 +131,29 @@ python -B .\tools\compare_first_implementations.py $server --workspace $project 
 python -B .\tools\compare_first_implementations.py $server --workspace $project --gopls --empty-gopls-cache --case store-type --sessions 5 --json (Join-Path $target 'implementation-first-empty-gopls-cache.json')
 ```
 
+## 具体类型反查首查优化
+
+先收集具体类型自身及通过嵌入可能获得的值和指针方法，再探测活动源码中的显式接口方法。探测比较名称和能够确认的参数、结果个数与可变参数标记。沿反向导入关系保留可能由嵌入或别名获得方法的包，草稿和无法确认的源码采用保守范围。
+
+每个进入精确解析的包在内存中按接口必需方法建立倒排索引。用具体类型的方法形状查得候选，再执行完整签名、泛型和私有方法归属匹配。缓冲区、文件及包图变动沿用导航失效流程。新增工作区用例验证跨包接口、提升后的指针方法、传递别名及未保存接口的添加和关闭。[接口预筛](../src/semantic/implementation/interface_probe.rs) · [包内接口索引](../src/semantic/implementation/interface_index.rs)
+
+同一 Windows 主机、Go 1.27.4 与 `localchat/server` 修订下，新版、`517ecc5` 和 gopls v0.24.0 轮换运行。每个角色和用例用 5 个新进程，合计 45 次首次查询均通过精确结果检查。
+
+| 首次正确响应 | 优化前 P50 / P95 | 优化后 P50 / P95 | gopls 已有缓存 P50 / P95 |
+| --- | ---: | ---: | ---: |
+| `SqlUserStore` | 3737.68 / 3762.17 ms | 1300.83 / 1359.88 ms | 1166.22 / 1196.06 ms |
+| `SqliteUserStore` | 3674.03 / 3703.27 ms | 1305.72 / 1347.97 ms | 1142.44 / 1148.97 ms |
+| `memoryUserStore` | 3596.00 / 4017.99 ms | 1364.23 / 1392.86 ms | 1157.91 / 1162.78 ms |
+
+三个具体类型的首次查询 P50 下降 62% 至 65%。给 gopls 每轮分配一个空磁盘缓存时，`SqlUserStore` 的 P50 / P95 为 2458.26 / 2705.29 ms，同轮 rs-gopls 为 1254.99 / 1292.88 ms。双方各 5 次都得到 `Store` 和 `UserStore` 两个预期目标。报告位于 Cargo 产物目录的 `implementation-first-reverse-types.json` 和 `implementation-first-reverse-type-empty-gopls.json`。
+
+优化后的发布二进制通过 49 项 GoLand 对照、17 项工作区回归，以及声明跳转、类型定义和引用的已有检查。常规性能复测中，双方在 15 个共同用例各通过 805 次查询。rs-gopls 的 `Store` 首次正确响应 P50 为 750.20 ms，正向和反向暖态 P95 为 0.49 和 0.23 ms，注释编辑后 P95 为 0.82 和 0.46 ms。完整复测在 Cargo 产物目录的 `implementation-performance-reverse-types.json`。
+
+```powershell
+$prior = Join-Path $target 'rs-gopls-517ecc5.exe'
+python -B .\tools\compare_first_implementations.py $server --workspace $project --prior $prior --gopls --case sql-user-store-type --case sqlite-user-store-type --case memory-user-store-type --sessions 5 --json (Join-Path $target 'implementation-first-reverse-types.json')
+```
+
 ## Zed 加载与现场验收
 
 Zed 1.29.3 已用仓库隔离配置打开 `localchat/server` 的 `filestore.go`。进程检查确认 Zed 启动了 `rs-gopls-8d4f0a4bad3f4f96.exe`，与正式测速的发布版 SHA-256 `8D4F0A4BAD3F4F96C2D01869BC14DDCAFEFE457E77FF8560D9B5B7EFB97A9927` 一致。发布版的 stdio 初始化声明了 `implementationProvider`，全部 GoLand 对照已通过。

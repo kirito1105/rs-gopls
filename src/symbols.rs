@@ -153,6 +153,14 @@ impl FileSymbols {
         self.members.get(ty)?.get(name)
     }
 
+    pub(crate) fn members_of(&self, ty: &str) -> impl Iterator<Item = (&str, &Symbol)> {
+        self.members
+            .get(ty)
+            .into_iter()
+            .flatten()
+            .map(|(name, member)| (name.as_str(), member))
+    }
+
     pub(crate) fn type_details(&self, ty: &str) -> Option<&TypeDetails> {
         self.types.get(ty)
     }

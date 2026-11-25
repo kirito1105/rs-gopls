@@ -1,10 +1,13 @@
 use super::*;
 
 mod candidates;
+mod interface_index;
+mod interface_probe;
 mod method_sets;
 
-use candidates::CandidatePackages;
-use method_sets::{InterfaceMethods, MethodKey};
+use candidates::{CandidatePackages, PackageProbe};
+use interface_index::{IndexedInterface, InterfaceIndex};
+use method_sets::{InterfaceMethods, MethodKey, MethodShape};
 
 type Location = (PathBuf, Range);
 type QueryKey = (PathBuf, Position);
@@ -13,16 +16,18 @@ type QueryKey = (PathBuf, Position);
 pub(super) struct ImplementationCache {
     results: HashMap<QueryKey, Vec<Location>>,
     packages: HashMap<String, HashSet<String>>,
+    interfaces: HashMap<String, InterfaceIndex>,
 }
 
 impl ImplementationCache {
     pub(super) fn is_empty(&self) -> bool {
-        self.results.is_empty() && self.packages.is_empty()
+        self.results.is_empty() && self.packages.is_empty() && self.interfaces.is_empty()
     }
 
     pub(super) fn clear(&mut self) {
         self.results.clear();
         self.packages.clear();
+        self.interfaces.clear();
     }
 
     fn remember(&mut self, key: QueryKey, result: Vec<Location>) {
@@ -33,16 +38,20 @@ impl ImplementationCache {
     }
 
     fn remember_packages(&mut self, candidates: CandidatePackages) {
-        if self.packages.len() >= 32 {
-            self.packages.clear();
+        if let PackageProbe::Method(method) = candidates.probe {
+            if self.packages.len() >= 32 {
+                self.packages.clear();
+            }
+            self.packages.insert(method, candidates.eligible);
         }
-        self.packages.insert(candidates.method, candidates.eligible);
     }
 
     pub(super) fn shift(&mut self, path: &Path, shift: LineShift) {
         if shift.old_end == shift.new_end {
             return;
         }
+        // Method signatures in this index can contain declaration ranges.
+        self.interfaces.clear();
         self.results = std::mem::take(&mut self.results)
             .into_iter()
             .filter_map(|((query_path, mut position), mut locations)| {
@@ -152,7 +161,17 @@ enum Direction {
     Interfaces {
         package_id: String,
         name: String,
+        shapes: Option<Rc<HashSet<MethodShape>>>,
     },
+}
+
+impl Direction {
+    fn receiver_shapes(&self) -> Option<&HashSet<MethodShape>> {
+        match self {
+            Self::Interfaces { shapes, .. } => shapes.as_deref(),
+            Self::Implementations { .. } => None,
+        }
+    }
 }
 
 struct PackageSearch {
@@ -160,6 +179,8 @@ struct PackageSearch {
     files: Vec<PathBuf>,
     direct_owners: HashSet<String>,
     candidates: Vec<Candidate>,
+    interface_index: Option<InterfaceIndex>,
+    indexed_interfaces: Vec<Rc<IndexedInterface>>,
 }
 
 struct Candidate {
@@ -180,6 +201,10 @@ impl ImplementationSearch {
         self.matches
             .dedup_by(|left, right| same_location(left, right));
         cache.remember(self.key.clone(), self.matches.clone());
+    }
+
+    fn indexes_interfaces(&self) -> bool {
+        self.selected.is_none() && matches!(self.direction, Direction::Interfaces { .. })
     }
 }
 
@@ -245,9 +270,22 @@ impl Engine {
             };
             Direction::Implementations { required, anchor }
         } else if let TypeKind::Named { name, .. } = &subject.owner.kind {
+            let concrete = TypeIdentity::named(subject.owner.package, name);
+            let shapes = if subject.method.is_none() {
+                resolver
+                    .concrete_method_shapes(&concrete)
+                    .unwrap_or(None)
+                    .map(Rc::new)
+            } else {
+                None
+            };
+            if shapes.as_ref().is_some_and(|shapes| shapes.is_empty()) {
+                return Ok(QueryProgress::Ready(matches));
+            }
             Direction::Interfaces {
                 package_id: subject.owner.package.id.clone(),
                 name: name.clone(),
+                shapes,
             }
         } else {
             return Ok(QueryProgress::Ready(matches));
@@ -270,16 +308,29 @@ impl Engine {
             Direction::Interfaces { .. } => subject.method.as_ref().map(MethodKey::name),
         };
         // The predeclared error interface can supply Error outside the go list graph.
-        let package_filter = filter_method
-            .filter(|method| !package_only && *method != "Error")
-            .and_then(|method| {
-                if let Some(eligible) = self.implementation_cache.packages.get(method) {
-                    packages.retain(|id| eligible.contains(id));
-                    None
-                } else {
-                    Some(CandidatePackages::new(method, &packages))
-                }
-            });
+        let package_filter = if let Some(method) =
+            filter_method.filter(|method| !package_only && *method != "Error")
+        {
+            if let Some(eligible) = self.implementation_cache.packages.get(method) {
+                packages.retain(|id| eligible.contains(id));
+                None
+            } else {
+                Some(CandidatePackages::new(
+                    PackageProbe::Method(method.to_owned()),
+                    &packages,
+                ))
+            }
+        } else if let Direction::Interfaces {
+            shapes: Some(shapes),
+            ..
+        } = &direction
+        {
+            (!shapes.iter().any(|shape| shape.name == "Error")).then(|| {
+                CandidatePackages::new(PackageProbe::Interface(Rc::clone(shapes)), &packages)
+            })
+        } else {
+            None
+        };
         Ok(QueryProgress::Searching(Search::Implementations(
             ImplementationSearch {
                 key,
@@ -323,6 +374,8 @@ impl Engine {
             return Ok(false);
         }
         let started = Instant::now();
+        let index_interfaces = search.indexes_interfaces();
+        let receiver_shapes = search.direction.receiver_shapes();
         for _ in 0..32 {
             if search.current.is_none() {
                 let Some(id) = search.packages.pop_front() else {
@@ -331,16 +384,32 @@ impl Engine {
                 let Some(package) = workspace.package(&id) else {
                     continue;
                 };
+                let existing = index_interfaces
+                    .then(|| self.implementation_cache.interfaces.get(&id))
+                    .flatten();
                 search.current = Some(PackageSearch {
                     id,
-                    files: resolver.indexes.files(package).into_owned(),
+                    files: if existing.is_some() {
+                        Vec::new()
+                    } else {
+                        resolver.indexes.files(package).into_owned()
+                    },
                     direct_owners: HashSet::new(),
                     candidates: Vec::new(),
+                    interface_index: (index_interfaces && existing.is_none())
+                        .then(InterfaceIndex::default),
+                    indexed_interfaces: existing
+                        .map_or_else(Vec::new, |index| index.candidates(receiver_shapes)),
                 });
             }
             let current = search.current.as_mut().expect("initialized package search");
             if let Some(file) = current.files.pop() {
-                resolver.collect_implementation_candidates(current, &file, &search.direction)?;
+                resolver.collect_implementation_candidates(
+                    current,
+                    &file,
+                    &search.direction,
+                    index_interfaces,
+                )?;
             } else if let Some(candidate) = current.candidates.pop() {
                 let eligible = match search.direction {
                     Direction::Implementations { .. } => {
@@ -348,10 +417,31 @@ impl Engine {
                     }
                     Direction::Interfaces { .. } => candidate.may_be_interface,
                 };
-                if eligible
-                    && let Some(package) = workspace.package(&current.id)
-                    && let Some(target) =
+                if eligible && let Some(package) = workspace.package(&current.id) {
+                    if let Some(index) = &mut current.interface_index {
+                        let ty = TypeIdentity::named(package, &candidate.name);
+                        if let Some(required) = resolver.interface_methods(&ty)? {
+                            index.insert(candidate.location, required);
+                        }
+                    } else if let Some(target) =
                         resolver.match_implementation(package, search, candidate)?
+                    {
+                        search.matches.push(target);
+                    }
+                }
+            } else if let Some(index) = current.interface_index.take() {
+                current.indexed_interfaces = index.candidates(receiver_shapes);
+                self.implementation_cache
+                    .interfaces
+                    .insert(current.id.clone(), index);
+            } else if let Some(candidate) = current.indexed_interfaces.pop() {
+                if let Some(package) = workspace.package(&current.id)
+                    && let Some(target) = resolver.match_interface(
+                        package,
+                        search,
+                        &candidate.methods,
+                        &candidate.location,
+                    )?
                 {
                     search.matches.push(target);
                 }
@@ -367,6 +457,29 @@ impl Engine {
             search.complete(&mut self.implementation_cache);
         }
         Ok(done)
+    }
+}
+
+impl IndexReader<'_> {
+    fn interface_candidate_index(&mut self, file: &Path) -> Result<Option<&FileIndex>> {
+        let key = path_key(file);
+        if let Some(source) = self.documents.get(&key) {
+            return Ok(Some(source.declarations()));
+        }
+        let cached = match self.disk_index.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let text = fs::read_to_string(file)
+                    .with_context(|| format!("reading {}", file.display()))?;
+                // Candidate declarations require a type spec, including aliases.
+                if !text.contains("type") {
+                    return Ok(None);
+                }
+                let source = Source::parse(self.parser, file.to_owned(), text, None)?;
+                entry.insert(DiskIndex::new(&source))
+            }
+        };
+        Ok(Some(&cached.declarations))
     }
 }
 
@@ -462,9 +575,16 @@ impl<'w> Resolver<'w, '_> {
         package: &mut PackageSearch,
         file: &Path,
         direction: &Direction,
+        index_interfaces: bool,
     ) -> Result<()> {
-        let index = match self.indexes.file_index(file) {
-            Ok(index) => index,
+        let index = if index_interfaces {
+            self.indexes.interface_candidate_index(file)
+        } else {
+            self.indexes.file_index(file).map(Some)
+        };
+        let index = match index {
+            Ok(Some(index)) => index,
+            Ok(None) => return Ok(()),
             Err(error)
                 if error
                     .downcast_ref::<std::io::Error>()
@@ -518,30 +638,49 @@ impl<'w> Resolver<'w, '_> {
                     Some(candidate.location)
                 }
             }
-            Direction::Interfaces { package_id, name } => {
-                let Some(owner) = self.workspace.package(package_id) else {
-                    return Ok(None);
-                };
+            Direction::Interfaces { .. } => {
                 let Some(required) = self.interface_methods(&ty)? else {
                     return Ok(None);
                 };
-                if owner.directory_and_name() != package.directory_and_name()
-                    && !required.method_names().any(is_exported)
-                {
-                    return Ok(None);
-                }
-                let concrete = TypeIdentity::named(owner, name);
-                if self
-                    .satisfies_interface(&required, &concrete, selected, true)?
-                    .is_none()
-                {
-                    return Ok(None);
-                }
-                match selected {
-                    Some(method) => required.location(method),
-                    None => Some(candidate.location),
-                }
+                return self.match_interface(package, search, &required, &candidate.location);
             }
+        };
+        Ok(target.filter(|target| !same_location(target, &search.declaration)))
+    }
+
+    fn match_interface(
+        &mut self,
+        package: &'w Package,
+        search: &ImplementationSearch,
+        required: &InterfaceMethods,
+        location: &Location,
+    ) -> Result<Option<Location>> {
+        let Direction::Interfaces {
+            package_id, name, ..
+        } = &search.direction
+        else {
+            return Ok(None);
+        };
+        let Some(owner) = self.workspace.package(package_id) else {
+            return Ok(None);
+        };
+        if same_location(location, &search.declaration)
+            || (owner.directory_and_name() != package.directory_and_name()
+                && !required.method_names().any(is_exported))
+        {
+            return Ok(None);
+        }
+        let concrete = TypeIdentity::named(owner, name);
+        let selected = search.selected.as_ref();
+        if self
+            .satisfies_interface(required, &concrete, selected, true)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let target = match selected {
+            Some(method) => required.location(method),
+            None => Some(location.clone()),
         };
         Ok(target.filter(|target| !same_location(target, &search.declaration)))
     }

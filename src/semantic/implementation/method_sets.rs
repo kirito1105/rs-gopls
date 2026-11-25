@@ -44,6 +44,28 @@ struct Method {
     location: MethodLocation,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(super) struct MethodShape {
+    pub(super) name: String,
+    pub(super) parameters: usize,
+    pub(super) results: usize,
+    pub(super) variadic: bool,
+}
+
+impl MethodShape {
+    fn from_symbol(name: &str, member: &Symbol) -> Option<Self> {
+        let SymbolKind::Function(signature) = &member.kind else {
+            return None;
+        };
+        Some(Self {
+            name: name.to_owned(),
+            parameters: signature.parameters.len(),
+            results: signature.results.len(),
+            variadic: signature.variadic,
+        })
+    }
+}
+
 #[derive(Default)]
 pub(super) struct InterfaceMethods {
     methods: BTreeMap<MethodKey, Method>,
@@ -55,6 +77,15 @@ pub(super) struct InterfaceMethods {
 impl InterfaceMethods {
     pub(super) fn method_names(&self) -> impl Iterator<Item = &str> {
         self.methods.keys().map(|key| key.name.as_str())
+    }
+
+    pub(super) fn method_shapes(&self) -> impl Iterator<Item = MethodShape> + '_ {
+        self.methods.iter().map(|(key, method)| MethodShape {
+            name: key.name.clone(),
+            parameters: method.signature.parameters.len(),
+            results: method.signature.results.len(),
+            variadic: method.signature.variadic,
+        })
     }
 
     pub(super) fn location(&self, key: &MethodKey) -> Option<MethodLocation> {
@@ -74,6 +105,70 @@ struct InterfaceContext<'w> {
 }
 
 impl<'w> Resolver<'w, '_> {
+    pub(super) fn concrete_method_shapes(
+        &mut self,
+        ty: &TypeIdentity<'w>,
+    ) -> Result<Option<HashSet<MethodShape>>> {
+        let ty = self.with_receiver_parameters(ty.clone())?;
+        let mut pending = vec![(ty, Vec::new())];
+        let mut shapes = HashSet::new();
+        let mut visited_owners = 0;
+        while let Some((owner, mut ancestors)) = pending.pop() {
+            let Some(key) = owner.key() else {
+                continue;
+            };
+            visited_owners += 1;
+            if visited_owners > MAX_TYPE_DEPTH * MAX_TYPE_DEPTH
+                || ancestors.len() >= MAX_TYPE_DEPTH
+                || ancestors.contains(&key)
+            {
+                return Ok(None);
+            }
+            ancestors.push(key);
+
+            // A prefilter only needs a superset. Keep both receiver kinds and
+            // defer shadowing, ambiguity and private method identity to matching.
+            match &owner.kind {
+                TypeKind::Named { name, .. } => {
+                    for path in self.indexes.files(owner.package).iter() {
+                        let index = self.indexes.file_index(path)?;
+                        shapes.extend(
+                            index.symbols.members_of(name).filter_map(|(name, member)| {
+                                MethodShape::from_symbol(name, member)
+                            }),
+                        );
+                    }
+                }
+                TypeKind::Inline { shape, .. } => {
+                    shapes.extend(
+                        shape
+                            .members
+                            .iter()
+                            .filter_map(|(name, member)| MethodShape::from_symbol(name, member)),
+                    );
+                }
+                _ => {}
+            }
+            let Some((file, details, substitutions)) = self.type_context(&owner)? else {
+                continue;
+            };
+            let bases = details
+                .alias
+                .or(details.underlying)
+                .into_iter()
+                .chain(details.embedded);
+            for base in bases {
+                let Some(base) =
+                    self.implementation_type(owner.package, &file, base, &substitutions)?
+                else {
+                    return Ok(None);
+                };
+                pending.push((base, ancestors.clone()));
+            }
+        }
+        Ok(Some(shapes))
+    }
+
     pub(super) fn interface_methods(
         &mut self,
         ty: &TypeIdentity<'w>,
