@@ -44,7 +44,7 @@ The same Rust resolver handles `textDocument/typeDefinition`. It follows the typ
 
 ## Find references
 
-The server provides \`textDocument/references\` for local, package and cross-package Go uses, including test variants and open buffers. It verifies each candidate against the selected declaration, and larger searches run in cancellable batches. [GoLand reference sets and benchmarks](docs/goland-references-baseline.md)
+The server provides `textDocument/references` for local, package and cross-package Go uses, including test variants and open buffers. It verifies each candidate against the selected declaration, and larger searches run in cancellable batches. [GoLand reference sets and benchmarks](docs/goland-references-baseline.md)
 
 ## Test in Zed on Windows
 

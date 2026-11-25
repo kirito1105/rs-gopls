@@ -54,3 +54,21 @@ python -B .\tools\compare_workspace_references.py $server --workspace $workspace
 ~~~
 
 gopls v0.24.0 与 GoLand 在 34 组设置中有 32 组的集合一致。在 `UserStore.GetAll` 上，gopls 还返回 `internal/app/user_avatar_test.go` 中的一条具体实现调用。性能采样使用已有共同结果的九个案例，包含局部、同包和跨包各三例。
+
+## 引用发布验收
+
+发布版代码为 `be7641d`。17 个 GoLand 查询在包含和排除声明时共通过 34 组精确结果集。12 组工作区回归通过，覆盖 Go Modules、`go.work`、GOPATH、内外测试包、遮蔽、未保存新文件、磁盘和缓冲区变化；在包图加载中和分批扫描中也验证了取消。最终发布版同时通过 58 个 GoLand 类型定义用例、21 个 GoLand 声明位置、124 个合成声明位置和 16 个项目锚点。
+
+在同一 Windows 主机上固定 Go 1.27.4，以 GoLand 源码集合为共同预期，轮换运行 rs-gopls 和 gopls v0.24.0。每套服务通过 5 次首次查询与 400 次范围编辑后的查询。其中局部与跨包各 135 次，同包 130 次，包含声明的选项交替使用。gopls 采用 `Save` 诊断配置，启动样本共享 Go 和系统缓存。
+
+| 指标 | rs-gopls | gopls v0.24.0 |
+| --- | ---: | ---: |
+| 首次正确引用集 P50 | 592.63 ms | 1116.03 ms |
+| 局部引用编辑后 P95 | 0.57 ms | 88.57 ms |
+| 同包引用编辑后 P95 | 3.74 ms | 70.81 ms |
+| 跨包引用编辑后 P95 | 3.44 ms | 92.37 ms |
+| 采样进程树峰值工作集 | 47.1 MiB | 576.4 MiB |
+
+旧功能同轮性能回归继续通过。声明跳转的范围编辑 P95 为 0.58 ms，第二阶段版本为 0.57 ms。类型定义最终版的 P95 为 0.56 ms，类型定义验收版本为 0.58 ms。
+
+Zed 1.29.3 隔离配置的 `server — api.go` 窗口实际启动了 `rs-gopls-d6dcebec709f037f.exe`，与发布版 SHA-256 `D6DCEBEC709F037F2A6DA6B0F00A327793B346EE36C9188982290C04764BC359` 一致。该二进制的 LSP 初始化报告 `definitionProvider`、`typeDefinitionProvider` 和 `referencesProvider`，功能落点和集合由 stdio 套件验收。
