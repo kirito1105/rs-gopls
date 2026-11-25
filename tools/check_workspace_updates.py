@@ -481,6 +481,10 @@ def check_overlay_new_file(executable_path, root, timeout):
         root / "caller.go",
         "package overlay\n\nfunc Existing() {}\nfunc Caller() { Existing(); Added() }\n",
     )
+    internal = write(root / "internal_test.go", "package overlay\n\nfunc CallerTest() { Added() }\n")
+    external = write(root / "external_test.go", "package overlay_test\n\nfunc CallerTest() { Added() }\n")
+    internal_call = site(internal, "{ [[Added]]()")
+    external_call = site(external, "{ [[Added]]()")
     virtual = root / "helper_extra.go"
     virtual_text = "package overlay\n\nfunc Added() { Existing() }\n"
     existing = site(caller, "func [[Existing]]()")
@@ -494,9 +498,12 @@ def check_overlay_new_file(executable_path, root, timeout):
         no_definition(client, added_call)
         client.open_document(virtual, virtual_text)
         check_location(client, added_call, added)
+        check_location(client, internal_call, added)
+        no_definition(client, external_call)
         check_location(client, virtual_existing_call, existing)
         client.close_document(virtual)
         no_definition(client, added_call)
+        no_definition(client, internal_call)
     if virtual.exists():
         raise RuntimeError(f"test overlay unexpectedly wrote {virtual}")
 

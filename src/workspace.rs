@@ -177,6 +177,10 @@ impl Workspace {
 }
 
 impl Package {
+    pub(crate) fn directory_and_name(&self) -> (&Path, &str) {
+        (&self.directory, &self.name)
+    }
+
     fn import_id<'a>(&'a self, path: &'a str) -> &'a str {
         self.import_map
             .get(path)

@@ -294,7 +294,7 @@ impl Engine {
                 && let Some(package) = draft_package(workspace, document)
             {
                 drafts
-                    .entry(package.id.as_str())
+                    .entry(package.directory_and_name())
                     .or_default()
                     .push(&document.path);
             }
@@ -412,12 +412,12 @@ struct IndexReader<'a> {
     parser: &'a mut Parser,
     documents: &'a HashMap<PathBuf, Source>,
     disk_index: &'a mut HashMap<PathBuf, DiskIndex>,
-    drafts: HashMap<&'a str, Vec<&'a PathBuf>>,
+    drafts: HashMap<(&'a Path, &'a str), Vec<&'a PathBuf>>,
 }
 
 impl IndexReader<'_> {
     fn files<'p>(&self, package: &'p Package) -> Cow<'p, [PathBuf]> {
-        match self.drafts.get(package.id.as_str()) {
+        match self.drafts.get(&package.directory_and_name()) {
             None => Cow::Borrowed(&package.files),
             Some(files) => Cow::Owned(
                 package
