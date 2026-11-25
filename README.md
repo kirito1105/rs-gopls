@@ -36,7 +36,7 @@ python -B .\tools\check_definitions.py $server --stage 6
 python -B .\tools\check_workspace_updates.py $server
 ~~~
 
-Use the optional workspace argument on the first command to check the matching localchat/server source revision. See the [first-stage definition roadmap](docs/definition-plan.md) for existing coverage and the [next-stage plan](docs/definition-next-phase.md) for upcoming milestones. See the [GoLand navigation baseline](docs/goland-definition-baseline.md) for real-project targets.
+Use the optional workspace argument on the first command to check the matching localchat/server source revision. See the [first-stage definition roadmap](docs/definition-plan.md), [second-stage plan](docs/definition-next-phase.md), and [third-stage navigation plan](docs/navigation-phase-three.md). The [GoLand navigation baseline](docs/goland-definition-baseline.md) records real-project targets.
 
 ## Test in Zed on Windows
 
