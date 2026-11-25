@@ -1,7 +1,9 @@
 use super::*;
 
+mod candidates;
 mod method_sets;
 
+use candidates::CandidatePackages;
 use method_sets::{InterfaceMethods, MethodKey};
 
 type Location = (PathBuf, Range);
@@ -10,22 +12,31 @@ type QueryKey = (PathBuf, Position);
 #[derive(Default)]
 pub(super) struct ImplementationCache {
     results: HashMap<QueryKey, Vec<Location>>,
+    packages: HashMap<String, HashSet<String>>,
 }
 
 impl ImplementationCache {
     pub(super) fn is_empty(&self) -> bool {
-        self.results.is_empty()
+        self.results.is_empty() && self.packages.is_empty()
     }
 
     pub(super) fn clear(&mut self) {
         self.results.clear();
+        self.packages.clear();
     }
 
     fn remember(&mut self, key: QueryKey, result: Vec<Location>) {
         if self.results.len() >= 128 {
-            self.clear();
+            self.results.clear();
         }
         self.results.insert(key, result);
+    }
+
+    fn remember_packages(&mut self, candidates: CandidatePackages) {
+        if self.packages.len() >= 32 {
+            self.packages.clear();
+        }
+        self.packages.insert(candidates.method, candidates.eligible);
     }
 
     pub(super) fn shift(&mut self, path: &Path, shift: LineShift) {
@@ -128,6 +139,7 @@ pub struct ImplementationSearch {
     selected: Option<MethodKey>,
     declaration: Location,
     packages: VecDeque<String>,
+    package_filter: Option<CandidatePackages>,
     current: Option<PackageSearch>,
     matches: Vec<Location>,
 }
@@ -224,7 +236,11 @@ impl Engine {
             if !same_file || position < range.start || position >= range.end {
                 matches.push(subject.declaration.clone());
             }
-            let Some(anchor) = required.method_names().min().map(str::to_owned) else {
+            let Some(anchor) = required
+                .method_names()
+                .max_by_key(|name| (name.len(), *name))
+                .map(str::to_owned)
+            else {
                 return Ok(QueryProgress::Ready(matches));
             };
             Direction::Implementations { required, anchor }
@@ -242,13 +258,28 @@ impl Engine {
             .method
             .as_ref()
             .is_some_and(|method| !method.is_exported());
-        let packages = workspace
+        let mut packages: VecDeque<_> = workspace
             .navigation_packages()
             .filter(|candidate| {
                 !package_only || candidate.directory_and_name() == package.directory_and_name()
             })
             .map(|candidate| candidate.id.clone())
             .collect();
+        let filter_method = match &direction {
+            Direction::Implementations { anchor, .. } => Some(anchor.as_str()),
+            Direction::Interfaces { .. } => subject.method.as_ref().map(MethodKey::name),
+        };
+        // The predeclared error interface can supply Error outside the go list graph.
+        let package_filter = filter_method
+            .filter(|method| !package_only && *method != "Error")
+            .and_then(|method| {
+                if let Some(eligible) = self.implementation_cache.packages.get(method) {
+                    packages.retain(|id| eligible.contains(id));
+                    None
+                } else {
+                    Some(CandidatePackages::new(method, &packages))
+                }
+            });
         Ok(QueryProgress::Searching(Search::Implementations(
             ImplementationSearch {
                 key,
@@ -256,6 +287,7 @@ impl Engine {
                 selected: subject.method,
                 declaration: subject.declaration,
                 packages,
+                package_filter,
                 current: None,
                 matches,
             },
@@ -281,6 +313,15 @@ impl Engine {
             drafts: draft_files(workspace, &self.documents, &self.new_documents),
         };
         let mut resolver = Resolver { workspace, indexes };
+        if let Some(filter) = &mut search.package_filter {
+            if filter.advance(&resolver) {
+                search.packages.retain(|id| filter.eligible.contains(id));
+                if let Some(filter) = search.package_filter.take() {
+                    self.implementation_cache.remember_packages(filter);
+                }
+            }
+            return Ok(false);
+        }
         let started = Instant::now();
         for _ in 0..32 {
             if search.current.is_none() {

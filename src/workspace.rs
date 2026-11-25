@@ -20,6 +20,7 @@ pub struct Package {
     pub id: String,
     pub name: String,
     pub files: Vec<PathBuf>,
+    pub(crate) load_error: bool,
     directory: PathBuf,
     import_map: HashMap<String, String>,
     for_test: String,
@@ -295,6 +296,7 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
     let stream = serde_json::Deserializer::from_reader(reader).into_iter::<ListedPackage>();
     for package in stream {
         let package = package.context("decoding go list package metadata")?;
+        let load_error = package.error.is_some();
         if listing.package_error.is_none() {
             listing.package_error = package.error.map(|error| error.err);
         }
@@ -326,6 +328,7 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
             id: import_path,
             name: package.name,
             files,
+            load_error,
             directory: path_key(&package.dir),
             import_map: package.import_map,
             for_test: package.for_test,

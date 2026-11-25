@@ -913,6 +913,62 @@ def check_implementation_updates(executable_path, root, timeout):
         raise RuntimeError(f"test overlay unexpectedly wrote {draft_path}")
 
 
+def check_implementation_candidate_packages(executable_path, root, timeout):
+    module = "example.test/implpruning"
+    write(root / "go.mod", f"module {module}\n\ngo 1.22\n")
+    interface = site(
+        write(root / "contract" / "worker.go", "package contract\n\ntype Worker interface { DeliverParcel() }\n"),
+        "type [[Worker]] interface",
+    )
+    direct = site(
+        write(
+            root / "courier" / "delivery.go",
+            "package courier\n\ntype Courier struct{}\nfunc (Courier) DeliverParcel() {}\n",
+        ),
+        "type [[Courier]] struct",
+    )
+    wrapper = site(
+        write(
+            root / "bridge" / "bridge.go",
+            f'package bridge\n\nimport "{module}/courier"\n\ntype Bridge struct {{ courier.Courier }}\n',
+        ),
+        "type [[Bridge]] struct",
+    )
+    alias = site(
+        write(
+            root / "exported" / "alias.go",
+            f'package exported\n\nimport "{module}/bridge"\n\ntype Exported = bridge.Bridge\n',
+        ),
+        "type [[Exported]] =",
+    )
+    editable = write(root / "switcher" / "switcher.go", "package switcher\n\ntype Switch struct{}\n")
+    importer = site(
+        write(
+            root / "transit" / "transit.go",
+            f'package transit\n\nimport "{module}/switcher"\n\ntype Transit struct {{ switcher.Switch }}\n',
+        ),
+        "type [[Transit]] struct",
+    )
+    draft = site(
+        editable,
+        "type [[Switch]] struct",
+        f'package switcher\n\nimport "{module}/exported"\n\ntype Switch struct {{ exported.Exported }}\n',
+    )
+    method = site(direct.path, "(Courier) [[DeliverParcel]]()")
+    interface_method = site(interface.path, "{ [[DeliverParcel]]()")
+    on_disk = (direct, wrapper, alias)
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(interface.path, interface.text)
+        check_implementations(client, interface, *on_disk)
+        check_implementations(client, method, interface_method)
+
+        client.open_document(editable, draft.text)
+        check_implementations(client, interface, *on_disk, draft, importer)
+        client.close_document(editable)
+        check_implementations(client, interface, *on_disk)
+
+
 def check_implementation_cancel(executable_path, root, timeout):
     control = root / "control"
     environment = go_list_relay(control, timeout)
@@ -995,6 +1051,7 @@ CASES = {
     "reference-cancel": check_reference_cancel,
     "reference-active-cancel": check_active_reference_cancel,
     "implementation-updates": check_implementation_updates,
+    "implementation-candidate-packages": check_implementation_candidate_packages,
     "implementation-cancel": check_implementation_cancel,
     "implementation-active-cancel": check_active_implementation_cancel,
 }

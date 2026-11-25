@@ -107,6 +107,30 @@ python -B .\tools\compare_workspace_implementations.py $server --workspace $proj
 
 逐请求结果保存在 Cargo 产物目录的 `implementation-performance.json`、`phase4-definition-performance.json`、`phase4-typeDefinition-performance.json` 和 `phase4-references-performance.json`。
 
+## 首次响应优化
+
+优化版在建立声明索引之前筛选候选包。接口查询从完整方法集选取一个必需方法，具体方法反查使用该方法的名称。扫描包内活动源码中的名称，并沿反向导入关系保留可能通过嵌入或别名获得该方法的包。打开缓冲区、包加载出错以及源码快照不确定的包采用保守筛选。保留的类型仍逐项验证方法集。具体类型反查需要查找它满足的多种接口，使用完整候选包范围。[候选包筛选实现](../src/semantic/implementation/candidates.rs)
+
+首次响应从创建进程计时，直到返回完整的 GoLand 对照集合。优化前后均从新的 rs-gopls 进程开始，共用 Go 和系统缓存，与 gopls v0.24.0 轮换顺序。默认 gopls 使用已有磁盘索引，可用 `--empty-gopls-cache` 为 gopls 的每次会话使用新的临时磁盘缓存。样本采用同一个 Windows 主机、Go 1.27.4 和上文的项目修订。
+
+| 首次正确响应，每组 5 次 | rs-gopls 优化前 P50 / P95 | rs-gopls 优化后 P50 / P95 | gopls P50 / P95 |
+| --- | ---: | ---: | ---: |
+| `Store` 接口查实现 | 3658.48 / 3701.78 ms | 765.24 / 833.47 ms | 1094.09 / 1127.06 ms |
+| `SqlUserStore.GetAll` 方法反查 | 3601.44 / 3715.05 ms | 846.50 / 859.66 ms | 1189.81 / 1193.24 ms |
+| `SqlUserStore` 具体类型反查 | 3553.47 / 3748.81 ms | 3541.26 / 3617.65 ms | 1162.80 / 1175.01 ms |
+
+45 次首查全部返回精确结果。`Store` 首次响应 P50 下降 79%，具体方法反查 P50 下降 76%。具体类型反查与优化前基本持平。
+
+给 gopls 每次分配空磁盘缓存时，`Store` 首查 P50 / P95 为 2477.76 / 2507.69 ms。同轮 rs-gopls 为 743.70 / 767.52 ms。两套服务各 5 次均返回完整的 39 个目标。
+
+发布版通过全部 49 个 GoLand 对照和 16 项工作区回归，新增用例覆盖跨包嵌入、别名及未保存导入对现有导入方的影响。声明跳转、类型定义和引用的原有回归全部通过。常规五轮复测中，两套服务在 15 个共同样本上各通过 805 次响应。rs-gopls 的正向和反向暖态 P95 分别为 0.43 ms 与 0.20 ms，顶层注释编辑后分别为 0.67 ms 与 0.46 ms。完整测量保存在 Cargo 产物目录的 `implementation-performance-pruning.json`。
+
+```powershell
+$prior = Join-Path $target 'zed-rs-gopls\profile\extensions\work\rs-gopls-lsp\rs-gopls-8d4f0a4bad3f4f96.exe'
+python -B .\tools\compare_first_implementations.py $server --workspace $project --prior $prior --gopls --case store-type --case sql-user-store-get-all --case sql-user-store-type --sessions 5 --json (Join-Path $target 'implementation-first-pruning.json')
+python -B .\tools\compare_first_implementations.py $server --workspace $project --gopls --empty-gopls-cache --case store-type --sessions 5 --json (Join-Path $target 'implementation-first-empty-gopls-cache.json')
+```
+
 ## Zed 加载与现场验收
 
 Zed 1.29.3 已用仓库隔离配置打开 `localchat/server` 的 `filestore.go`。进程检查确认 Zed 启动了 `rs-gopls-8d4f0a4bad3f4f96.exe`，与正式测速的发布版 SHA-256 `8D4F0A4BAD3F4F96C2D01869BC14DDCAFEFE457E77FF8560D9B5B7EFB97A9927` 一致。发布版的 stdio 初始化声明了 `implementationProvider`，全部 GoLand 对照已通过。

@@ -20,6 +20,10 @@ impl MethodKey {
         self.package.is_none()
     }
 
+    pub(super) fn name(&self) -> &str {
+        &self.name
+    }
+
     fn accessible_from(&self, package: &Package) -> bool {
         self.package
             .as_deref()
