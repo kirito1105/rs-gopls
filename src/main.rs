@@ -1,5 +1,6 @@
 mod scope;
 mod semantic;
+mod symbols;
 mod workspace;
 
 use std::{

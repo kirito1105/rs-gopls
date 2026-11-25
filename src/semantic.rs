@@ -8,12 +8,12 @@ use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::scope::lexical_binding;
+use crate::symbols::{self, FileSymbols, Symbol, SymbolKind, TypeRef};
 use crate::workspace::{Package, Workspace, path_key};
 
-#[derive(Default)]
 struct FileIndex {
-    package_range: Option<Range>,
-    declarations: HashMap<String, Range>,
+    symbols: FileSymbols,
+    imports: Vec<Import>,
 }
 
 #[derive(Clone, Copy)]
@@ -24,6 +24,10 @@ enum ReferenceQuery<'tree> {
         name: Node<'tree>,
     },
     Import(Node<'tree>),
+    LiteralField {
+        ty: Node<'tree>,
+        name: Node<'tree>,
+    },
 }
 
 pub struct Engine {
@@ -125,25 +129,28 @@ impl Engine {
                     if let Some(binding) = import.binding {
                         return Ok(Some((path.to_owned(), binding)));
                     }
-                    return indexes.find(package, |index| index.package_range);
+                    return indexes.find(package, |index| index.symbols.package_range);
                 }
-                indexes.find(from, |index| index.declarations.get(identifier).copied())
+                indexes.find(from, |index| {
+                    index
+                        .symbols
+                        .declaration(identifier)
+                        .map(|symbol| symbol.range)
+                })
             }
             ReferenceQuery::Member { receiver, name } => {
-                let symbol = node_text(name, &source.text);
-                if !matches!(receiver.kind(), "identifier" | "package_identifier")
-                    || !is_exported(symbol)
-                {
-                    return Ok(None);
-                }
-                let qualifier = node_text(receiver, &source.text);
-                if lexical_binding(receiver, qualifier, &source.text).is_some() {
-                    return Ok(None);
-                }
-                let Some((_, target)) = source.imported_package(workspace, from, qualifier) else {
+                let mut resolver = Resolver { workspace, indexes };
+                let member =
+                    resolver.selector(from, source, receiver, node_text(name, &source.text), 0)?;
+                Ok(member.map(ResolvedSymbol::location))
+            }
+            ReferenceQuery::LiteralField { ty, name } => {
+                let mut resolver = Resolver { workspace, indexes };
+                let Some(ty) = resolver.source_type(from, source, ty) else {
                     return Ok(None);
                 };
-                indexes.find(target, |index| index.declarations.get(symbol).copied())
+                let member = resolver.member(from, &ty, node_text(name, &source.text))?;
+                Ok(member.map(ResolvedSymbol::location))
             }
             ReferenceQuery::Import(literal) => {
                 let Some(import_path) = import_path(node_text(literal, &source.text)) else {
@@ -152,7 +159,7 @@ impl Engine {
                 let Some(target) = workspace.resolve_import(from, &import_path) else {
                     return Ok(None);
                 };
-                indexes.find(target, |index| index.package_range)
+                indexes.find(target, |index| index.symbols.package_range)
             }
         }
     }
@@ -193,11 +200,216 @@ impl IndexReader<'_> {
     }
 }
 
+const MAX_TYPE_DEPTH: usize = 32;
+
+struct TypeIdentity<'w> {
+    package: &'w Package,
+    name: String,
+}
+
+struct ResolvedSymbol<'w> {
+    package: &'w Package,
+    file: PathBuf,
+    symbol: Symbol,
+}
+
+impl ResolvedSymbol<'_> {
+    fn location(self) -> (PathBuf, Range) {
+        (self.file, self.symbol.range)
+    }
+}
+
+struct Resolver<'w, 'idx> {
+    workspace: &'w Workspace,
+    indexes: IndexReader<'idx>,
+}
+
+impl<'w> Resolver<'w, '_> {
+    fn selector(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        receiver: Node<'_>,
+        name: &str,
+        depth: usize,
+    ) -> Result<Option<ResolvedSymbol<'w>>> {
+        if matches!(receiver.kind(), "identifier" | "package_identifier") {
+            let qualifier = node_text(receiver, &source.text);
+            if lexical_binding(receiver, qualifier, &source.text).is_none()
+                && let Some((_, package)) = source.imported_package(self.workspace, from, qualifier)
+            {
+                return if is_exported(name) {
+                    self.find_symbol(package, name, None)
+                } else {
+                    Ok(None)
+                };
+            }
+        }
+
+        let Some(ty) = self.infer_type(from, source, receiver, depth + 1)? else {
+            return Ok(None);
+        };
+        self.member(from, &ty, name)
+    }
+
+    fn member(
+        &mut self,
+        from: &Package,
+        ty: &TypeIdentity<'w>,
+        name: &str,
+    ) -> Result<Option<ResolvedSymbol<'w>>> {
+        if !is_exported(name) && !std::ptr::eq(from, ty.package) {
+            return Ok(None);
+        }
+        self.find_symbol(ty.package, name, Some(&ty.name))
+    }
+
+    fn find_symbol(
+        &mut self,
+        package: &'w Package,
+        name: &str,
+        receiver: Option<&str>,
+    ) -> Result<Option<ResolvedSymbol<'w>>> {
+        for file in &package.files {
+            let index = &self.indexes.file_index(file)?.symbols;
+            let symbol = match receiver {
+                Some(ty) => index.member(ty, name),
+                None => index.declaration(name),
+            };
+            if let Some(symbol) = symbol {
+                return Ok(Some(ResolvedSymbol {
+                    package,
+                    file: file.clone(),
+                    symbol: symbol.clone(),
+                }));
+            }
+        }
+        Ok(None)
+    }
+
+    fn infer_type(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        expression: Node<'_>,
+        depth: usize,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        if depth >= MAX_TYPE_DEPTH {
+            return Ok(None);
+        }
+        match expression.kind() {
+            "identifier" => {
+                let name = node_text(expression, &source.text);
+                if let Some(binding) = lexical_binding(expression, name, &source.text) {
+                    if let Some(ty) = binding.explicit_type {
+                        return Ok(self.source_type(from, source, ty));
+                    }
+                    return match binding.initializer {
+                        Some(initializer) if binding.result_index == 0 => {
+                            self.infer_type(from, source, initializer, depth + 1)
+                        }
+                        _ => Ok(None),
+                    };
+                }
+                let Some(symbol) = self.find_symbol(from, name, None)? else {
+                    return Ok(None);
+                };
+                self.value_type(symbol)
+            }
+            "composite_literal" => Ok(expression
+                .child_by_field_name("type")
+                .and_then(|ty| self.source_type(from, source, ty))),
+            "unary_expression" | "parenthesized_expression" => {
+                let inner = expression
+                    .child_by_field_name("operand")
+                    .or_else(|| expression.named_child(0));
+                match inner {
+                    Some(inner)
+                        if expression.kind() == "parenthesized_expression"
+                            || matches!(
+                                node_text(expression, &source.text).as_bytes().first(),
+                                Some(b'&' | b'*')
+                            ) =>
+                    {
+                        self.infer_type(from, source, inner, depth + 1)
+                    }
+                    _ => Ok(None),
+                }
+            }
+            "selector_expression" => {
+                let Some(receiver) = expression.child_by_field_name("operand") else {
+                    return Ok(None);
+                };
+                let Some(name) = expression.child_by_field_name("field") else {
+                    return Ok(None);
+                };
+                let Some(symbol) = self.selector(
+                    from,
+                    source,
+                    receiver,
+                    node_text(name, &source.text),
+                    depth + 1,
+                )?
+                else {
+                    return Ok(None);
+                };
+                self.value_type(symbol)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn source_type(
+        &self,
+        from: &'w Package,
+        source: &Source,
+        ty: Node<'_>,
+    ) -> Option<TypeIdentity<'w>> {
+        let reference = symbols::named_type(ty, &source.text)?;
+        if reference.qualifier.is_none()
+            && lexical_binding(ty, &reference.name, &source.text).is_some()
+        {
+            return None;
+        }
+        type_identity(self.workspace, from, &source.imports, reference)
+    }
+
+    fn value_type(&mut self, resolved: ResolvedSymbol<'w>) -> Result<Option<TypeIdentity<'w>>> {
+        let SymbolKind::Value(Some(reference)) = resolved.symbol.kind else {
+            return Ok(None);
+        };
+        let index = self.indexes.file_index(&resolved.file)?;
+        Ok(type_identity(
+            self.workspace,
+            resolved.package,
+            &index.imports,
+            reference,
+        ))
+    }
+}
+
+fn type_identity<'w>(
+    workspace: &'w Workspace,
+    from: &'w Package,
+    imports: &[Import],
+    reference: TypeRef,
+) -> Option<TypeIdentity<'w>> {
+    let package = match reference.qualifier {
+        Some(qualifier) => imported_package(imports, workspace, from, &qualifier)?.1,
+        None => from,
+    };
+    Some(TypeIdentity {
+        package,
+        name: reference.name,
+    })
+}
+
 fn read_source(parser: &mut Parser, path: &Path) -> Result<Source> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     Source::parse(parser, text, None)
 }
 
+#[derive(Clone)]
 struct Import {
     alias: Option<String>,
     path: String,
@@ -327,7 +539,19 @@ impl Source {
             && parent.parent().is_some_and(|node| {
                 node.kind() == "keyed_element" && node.child_by_field_name("key") == Some(parent)
             });
-        ((named && !field_key) || is_declaration_name(leaf)).then_some(ReferenceQuery::Name(leaf))
+        if named && field_key {
+            let mut ancestor = parent.parent().and_then(|node| node.parent());
+            while let Some(node) = ancestor {
+                if node.kind() == "composite_literal" {
+                    return node
+                        .child_by_field_name("type")
+                        .map(|ty| ReferenceQuery::LiteralField { ty, name: leaf });
+                }
+                ancestor = node.parent();
+            }
+            return None;
+        }
+        (named || is_declaration_name(leaf)).then_some(ReferenceQuery::Name(leaf))
     }
 
     fn imported_package<'a>(
@@ -336,11 +560,7 @@ impl Source {
         from: &Package,
         qualifier: &str,
     ) -> Option<(&Import, &'a Package)> {
-        self.imports.iter().find_map(|import| {
-            let package = workspace.resolve_import(from, &import.path)?;
-            let name = import.alias.as_deref().unwrap_or(&package.name);
-            (name == qualifier).then_some((import, package))
-        })
+        imported_package(&self.imports, workspace, from, qualifier)
     }
 
     fn range(&self, node: Node<'_>) -> Range {
@@ -356,22 +576,24 @@ impl Source {
     }
 
     fn collect_declarations(&self) -> FileIndex {
-        let root = self.tree.root_node();
-        let mut cursor = root.walk();
-        let mut result = FileIndex::default();
-        for declaration in root.named_children(&mut cursor) {
-            if declaration.kind() == "package_clause" {
-                result.package_range = declaration.named_child(0).map(|name| self.range(name));
-            }
-            visit_declaration_names(declaration, &mut |name| {
-                result
-                    .declarations
-                    .entry(node_text(name, &self.text).to_owned())
-                    .or_insert_with(|| self.range(name));
-            });
+        FileIndex {
+            symbols: symbols::collect(&self.tree, &self.text, |name| self.range(name)),
+            imports: self.imports.clone(),
         }
-        result
     }
+}
+
+fn imported_package<'a, 'w>(
+    imports: &'a [Import],
+    workspace: &'w Workspace,
+    from: &Package,
+    qualifier: &str,
+) -> Option<(&'a Import, &'w Package)> {
+    imports.iter().find_map(|import| {
+        let package = workspace.resolve_import(from, &import.path)?;
+        let name = import.alias.as_deref().unwrap_or(&package.name);
+        (name == qualifier).then_some((import, package))
+    })
 }
 
 fn import_path(literal: &str) -> Option<String> {
@@ -423,49 +645,6 @@ fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
         collect(node, text, lines, &mut result);
     }
     result
-}
-
-fn visit_declaration_names<'tree>(node: Node<'tree>, visit: &mut impl FnMut(Node<'tree>)) {
-    let mut cursor = node.walk();
-    match node.kind() {
-        "var_declaration"
-        | "const_declaration"
-        | "type_declaration"
-        | "var_spec_list"
-        | "parameter_list"
-        | "type_parameter_list"
-        | "labeled_statement" => {
-            for child in node.named_children(&mut cursor) {
-                visit_declaration_names(child, visit);
-            }
-        }
-        "short_var_declaration" => {
-            if let Some(left) = node.child_by_field_name("left") {
-                for name in left
-                    .named_children(&mut cursor)
-                    .filter(|node| node.kind() == "identifier")
-                {
-                    visit(name);
-                }
-            }
-        }
-        "function_declaration"
-        | "type_spec"
-        | "type_alias"
-        | "var_spec"
-        | "const_spec"
-        | "parameter_declaration"
-        | "variadic_parameter_declaration"
-        | "type_parameter_declaration" => {
-            for name in node
-                .children_by_field_name("name", &mut cursor)
-                .filter(Node::is_named)
-            {
-                visit(name);
-            }
-        }
-        _ => {}
-    }
 }
 
 fn is_declaration_name(node: Node<'_>) -> bool {
@@ -580,11 +759,11 @@ mod tests {
             None,
         )
         .unwrap();
-        let names = &source.declarations().declarations;
+        let names = &source.declarations().symbols;
         for name in ["First", "Second", "Third", "Fifth", "Sixth"] {
-            assert!(names.contains_key(name), "missing {name}");
+            assert!(names.declaration(name).is_some(), "missing {name}");
         }
-        assert!(names.contains_key("fourth"));
+        assert!(names.declaration("fourth").is_some());
     }
 
     #[test]
