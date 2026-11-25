@@ -966,6 +966,8 @@ def check_active_implementation_cancel(executable_path, root, timeout):
     with session(executable_path, root, timeout) as client:
         client.open_document(origin.path, origin.text)
         check_implementations(client, origin, *methods)
+        # Keep the loaded package graph and invalidate the previous query result.
+        client.change_document(origin.path, 2, origin.text + "\ntype Unrelated struct{}\n")
         start_active_search(client, "active-impl")
         client.notify("$/cancelRequest", id="active-impl")
         expect_error(wait_for_response(client, "active-impl"), -32800)

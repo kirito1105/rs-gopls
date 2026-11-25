@@ -146,7 +146,9 @@ def main():
     parser.add_argument("candidate", type=executable)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
-    parser.add_argument("--gopls", type=executable, default="gopls")
+    comparison = parser.add_mutually_exclusive_group()
+    comparison.add_argument("--gopls", type=executable, help="gopls executable (default: gopls on PATH)")
+    comparison.add_argument("--prior", type=executable, help="compare against a previous rs-gopls release")
     parser.add_argument("--case", action="append", dest="case_ids", help="shared exact-set case (repeatable)")
     parser.add_argument("--sessions", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=80, help="caller range edits per session")
@@ -155,6 +157,11 @@ def main():
     args = parser.parse_args()
     if min(args.sessions, args.iterations) < 1 or not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("sessions, iterations and finite timeout must be positive")
+    if not args.prior and not args.gopls:
+        try:
+            args.gopls = executable("gopls")
+        except argparse.ArgumentTypeError as exc:
+            parser.error(str(exc))
 
     try:
         workspace = args.workspace.resolve(strict=True)
@@ -164,7 +171,8 @@ def main():
             ["go", "env", "-json", *GO_ENV_KEYS], cwd=workspace, env=environment,
             encoding="utf-8", timeout=args.timeout,
         ))
-        commands = [("candidate", args.candidate), ("gopls", args.gopls)]
+        comparison_server = ("prior", args.prior) if args.prior else ("gopls", args.gopls)
+        commands = [("candidate", args.candidate), comparison_server]
         report = {
             "workspace": str(workspace),
             "fixture": str(args.fixture.resolve()),

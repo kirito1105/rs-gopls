@@ -166,6 +166,7 @@ pub struct Engine {
     documents: HashMap<PathBuf, Source>,
     new_documents: HashSet<PathBuf>,
     disk_index: HashMap<PathBuf, DiskIndex>,
+    implementation_cache: implementation::ImplementationCache,
     include_tests: bool,
 }
 
@@ -184,6 +185,7 @@ impl Engine {
             documents: HashMap::new(),
             new_documents: HashSet::new(),
             disk_index: HashMap::new(),
+            implementation_cache: implementation::ImplementationCache::default(),
             include_tests: false,
         }
     }
@@ -192,6 +194,21 @@ impl Engine {
         if path.extension().is_some_and(|extension| extension == "go") {
             let key = path_key(&path);
             let new_file = !path.is_file();
+            if !self.implementation_cache.is_empty() {
+                let unchanged = match self.documents.get(&key) {
+                    Some(previous) => previous.text == text,
+                    None => {
+                        !new_file
+                            && self
+                                .disk_index
+                                .get(&key)
+                                .is_some_and(|disk| disk.fingerprint == text_fingerprint(&text))
+                    }
+                };
+                if !unchanged {
+                    self.implementation_cache.clear();
+                }
+            }
             let source = Source::parse(&mut self.parser, path, text, None)?;
             if new_file {
                 self.new_documents.insert(key.clone());
@@ -204,15 +221,25 @@ impl Engine {
     }
 
     pub fn edit(&mut self, path: &Path, edits: &[TextDocumentContentChangeEvent]) -> Result<()> {
-        if let Some(source) = self.documents.get_mut(&path_key(path))
+        let key = path_key(path);
+        if let Some(source) = self.documents.get_mut(&key)
             && !edits.is_empty()
         {
-            source.edit(&mut self.parser, edits)?;
+            let track_shifts = !self.implementation_cache.is_empty();
+            let shifts = source.edit(&mut self.parser, edits, track_shifts)?;
+            if let Some(shifts) = shifts {
+                for shift in shifts {
+                    self.implementation_cache.shift(&key, shift);
+                }
+            } else {
+                self.implementation_cache.clear();
+            }
         }
         Ok(())
     }
 
     pub fn close(&mut self, path: &Path) {
+        self.implementation_cache.clear();
         let key = path_key(path);
         self.documents.remove(&key);
         self.new_documents.remove(&key);
@@ -246,10 +273,12 @@ impl Engine {
         }
         self.workspace = Some(workspace);
         self.graph_changes = GraphChanges::Clean;
+        self.implementation_cache.clear();
         true
     }
 
     fn invalidate(&mut self, affected: Option<HashSet<String>>) {
+        self.implementation_cache.clear();
         self.generation += 1;
         self.graph_changes.include(affected);
     }
@@ -267,6 +296,7 @@ impl Engine {
             return;
         }
 
+        self.implementation_cache.clear();
         let key = path_key(path);
         if change == FileChangeType::CREATED && path.is_file() {
             self.new_documents.remove(&key);
@@ -2853,10 +2883,12 @@ impl Source {
         &mut self,
         parser: &mut Parser,
         changes: &[TextDocumentContentChangeEvent],
-    ) -> Result<()> {
+        track_shifts: bool,
+    ) -> Result<Option<Vec<implementation::LineShift>>> {
         let mut text = self.text.clone();
         let mut tree = self.tree.clone();
         let mut lines = self.lines.clone();
+        let mut shifts = track_shifts.then(Vec::new);
         for change in changes {
             let (start, end) = if let Some(range) = change.range {
                 (
@@ -2883,6 +2915,20 @@ impl Source {
                     start_position.column + change.text.len(),
                 ),
             };
+            if let Some(preserved) = &mut shifts {
+                let shift = implementation::LineShift::for_edit(
+                    &tree,
+                    &text,
+                    start..end,
+                    change,
+                    new_end_position.row,
+                );
+                if let Some(shift) = shift {
+                    preserved.push(shift);
+                } else {
+                    shifts = None;
+                }
+            }
             tree.edit(&InputEdit {
                 start_byte: start,
                 old_end_byte: end,
@@ -2896,7 +2942,7 @@ impl Source {
         }
 
         *self = Self::parse_with_lines(parser, self.path.clone(), text, lines, Some(&tree))?;
-        Ok(())
+        Ok(shifts)
     }
 
     fn reference_at(&self, position: Position) -> Option<ReferenceQuery<'_>> {

@@ -69,3 +69,55 @@ python -B .\tools\check_workspace_updates.py $server
 ```
 
 15 组工作区回归通过，包含签名编辑、关闭后恢复、未保存新实现、磁盘构建条件变化、待加载取消和分批搜索取消。已有 124 个合成声明位置、16 个项目锚点、21 个 GoLand 声明对照、58 个 GoLand 类型定义对照及 34 组引用结果通过。[第三阶段验收记录](plans/2026-11-25-go-navigation-phase-three.md)
+
+## 性能对照
+
+同一 Windows 主机使用 Go 1.27.4、相同的 `localchat/server` 修订、Go 与系统缓存、打开文件和请求顺序。gopls v0.24.0 使用 `Save` 诊断配置，两套服务交替运行，各测 5 个独立会话。每个会话记录首次正确的 `Store` 查询，打开并预热共同样本后记录 80 次暖态查询，再记录 80 次未保存的顶层注释插入或删除及查询。每次都比较完整目标范围。
+
+gopls 对真实项目 20 例中的 15 例给出相同结果。4 例的接口声明是否出现在候选中有差异，包名查询返回 RPC 错误。15 个共同样本进入性能测量，每套服务的 805 次响应均匹配。
+
+| 指标 | rs-gopls P50 / P95 | gopls v0.24.0 P50 / P95 |
+| --- | ---: | ---: |
+| 首次正确响应，5 次 | 3904.31 / 4018.89 ms | 1085.25 / 1114.43 ms |
+| 正向暖态，200 次 | 0.21 / 0.53 ms | 0.79 / 1.23 ms |
+| 反向暖态，200 次 | 0.17 / 0.22 ms | 0.62 / 0.85 ms |
+| 正向注释编辑后，200 次 | 0.39 / 0.80 ms | 8.46 / 28.61 ms |
+| 反向注释编辑后，200 次 | 0.34 / 0.47 ms | 31.91 / 53.13 ms |
+| 进程树峰值工作集，中位 / 最大 | 64.3 / 67.8 MiB | 470.6 / 483.2 MiB |
+
+正向和反向暖态 P95 分别减少 57% 和 74%，达到主要路径目标。首次查询仍需要加载包图并扫描候选，P50 约为 gopls 的 3.6 倍。未保存的顶层普通注释和空行改动可重映射缓存坐标。签名、导入等语义改动触发重新搜索，这类改动由功能回归验证。
+
+```powershell
+$target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
+$server = Join-Path $target 'release\rs-gopls.exe'
+python -B .\tools\compare_workspace_implementations.py $server --workspace $project --sessions 5 --iterations 80 --json (Join-Path $target 'implementation-performance.json')
+```
+
+### 已有导航的同轮性能回归
+
+与第三阶段发布版 `be7641d` 的版本化二进制对比，声明和类型定义每套各通过 505 次精确响应，引用每套各通过 405 次精确响应。范围编辑后各路径的 P95 回退都在计划上限内。
+
+| 范围编辑后 P95 | 第四阶段 | 第三阶段 |
+| --- | ---: | ---: |
+| 声明跳转 | 0.58 ms | 0.53 ms |
+| 类型定义跳转 | 0.56 ms | 0.51 ms |
+| 文件内引用 | 0.68 ms | 0.62 ms |
+| 同包引用 | 3.56 ms | 3.67 ms |
+| 跨包引用 | 3.65 ms | 3.40 ms |
+
+逐请求结果保存在 Cargo 产物目录的 `implementation-performance.json`、`phase4-definition-performance.json`、`phase4-typeDefinition-performance.json` 和 `phase4-references-performance.json`。
+
+## Zed 加载与现场验收
+
+Zed 1.29.3 已用仓库隔离配置打开 `localchat/server` 的 `filestore.go`。进程检查确认 Zed 启动了 `rs-gopls-8d4f0a4bad3f4f96.exe`，与正式测速的发布版 SHA-256 `8D4F0A4BAD3F4F96C2D01869BC14DDCAFEFE457E77FF8560D9B5B7EFB97A9927` 一致。发布版的 stdio 初始化声明了 `implementationProvider`，全部 GoLand 对照已通过。
+
+以下位置可在当前隔离窗口用 **Go to Implementation**（`Ctrl+F12`）重放。行列从 1 开始。Windows UI 自动化的启动错误 `CreateProcessWithLogonW 1920` 阻塞了编辑器动作观察，实际结果待补记。
+
+| 查询位置 | 预期界面行为 |
+| --- | --- |
+| `internal/filestore/filestore.go:11:7` | 跳到 `internal/filestore/local.go:10:6` 的 `LocalFileBackend`。 |
+| `internal/store/store.go:38:3` | 列出 `UserStore.GetAll` 的 6 个实现声明。 |
+| `internal/store/sqlstore/user_store.go:91:25` | 跳到 `internal/store/store.go:38:2` 的 `UserStore.GetAll`。 |
+| `internal/store/store.go:1:10` | 没有跳转目标。 |
+
+现场同时抽查 **Go to Definition**、**Go to Type Definition** 和 **Find All References**。恢复 UI 自动化或取得现场结果后，核对各项输出并完成计划状态。

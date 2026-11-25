@@ -46,6 +46,10 @@ The same Rust resolver handles `textDocument/typeDefinition`. It follows the typ
 
 The server provides `textDocument/references` for local, package and cross-package Go uses, including test variants and open buffers. It verifies each candidate against the selected declaration, and larger searches run in cancellable batches. [GoLand reference sets and benchmarks](docs/goland-references-baseline.md)
 
+## Go to implementation
+
+Use Zed's **Go to Implementation** on a Go interface type or method to find implementations. From a concrete type or method, the same action finds matching interfaces or interface methods. Searches use the active build and test packages, including open buffers. [GoLand implementation sets and benchmarks](docs/goland-implementation-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.

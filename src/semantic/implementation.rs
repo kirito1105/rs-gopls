@@ -5,8 +5,125 @@ mod method_sets;
 use method_sets::{InterfaceMethods, MethodKey};
 
 type Location = (PathBuf, Range);
+type QueryKey = (PathBuf, Position);
+
+#[derive(Default)]
+pub(super) struct ImplementationCache {
+    results: HashMap<QueryKey, Vec<Location>>,
+}
+
+impl ImplementationCache {
+    pub(super) fn is_empty(&self) -> bool {
+        self.results.is_empty()
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.results.clear();
+    }
+
+    fn remember(&mut self, key: QueryKey, result: Vec<Location>) {
+        if self.results.len() >= 128 {
+            self.clear();
+        }
+        self.results.insert(key, result);
+    }
+
+    pub(super) fn shift(&mut self, path: &Path, shift: LineShift) {
+        if shift.old_end == shift.new_end {
+            return;
+        }
+        self.results = std::mem::take(&mut self.results)
+            .into_iter()
+            .filter_map(|((query_path, mut position), mut locations)| {
+                if query_path == path {
+                    position = shift.position(position)?;
+                }
+                for (file, range) in &mut locations {
+                    if file == path || path_key(file) == path {
+                        range.start = shift.position(range.start)?;
+                        range.end = shift.position(range.end)?;
+                    }
+                }
+                Some(((query_path, position), locations))
+            })
+            .collect();
+    }
+}
+
+pub(super) struct LineShift {
+    start: u32,
+    old_end: u32,
+    new_end: u32,
+}
+
+impl LineShift {
+    pub(super) fn for_edit(
+        tree: &Tree,
+        text: &str,
+        bytes: std::ops::Range<usize>,
+        change: &TextDocumentContentChangeEvent,
+        new_end: usize,
+    ) -> Option<Self> {
+        let range = change.range?;
+        let root = tree.root_node();
+        if range.start.character != 0
+            || range.end.character != 0
+            || root.has_error()
+            || (bytes.start == 0 && text.starts_with('\u{feff}'))
+            || !top_level_trivia(&text[bytes.clone()])
+            || !top_level_trivia(&change.text)
+        {
+            return None;
+        }
+        let mut cursor = root.walk();
+        let unaffected = root.named_children(&mut cursor).all(|node| {
+            let content = node_text(node, text);
+            if node.kind() == "comment" {
+                if ordinary_comment(content) {
+                    return true;
+                }
+                // Keep directives and block comments on the conservative invalidation path.
+                return false;
+            }
+            node.end_byte() <= bytes.start || node.start_byte() >= bytes.end
+        });
+        unaffected.then_some(Self {
+            start: range.start.line,
+            old_end: range.end.line,
+            new_end: u32::try_from(new_end).ok()?,
+        })
+    }
+
+    fn position(&self, mut position: Position) -> Option<Position> {
+        if position.line >= self.start {
+            position.line = position
+                .line
+                .checked_sub(self.old_end)?
+                .checked_add(self.new_end)?;
+        }
+        Some(position)
+    }
+}
+
+fn top_level_trivia(text: &str) -> bool {
+    (text.is_empty() || text.ends_with('\n'))
+        && text.lines().all(|line| {
+            let line = line.trim_matches([' ', '\t', '\r']);
+            line.is_empty() || ordinary_comment(line)
+        })
+}
+
+fn ordinary_comment(text: &str) -> bool {
+    text.strip_prefix("//").is_some_and(|line| {
+        !line.contains('\n')
+            && !["go:", "+build", "line "]
+                .iter()
+                .any(|prefix| line.trim_start().starts_with(prefix))
+    })
+}
 
 pub struct ImplementationSearch {
+    key: QueryKey,
     direction: Direction,
     selected: Option<MethodKey>,
     declaration: Location,
@@ -42,10 +159,15 @@ struct Candidate {
 
 impl ImplementationSearch {
     pub(super) fn into_matches(self) -> Vec<Location> {
-        let mut locations = self.matches;
-        locations.sort_by_cached_key(|(file, range)| (path_key(file), range.start, range.end));
-        locations.dedup_by(|left, right| same_location(left, right));
-        locations
+        self.matches
+    }
+
+    fn complete(&mut self, cache: &mut ImplementationCache) {
+        self.matches
+            .sort_by_cached_key(|(file, range)| (path_key(file), range.start, range.end));
+        self.matches
+            .dedup_by(|left, right| same_location(left, right));
+        cache.remember(self.key.clone(), self.matches.clone());
     }
 }
 
@@ -71,6 +193,10 @@ impl Engine {
         };
         if !workspace.includes_tests() || !matches!(self.graph_changes, GraphChanges::Clean) {
             return Ok(QueryProgress::Pending(load));
+        }
+        let key = (path_key(path), position);
+        if let Some(cached) = self.implementation_cache.results.get(&key) {
+            return Ok(QueryProgress::Ready(cached.clone()));
         }
 
         let indexes = IndexReader {
@@ -125,6 +251,7 @@ impl Engine {
             .collect();
         Ok(QueryProgress::Searching(Search::Implementations(
             ImplementationSearch {
+                key,
                 direction,
                 selected: subject.method,
                 declaration: subject.declaration,
@@ -158,7 +285,7 @@ impl Engine {
         for _ in 0..32 {
             if search.current.is_none() {
                 let Some(id) = search.packages.pop_front() else {
-                    return Ok(true);
+                    break;
                 };
                 let Some(package) = workspace.package(&id) else {
                     continue;
@@ -194,7 +321,11 @@ impl Engine {
                 break;
             }
         }
-        Ok(search.current.is_none() && search.packages.is_empty())
+        let done = search.current.is_none() && search.packages.is_empty();
+        if done {
+            search.complete(&mut self.implementation_cache);
+        }
+        Ok(done)
     }
 }
 
