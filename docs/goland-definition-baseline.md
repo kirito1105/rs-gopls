@@ -33,3 +33,13 @@ Get-Content -LiteralPath (Join-Path $directory 'destinations.tsv') -Encoding utf
 ```
 
 输出首行为构建号。其余每行包含用例 ID、目标类型、目标路径、起始行列、落点标识符和结束行列。比较时按工作区根或模块缓存根归一化路径。GoLand 的桌面交互和候选展示可按相同查询位置手动核对。[GoLand 导航文档](https://www.jetbrains.com/help/go/navigating-through-the-source-code.html#navigate-between-code-elements)
+
+## 对照当前语言服务器
+
+复用已构建的 rs-gopls 可执行文件，或用 `gopls` 作为第一个参数。GoLand 源码位置按目标 URI 和完整标识符范围比较。
+
+~~~powershell
+python -B .\tools\check_goland_definitions.py .\target\release\rs-gopls.exe --workspace 'E:\Code\localchat\server' --allow-differences
+~~~
+
+`--json` 输出每个查询的 GoLand 期望、实际候选及分类。默认严格模式用退出码报告缺失或不同目标。基线 rs-gopls `675640b` 的 19 个文件位置中，15 个一致、3 个为空、1 个不同。gopls v0.24.0 有 18 个一致、1 个不同。两个服务器对 GoLand 包级导航用例均返回当前文件的导入位置。
