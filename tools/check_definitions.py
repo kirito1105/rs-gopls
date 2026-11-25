@@ -247,6 +247,83 @@ func containers(sendOnly chan <-Item, ch NamedChan, values NamedMap, array *Name
     _ = map[Item]int{{[[elided-map-key-field:Label]]: "three"}: 3}
 }
 """,
+    "generics.go": """package main
+import gen "example.test/definition/generics"
+
+type GenericItem struct{ [[generic-item-label:Label]] string }
+type GenericOther struct{ Label string }
+type GenericItems []GenericItem
+type GenericMap map[string]GenericItem
+
+func Identity[T any](value T) T { return value }
+func Identical[T any](left, right T) T { return left }
+func Head[S ~[]E, E any](data S) E { return data[0] }
+func Entry[M ~map[K]V, K comparable, V any](data M, key K) V { return data[key] }
+func Fixed[T any](data [2]T) T { return data[0] }
+
+type GenericCount int
+func (GenericCount) [[count-method-decl:Counted]]() {}
+func Numeric[T ~int](left, right T) T { return left }
+
+type LocalRunner interface{ [[local-constraint-decl:Run]]() GenericItem }
+func Required[T LocalRunner](value T) T { return value }
+type ValidRunner struct{ [[valid-method-constraint-field:Label]] string }
+func (ValidRunner) Run() GenericItem { return GenericItem{} }
+type PointerRunner struct{ [[pointer-method-constraint-field:Label]] string }
+func (*PointerRunner) Run() GenericItem { return GenericItem{} }
+
+type ReceiverVar int
+type GenericHolder[T LocalRunner] struct{ Inner T }
+func (h GenericHolder[[[receiver-parameter-decl:ReceiverVar]]]) Constraint(value [[receiver-parameter-use:ReceiverVar]]) GenericItem {
+    var local [[receiver-parameter-body:ReceiverVar]]
+    _ = local
+    return value.[[receiver-method:Run]]()
+}
+
+func G[T LocalRunner, U interface{ [[inline-constraint-decl:Build]]() GenericItem }](r T, b U) {
+    _ = r.[[local-constraint-call:Run]]().[[constraint-call-result:Label]]
+    _ = b.[[inline-constraint-call:Build]]()
+}
+func ImportedConstraint[T gen.Runner](value T) {
+    _ = value.[[imported-constraint-call:Run]]().[[imported-constraint-result:Label]]
+}
+
+func generics(data GenericItems, table GenericMap, handlers []func(GenericItem) GenericItem, i int) {
+    _ = Identity(GenericItem{}).[[implicit-generic-field:Label]]
+    _ = Identity[GenericItem](GenericItem{}).[[explicit-generic-field:Label]]
+    _ = Identity[*GenericItem](&GenericItem{}).[[explicit-pointer-field:Label]]
+    _ = gen.Identity[gen.Record](gen.Record{}).[[qualified-explicit-field:Label]]
+    _ = gen.Identity(gen.Record{}).[[qualified-implicit-field:Label]]
+    _ = gen.Second[string]("x", GenericItem{}).[[partial-generic-field:Label]]
+    _ = gen.Second[string, GenericItem]("x", GenericItem{}).[[full-generic-field:Label]]
+    _, item := gen.Pair[int](4, GenericItem{})
+    _ = item.[[partial-tuple-field:Label]]
+    _ = Head(data).[[slice-constraint-field:Label]]
+    _ = Entry(table, "x").[[map-constraint-field:Label]]
+    _ = Fixed([2]GenericItem{}).[[array-inference-field:Label]]
+    _ = Fixed([3]GenericItem{}).[[array-conflict-missing:Label]]
+    _ = Identical(GenericItem{}, GenericOther{}).[[conflict-generic-missing:Label]]
+    _ = Identity[GenericItem]().[[missing-argument-no-result:Label]]
+    _ = gen.Box[GenericItem](gen.Box[GenericItem]{}).Value.[[generic-convert-field:Label]]
+    _ = handlers[i](GenericItem{}).[[indexed-call-generic-syntax:Label]]
+    callback := gen.Identity[gen.Record]
+    _ = callback(gen.Record{}).[[explicit-callback-field:Label]]
+    Numeric(1, GenericCount(2)).[[typed-number-wins:Counted]]()
+    _ = Required(ValidRunner{}).[[valid-method-constraint:Label]]
+    _ = Required(&PointerRunner{}).[[accept-pointer-constraint:Label]]
+    _ = Required(PointerRunner{}).[[reject-value-constraint:Label]]
+    _ = Required(GenericItem{}).[[reject-missing-method:Label]]
+}
+""",
+    "generics/generics.go": """package generics
+
+type Record struct{ [[external-generic-label:Label]] string }
+type Runner interface{ [[imported-constraint-decl:Run]]() Record }
+type Box[T any] struct{ Value T }
+func Identity[T any](value T) T { return value }
+func Second[A, B any](a A, b B) B { return b }
+func Pair[A, B any](a A, b B) (A,B) { return a,b }
+""",
     "helpers.go": """package main
 
 type [[private-type:context]] struct{}
@@ -371,6 +448,36 @@ FIXTURE_CASES = (
     (5, "non-function-shadow", None),
     (5, "pointer-callback-no-call", None),
     (5, "initializer-cycle", None),
+    (6, "implicit-generic-field", "generic-item-label"),
+    (6, "explicit-generic-field", "generic-item-label"),
+    (6, "explicit-pointer-field", "generic-item-label"),
+    (6, "qualified-explicit-field", "external-generic-label"),
+    (6, "qualified-implicit-field", "external-generic-label"),
+    (6, "partial-generic-field", "generic-item-label"),
+    (6, "full-generic-field", "generic-item-label"),
+    (6, "partial-tuple-field", "generic-item-label"),
+    (6, "slice-constraint-field", "generic-item-label"),
+    (6, "map-constraint-field", "generic-item-label"),
+    (6, "array-inference-field", "generic-item-label"),
+    (6, "array-conflict-missing", None),
+    (6, "conflict-generic-missing", None),
+    (6, "missing-argument-no-result", None),
+    (6, "generic-convert-field", "generic-item-label"),
+    (6, "indexed-call-generic-syntax", "generic-item-label"),
+    (6, "explicit-callback-field", "external-generic-label"),
+    (6, "local-constraint-call", "local-constraint-decl"),
+    (6, "constraint-call-result", "generic-item-label"),
+    (6, "inline-constraint-call", "inline-constraint-decl"),
+    (6, "imported-constraint-call", "imported-constraint-decl"),
+    (6, "imported-constraint-result", "external-generic-label"),
+    (6, "receiver-parameter-use", "receiver-parameter-decl"),
+    (6, "receiver-parameter-body", "receiver-parameter-decl"),
+    (6, "receiver-method", "local-constraint-decl"),
+    (6, "typed-number-wins", "count-method-decl"),
+    (6, "valid-method-constraint", "valid-method-constraint-field"),
+    (6, "accept-pointer-constraint", "pointer-method-constraint-field"),
+    (6, "reject-value-constraint", None),
+    (6, "reject-missing-method", None),
 )
 BUILTIN_CASES = (
     ("builtin-int", "type [[int]] int"),
@@ -535,7 +642,7 @@ def workspace_cases(root, stage):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
-    parser.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5), default=1)
+    parser.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5, 6), default=1)
     parser.add_argument("--workspace", type=Path, help="localchat/server root for additional real-world checks")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()

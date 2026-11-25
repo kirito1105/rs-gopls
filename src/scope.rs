@@ -57,6 +57,7 @@ pub(crate) fn lexical_binding<'tree>(
                 function_binding(scope, name, text)
             }
             "function_declaration" => type_parameter_binding(scope, offset, name, text),
+            "method_declaration" => receiver_type_parameter_binding(scope, name, text),
             "type_spec" | "type_alias" => type_parameter_binding(scope, offset, name, text)
                 .or_else(|| {
                     let statement = scope.parent()?.parent()?;
@@ -118,6 +119,38 @@ fn function_binding<'tree>(
         .into_iter()
         .filter_map(|field| function.child_by_field_name(field))
         .find_map(|node| declaration(node, name, text))
+        .or_else(|| receiver_type_parameter_binding(function, name, text))
+}
+
+pub(crate) fn receiver_type_parameters(method: Node<'_>) -> Option<(Node<'_>, Node<'_>)> {
+    let receiver = method.child_by_field_name("receiver")?;
+    let mut ty = receiver.named_child(0)?.child_by_field_name("type")?;
+    if ty.kind() == "pointer_type" {
+        ty = ty.named_child(0)?;
+    }
+    (ty.kind() == "generic_type").then(|| {
+        Some((
+            ty.child_by_field_name("type")?,
+            ty.child_by_field_name("type_arguments")?,
+        ))
+    })?
+}
+
+fn receiver_type_parameter_binding<'tree>(
+    method: Node<'tree>,
+    name: &str,
+    text: &str,
+) -> Option<Binding<'tree>> {
+    let (_, arguments) = receiver_type_parameters(method)?;
+    let mut cursor = arguments.walk();
+    let binding_name = arguments
+        .named_children(&mut cursor)
+        .filter(|node| node.kind() == "type_elem")
+        .filter_map(|node| node.named_child(0))
+        .find(|node| {
+            node.kind() == "type_identifier" && text.get(node.byte_range()) == Some(name)
+        })?;
+    Some(binding(binding_name, None, None, 0))
 }
 
 fn type_parameter_binding<'tree>(

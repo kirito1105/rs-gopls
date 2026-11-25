@@ -18,7 +18,7 @@ pub(crate) enum TypeRefKind {
     Named(NamedType),
     Container(Box<Container<TypeRef>>),
     Inline(Arc<InlineType>),
-    Function(FunctionResults),
+    Function(Arc<FunctionSignature>),
 }
 
 #[derive(Clone, Debug)]
@@ -31,7 +31,7 @@ pub(crate) struct NamedType {
 #[derive(Clone, Debug)]
 pub(crate) enum Container<T> {
     Slice(T),
-    Array(T),
+    Array { element: T, length: Option<String> },
     Map { key: T, value: T },
     Channel { element: T, receive: bool },
 }
@@ -73,18 +73,36 @@ pub(crate) enum SymbolKind {
         result_index: usize,
     },
     Type,
-    Function(FunctionResults),
+    Function(Arc<FunctionSignature>),
 }
 
-pub(crate) type FunctionResults = Arc<[Option<TypeRef>]>;
+#[derive(Clone, Debug)]
+pub(crate) struct FunctionSignature {
+    pub(crate) results: Arc<[Option<TypeRef>]>,
+    pub(crate) parameters: Vec<Option<TypeRef>>,
+    pub(crate) type_parameters: Vec<GenericParameter>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct GenericParameter {
+    pub(crate) name: String,
+    pub(crate) constraint: TypeConstraint,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TypeConstraint {
+    pub(crate) methods: Option<TypeRef>,
+    pub(crate) approximation: Option<TypeRef>,
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct TypeDetails {
     pub(crate) alias: Option<TypeRef>,
     pub(crate) underlying: Option<TypeRef>,
     pub(crate) interface: bool,
+    pub(crate) method_names: Vec<String>,
     pub(crate) embedded: Vec<TypeRef>,
-    pub(crate) parameters: Vec<String>,
+    pub(crate) parameters: Vec<GenericParameter>,
 }
 
 #[derive(Default)]
@@ -141,7 +159,7 @@ impl Indexer<'_> {
             "type_spec" | "type_alias" => self.type_declaration(declaration),
             "function_declaration" => {
                 if let Some(name) = declaration.child_by_field_name("name") {
-                    let results = function_results(declaration, self.text, self.range);
+                    let results = function_signature(declaration, self.text, self.range);
                     self.insert_declaration(name, SymbolKind::Function(results), false);
                 }
             }
@@ -200,7 +218,7 @@ impl Indexer<'_> {
 
         let owner = node_text(name, self.text);
         let mut details = TypeDetails {
-            parameters: type_parameters(declaration, self.text),
+            parameters: type_parameters(declaration, self.text, self.range),
             ..TypeDetails::default()
         };
         let underlying = type_ref(ty, self.text, self.range);
@@ -212,6 +230,9 @@ impl Indexer<'_> {
         }) = underlying
         {
             details.interface = inline.interface;
+            if inline.interface {
+                details.method_names = inline.members.keys().cloned().collect();
+            }
             details.embedded = inline.embedded.clone();
             let members = self.symbols.members.entry(owner.to_owned()).or_default();
             for (name, symbol) in &inline.members {
@@ -257,7 +278,7 @@ impl Indexer<'_> {
         if named.qualifier.is_some() || owner.pointers > 1 {
             return;
         }
-        let results = function_results(declaration, self.text, self.range);
+        let results = function_signature(declaration, self.text, self.range);
         let mut symbol = Symbol::new((self.range)(name), SymbolKind::Function(results), false);
         symbol.pointer_receiver = owner.pointers == 1;
         symbol.receiver_parameters = named
@@ -300,14 +321,24 @@ pub(crate) fn type_ref(
     let node = unparenthesized_type(node)?;
     let parse = |field| type_ref(node.child_by_field_name(field)?, text, range);
     let kind = match node.kind() {
-        "pointer_type" => {
+        "pointer_type" | "unary_expression"
+            if node.kind() == "pointer_type"
+                || node
+                    .child_by_field_name("operator")
+                    .is_some_and(|op| op.kind() == "*") =>
+        {
             let mut inner = type_ref(only_named_child(node)?, text, range)?;
             inner.pointers = inner.pointers.checked_add(1)?;
             return Some(inner);
         }
         "slice_type" => TypeRefKind::Container(Box::new(Container::Slice(parse("element")?))),
         "array_type" | "implicit_length_array_type" => {
-            TypeRefKind::Container(Box::new(Container::Array(parse("element")?)))
+            TypeRefKind::Container(Box::new(Container::Array {
+                element: parse("element")?,
+                length: node
+                    .child_by_field_name("length")
+                    .map(|length| node_text(length, text).to_owned()),
+            }))
         }
         "map_type" => TypeRefKind::Container(Box::new(Container::Map {
             key: parse("key")?,
@@ -325,7 +356,7 @@ pub(crate) fn type_ref(
             TypeRefKind::Inline(Arc::new(inline_type(node, text, range)))
         }
         "function_type" | "func_literal" => {
-            TypeRefKind::Function(function_results(node, text, range))
+            TypeRefKind::Function(function_signature(node, text, range))
         }
         _ => TypeRefKind::Named(named_type(node, text, range)?),
     };
@@ -367,7 +398,7 @@ fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) ->
             match element.kind() {
                 "method_elem" => {
                     if let Some(name) = element.child_by_field_name("name") {
-                        let results = function_results(element, text, range);
+                        let results = function_signature(element, text, range);
                         let symbol = Symbol::new(range(name), SymbolKind::Function(results), false);
                         inline
                             .members
@@ -451,6 +482,17 @@ fn named_type_syntax(mut node: Node<'_>) -> Option<NamedTypeSyntax<'_>> {
                     arguments,
                 });
             }
+            "selector_expression" => {
+                let qualifier = node.child_by_field_name("operand")?;
+                if qualifier.kind() != "identifier" {
+                    return None;
+                }
+                return Some(NamedTypeSyntax {
+                    qualifier: Some(qualifier),
+                    name: node.child_by_field_name("field")?,
+                    arguments,
+                });
+            }
             "qualified_type" => {
                 return Some(NamedTypeSyntax {
                     qualifier: Some(node.child_by_field_name("package")?),
@@ -468,19 +510,67 @@ fn named_type_syntax(mut node: Node<'_>) -> Option<NamedTypeSyntax<'_>> {
     }
 }
 
-fn type_parameters(declaration: Node<'_>, text: &str) -> Vec<String> {
+fn type_parameters(
+    declaration: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> Vec<GenericParameter> {
     let mut parameters = Vec::new();
     if let Some(list) = declaration.child_by_field_name("type_parameters") {
         let mut cursor = list.walk();
         for parameter in list.named_children(&mut cursor) {
+            let constraint = parameter
+                .child_by_field_name("type")
+                .map(|node| type_constraint(node, text, range))
+                .unwrap_or_default();
             let mut cursor = parameter.walk();
             let names = parameter
                 .children_by_field_name("name", &mut cursor)
                 .filter(|node| node.kind() == "identifier");
-            parameters.extend(names.map(|name| node_text(name, text).to_owned()));
+            parameters.extend(names.map(|name| GenericParameter {
+                name: node_text(name, text).to_owned(),
+                constraint: constraint.clone(),
+            }));
         }
     }
     parameters
+}
+
+pub(crate) fn type_constraint(
+    constraint: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> TypeConstraint {
+    let Some(ty) = only_named_child(constraint) else {
+        return TypeConstraint::default();
+    };
+    let methods = match ty.kind() {
+        "interface_type" | "qualified_type" | "generic_type" => type_ref(ty, text, range),
+        "type_identifier" if !matches!(node_text(ty, text), "any" | "comparable") => {
+            type_ref(ty, text, range)
+        }
+        _ => None,
+    };
+    let term = if ty.kind() == "interface_type" {
+        let mut cursor = ty.walk();
+        let mut terms = ty
+            .named_children(&mut cursor)
+            .filter(|node| node.kind() == "type_elem");
+        let first = terms.next();
+        first
+            .filter(|_| terms.next().is_none())
+            .and_then(only_named_child)
+    } else {
+        Some(ty)
+    };
+    let approximation = term
+        .filter(|term| term.kind() == "negated_type")
+        .and_then(only_named_child)
+        .and_then(|term| type_ref(term, text, range));
+    TypeConstraint {
+        methods,
+        approximation,
+    }
 }
 
 fn unparenthesized_type(mut node: Node<'_>) -> Option<Node<'_>> {
@@ -526,11 +616,33 @@ fn composite_value_type(
     }
 }
 
+fn function_signature(
+    function: Node<'_>,
+    text: &str,
+    range: &dyn Fn(Node<'_>) -> Range,
+) -> Arc<FunctionSignature> {
+    let type_parameters = type_parameters(function, text, range);
+    // Ordinary call sites only need result types.
+    let parameters = if type_parameters.is_empty() {
+        Vec::new()
+    } else {
+        function
+            .child_by_field_name("parameters")
+            .map(|list| parameter_types(list, |node| type_ref(node, text, range)))
+            .unwrap_or_default()
+    };
+    Arc::new(FunctionSignature {
+        results: function_results(function, text, range),
+        parameters,
+        type_parameters,
+    })
+}
+
 fn function_results(
     function: Node<'_>,
     text: &str,
     range: &dyn Fn(Node<'_>) -> Range,
-) -> FunctionResults {
+) -> Arc<[Option<TypeRef>]> {
     let Some(result) = function.child_by_field_name("result") else {
         return Arc::from([]);
     };
@@ -552,22 +664,31 @@ fn function_results(
     if result.kind() != "parameter_list" {
         return Arc::from([parse(result)]);
     }
-    let mut results = Vec::new();
-    let mut cursor = result.walk();
-    for parameter in result
-        .named_children(&mut cursor)
-        .filter(|node| node.kind() == "parameter_declaration")
-    {
-        let ty = parameter.child_by_field_name("type").and_then(parse);
+    parameter_types(result, parse).into()
+}
+
+fn parameter_types<'tree>(
+    list: Node<'tree>,
+    parse: impl Fn(Node<'tree>) -> Option<TypeRef>,
+) -> Vec<Option<TypeRef>> {
+    let mut result = Vec::new();
+    let mut cursor = list.walk();
+    for parameter in list.named_children(&mut cursor).filter(|node| {
+        matches!(
+            node.kind(),
+            "parameter_declaration" | "variadic_parameter_declaration"
+        )
+    }) {
+        let ty = parameter.child_by_field_name("type").and_then(&parse);
         let mut name_cursor = parameter.walk();
         let count = parameter
             .children_by_field_name("name", &mut name_cursor)
             .filter(|node| node.kind() == "identifier")
             .count()
             .max(1);
-        results.extend(std::iter::repeat_n(ty, count));
+        result.extend(std::iter::repeat_n(ty, count));
     }
-    results.into()
+    result
 }
 
 // Package-indexed result types cannot stand in for similarly named local declarations.

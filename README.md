@@ -27,12 +27,12 @@ Definition lookup covers imports, lexical and package names, and common field an
 
 The server supports Go Modules, go.work, GOPATH, and test package variants. On clients that support dynamic file-watch registration, it refreshes indexes after changes to Go files and module/workspace files. Open editor buffers take precedence over disk content. Go package metadata follows the on-disk workspace.
 
-Type analysis covers the tested syntax-driven cases. Implicit generic type inference, structural and function-valued types, and all GoLand-specific navigation behavior remain outside the verified coverage.
+Generic function calls cover common explicit, partial and inferred arguments, result substitution, constraint methods, and slice and map shape constraints. See the GoLand baseline for the validated editor behavior and workspace revisions.
 
 Run the semantic and workspace acceptance checks with the release executable:
 
 ~~~powershell
-python -B .\tools\check_definitions.py $server --stage 3
+python -B .\tools\check_definitions.py $server --stage 6
 python -B .\tools\check_workspace_updates.py $server
 ~~~
 
