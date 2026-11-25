@@ -84,8 +84,15 @@ class LspClient:
             self.inbox.put(exc)
 
     def send(self, **message):
-        body = json.dumps({"jsonrpc": "2.0", **message}, ensure_ascii=False).encode("utf-8")
-        self.process.stdin.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body)
+        self.send_batch(message)
+
+    def send_batch(self, *messages):
+        frames = bytearray()
+        for message in messages:
+            body = json.dumps({"jsonrpc": "2.0", **message}, ensure_ascii=False).encode("utf-8")
+            frames.extend(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii"))
+            frames.extend(body)
+        self.process.stdin.write(frames)
         self.process.stdin.flush()
 
     def notify(self, method, **params):
@@ -148,6 +155,7 @@ class LspClient:
         if capabilities.get("positionEncoding", "utf-16").lower() != "utf-16":
             raise RuntimeError("server did not negotiate UTF-16 positions")
         self.notify("initialized")
+        return capabilities
 
     def open_document(self, path, text):
         self.notify(

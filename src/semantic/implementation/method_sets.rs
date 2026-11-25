@@ -1,0 +1,746 @@
+use super::super::*;
+
+type MethodLocation = (PathBuf, Range);
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(super) struct MethodKey {
+    name: String,
+    package: Option<String>,
+}
+
+impl MethodKey {
+    pub(super) fn new(name: &str, package: &Package) -> Self {
+        Self {
+            name: name.to_owned(),
+            package: (!is_exported(name)).then(|| package_identity(package).to_owned()),
+        }
+    }
+
+    fn accessible_from(&self, package: &Package) -> bool {
+        self.package
+            .as_deref()
+            .is_none_or(|owner| owner == package_identity(package))
+    }
+}
+
+fn package_identity(package: &Package) -> &str {
+    // An in-package test view retains the package identity of the regular view.
+    package
+        .id
+        .split_once(" [")
+        .map_or(&package.id, |(id, _)| id)
+}
+
+struct Method {
+    signature: Signature,
+    location: MethodLocation,
+}
+
+#[derive(Default)]
+pub(super) struct InterfaceMethods {
+    methods: BTreeMap<MethodKey, Method>,
+    has_type_terms: bool,
+    complete: bool,
+}
+
+impl InterfaceMethods {
+    pub(super) fn method_names(&self) -> impl Iterator<Item = &str> {
+        self.methods.keys().map(|key| key.name.as_str())
+    }
+
+    pub(super) fn location(&self, key: &MethodKey) -> Option<MethodLocation> {
+        self.methods.get(key).map(|method| method.location.clone())
+    }
+}
+
+pub(super) struct MatchingMethods {
+    pub(super) location: Option<MethodLocation>,
+}
+
+struct InterfaceContext<'w> {
+    ty: TypeIdentity<'w>,
+    file: PathBuf,
+    details: TypeDetails,
+    substitutions: Substitutions<'w>,
+}
+
+impl<'w> Resolver<'w, '_> {
+    pub(super) fn interface_methods(
+        &mut self,
+        ty: &TypeIdentity<'w>,
+    ) -> Result<Option<InterfaceMethods>> {
+        let ty = self.with_receiver_parameters(ty.clone())?;
+        self.interface_methods_at(ty, 0)
+    }
+
+    fn interface_methods_at(
+        &mut self,
+        ty: TypeIdentity<'w>,
+        depth: usize,
+    ) -> Result<Option<InterfaceMethods>> {
+        let Some(context) = self.interface_context(ty)? else {
+            return Ok(None);
+        };
+        let mut result = InterfaceMethods {
+            complete: true,
+            ..InterfaceMethods::default()
+        };
+        self.collect_interface_methods(context, &mut result, &mut Vec::new(), depth)?;
+        Ok(Some(result))
+    }
+
+    fn with_receiver_parameters(&mut self, mut ty: TypeIdentity<'w>) -> Result<TypeIdentity<'w>> {
+        if let TypeKind::Named { name, arguments } = &mut ty.kind
+            && arguments.is_empty()
+            && let Some((_, details)) = self.type_info(ty.package, name)?
+        {
+            arguments.extend(details.parameters.iter().enumerate().map(|(index, _)| {
+                Some(TypeIdentity::new(ty.package, TypeKind::Parameter(index), 0))
+            }));
+        }
+        Ok(ty)
+    }
+
+    fn interface_context(
+        &mut self,
+        mut ty: TypeIdentity<'w>,
+    ) -> Result<Option<InterfaceContext<'w>>> {
+        for _ in 0..MAX_TYPE_DEPTH {
+            if ty.pointers != 0 {
+                return Ok(None);
+            }
+            let Some((file, details, substitutions)) = self.type_context(&ty)? else {
+                return Ok(None);
+            };
+            if details.interface {
+                return Ok(Some(InterfaceContext {
+                    ty,
+                    file,
+                    details,
+                    substitutions,
+                }));
+            }
+            let Some(base) = details.alias.or(details.underlying) else {
+                return Ok(None);
+            };
+            let Some(base) = self.implementation_type(ty.package, &file, base, &substitutions)?
+            else {
+                return Ok(None);
+            };
+            ty = base;
+        }
+        Ok(None)
+    }
+
+    fn collect_interface_methods(
+        &mut self,
+        context: InterfaceContext<'w>,
+        result: &mut InterfaceMethods,
+        visiting: &mut Vec<TypeKey>,
+        depth: usize,
+    ) -> Result<()> {
+        let Some(key) = context.ty.key().filter(|key| !visiting.contains(key)) else {
+            result.complete = false;
+            return Ok(());
+        };
+        if depth >= MAX_TYPE_DEPTH {
+            result.complete = false;
+            return Ok(());
+        }
+        visiting.push(key);
+        result.has_type_terms |= context.details.has_type_terms;
+        if let TypeKind::Inline { shape, .. } = &context.ty.kind {
+            result.has_type_terms |= shape.has_type_terms;
+        }
+        for name in context.details.method_names {
+            let method = self.direct_member(&context.ty, &name, false)?;
+            let Some(method) = self.normalized_method(method, &context.ty, depth + 1)? else {
+                result.complete = false;
+                continue;
+            };
+            match result
+                .methods
+                .entry(MethodKey::new(&name, context.ty.package))
+            {
+                std::collections::btree_map::Entry::Occupied(previous) => {
+                    result.complete &= previous.get().signature == method.signature;
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(method);
+                }
+            }
+        }
+        for embedded in context.details.embedded {
+            let Some(embedded) = self.implementation_type(
+                context.ty.package,
+                &context.file,
+                embedded,
+                &context.substitutions,
+            )?
+            else {
+                result.complete = false;
+                continue;
+            };
+            if let Some(context) = self.interface_context(embedded.clone())? {
+                self.collect_interface_methods(context, result, visiting, depth + 1)?;
+            } else if !self.is_predeclared_named(&embedded, "any")? {
+                result.has_type_terms = true;
+            }
+        }
+        visiting.pop();
+        Ok(())
+    }
+
+    pub(super) fn satisfies_interface(
+        &mut self,
+        required: &InterfaceMethods,
+        candidate: &TypeIdentity<'w>,
+        selected: Option<&MethodKey>,
+        allow_pointer: bool,
+    ) -> Result<Option<MatchingMethods>> {
+        if !required.complete
+            || required.has_type_terms
+            || required.methods.is_empty()
+            || selected.is_some_and(|key| !required.methods.contains_key(key))
+        {
+            return Ok(None);
+        }
+        let candidate = self.with_receiver_parameters(candidate.clone())?;
+        let candidate_interface = self.interface_methods_at(candidate.clone(), 0)?;
+        if candidate_interface
+            .as_ref()
+            .is_some_and(|interface| !interface.complete)
+        {
+            return Ok(None);
+        }
+        let mut matcher = SignatureMatcher::default();
+        let mut location = None;
+        for (key, required) in &required.methods {
+            let owned;
+            let method = match &candidate_interface {
+                Some(interface) => interface.methods.get(key),
+                None => {
+                    owned = self.concrete_method(&candidate, key, allow_pointer)?;
+                    owned.as_ref()
+                }
+            };
+            let Some(method) = method else {
+                return Ok(None);
+            };
+            if !matcher.signature(&required.signature, false, &method.signature, true, 0) {
+                return Ok(None);
+            }
+            if selected == Some(key) {
+                location = Some(method.location.clone());
+            }
+        }
+        Ok(Some(MatchingMethods { location }))
+    }
+
+    fn concrete_method(
+        &mut self,
+        candidate: &TypeIdentity<'w>,
+        key: &MethodKey,
+        allow_pointer: bool,
+    ) -> Result<Option<Method>> {
+        if candidate.pointers > 1 {
+            return Ok(None);
+        }
+        let mut root = candidate.clone();
+        root.pointers = 0;
+        let mut frontier = vec![(root, allow_pointer || candidate.pointers == 1, Vec::new())];
+        for depth in 0..MAX_TYPE_DEPTH {
+            let mut next = Vec::new();
+            let mut found = None;
+            for (mut owner, mut indirect, mut visited) in frontier {
+                let mut inherited = false;
+                while let Some(owner_key) = owner.key() {
+                    if visited.contains(&owner_key) || visited.len() >= MAX_TYPE_DEPTH {
+                        break;
+                    }
+                    visited.push(owner_key);
+                    let Some((file, details, substitutions)) = self.type_context(&owner)? else {
+                        break;
+                    };
+
+                    if details.interface {
+                        // A pointer to an interface has no method set. A value
+                        // embedding an interface promotes its full method set.
+                        if depth == 0 && candidate.pointers != 0 {
+                            return Ok(None);
+                        }
+                        let context = InterfaceContext {
+                            ty: owner,
+                            file,
+                            details,
+                            substitutions,
+                        };
+                        let mut methods = InterfaceMethods {
+                            complete: true,
+                            ..InterfaceMethods::default()
+                        };
+                        self.collect_interface_methods(context, &mut methods, &mut Vec::new(), 0)?;
+                        if methods.complete
+                            && let Some(method) = methods.methods.remove(key)
+                        {
+                            if found.is_some() {
+                                return Ok(None);
+                            }
+                            found = Some(method);
+                        }
+                        break;
+                    }
+
+                    if key.accessible_from(owner.package)
+                        && let Some(symbol) = self.direct_member(&owner, &key.name, inherited)?
+                    {
+                        if found.is_some() || (symbol.symbol.pointer_receiver && !indirect) {
+                            return Ok(None);
+                        }
+                        // Fields block promoted methods at this depth as well.
+                        let Some(method) = self.normalized_method(Some(symbol), &owner, 0)? else {
+                            return Ok(None);
+                        };
+                        found = Some(method);
+                        break;
+                    }
+
+                    if let Some(base) = details.alias.or_else(|| {
+                        inherited = true;
+                        details.underlying
+                    }) {
+                        let Some(mut base) =
+                            self.implementation_type(owner.package, &file, base, &substitutions)?
+                        else {
+                            break;
+                        };
+                        if base.pointers > 1 || (inherited && base.pointers != 0) {
+                            break;
+                        }
+                        indirect |= base.pointers == 1;
+                        base.pointers = 0;
+                        owner = base;
+                        continue;
+                    }
+                    for embedded in details.embedded {
+                        let Some(mut ty) = self.implementation_type(
+                            owner.package,
+                            &file,
+                            embedded,
+                            &substitutions,
+                        )?
+                        else {
+                            continue;
+                        };
+                        let implicit_pointer = indirect || ty.pointers == 1;
+                        if ty.pointers <= 1 {
+                            ty.pointers = 0;
+                            next.push((ty, implicit_pointer, visited.clone()));
+                        }
+                    }
+                    break;
+                }
+            }
+            if found.is_some() || next.is_empty() {
+                return Ok(found);
+            }
+            frontier = next;
+        }
+        Ok(None)
+    }
+
+    fn normalized_method(
+        &mut self,
+        symbol: Option<ResolvedSymbol<'w>>,
+        receiver: &TypeIdentity<'w>,
+        depth: usize,
+    ) -> Result<Option<Method>> {
+        let Some(mut symbol) = symbol else {
+            return Ok(None);
+        };
+        let SymbolKind::Function(signature) = &symbol.symbol.kind else {
+            return Ok(None);
+        };
+        let reference = TypeRef {
+            pointers: 0,
+            kind: TypeRefKind::Function(signature.clone()),
+        };
+        symbol.receiver = Some(receiver.clone());
+        let Some(TypeIdentity {
+            package,
+            kind:
+                TypeKind::Function {
+                    file,
+                    signature,
+                    substitutions,
+                },
+            ..
+        }) = self.type_from_symbol(&symbol, reference, false)?
+        else {
+            return Ok(None);
+        };
+        Ok(self
+            .canonical_signature(package, &file, &signature, &substitutions, depth)?
+            .map(|signature| Method {
+                signature,
+                location: symbol.location(),
+            }))
+    }
+
+    fn implementation_type(
+        &mut self,
+        package: &'w Package,
+        file: &Path,
+        reference: TypeRef,
+        substitutions: &Substitutions<'w>,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        let index = self.indexes.file_index(file)?;
+        Ok(materialize_type(
+            self.workspace,
+            package,
+            file,
+            &index.imports,
+            reference,
+            substitutions,
+        ))
+    }
+
+    fn canonical_signature(
+        &mut self,
+        package: &'w Package,
+        file: &Path,
+        signature: &FunctionSignature,
+        substitutions: &Substitutions<'w>,
+        depth: usize,
+    ) -> Result<Option<Signature>> {
+        if depth >= MAX_TYPE_DEPTH {
+            return Ok(None);
+        }
+        let mut normalize = |references: &[Option<TypeRef>]| -> Result<Option<Vec<TypeShape>>> {
+            let mut result = Vec::with_capacity(references.len());
+            for reference in references {
+                let Some(reference) = reference.clone() else {
+                    return Ok(None);
+                };
+                let Some(ty) = self.implementation_type(package, file, reference, substitutions)?
+                else {
+                    return Ok(None);
+                };
+                let Some(ty) = self.canonical_type(ty, package, file, depth + 1)? else {
+                    return Ok(None);
+                };
+                result.push(ty);
+            }
+            Ok(Some(result))
+        };
+        let (Some(parameters), Some(results)) = (
+            normalize(&signature.parameters)?,
+            normalize(&signature.results)?,
+        ) else {
+            return Ok(None);
+        };
+        Ok(Some(Signature {
+            parameters,
+            results,
+            variadic: signature.variadic,
+        }))
+    }
+
+    fn canonical_type(
+        &mut self,
+        ty: TypeIdentity<'w>,
+        source_package: &'w Package,
+        source_file: &Path,
+        depth: usize,
+    ) -> Result<Option<TypeShape>> {
+        if depth >= MAX_TYPE_DEPTH {
+            return Ok(None);
+        }
+        let Some(ty) = self.resolve_alias(ty)? else {
+            return Ok(None);
+        };
+        let mut nested = |ty| self.canonical_type(ty, source_package, source_file, depth + 1);
+        let shape = match ty.kind {
+            TypeKind::Parameter(index) => TypeShape::Parameter(index),
+            TypeKind::Named { name, arguments } => {
+                let owner = self.find_symbol(ty.package, &name, None)?;
+                let owner = match owner {
+                    Some(owner) => Some(owner.location()),
+                    None if std::ptr::eq(ty.package, source_package) && is_exported(&name) => {
+                        let imports = self.indexes.file_index(source_file)?.imports.clone();
+                        self.indexes
+                            .find_dot_import(self.workspace, ty.package, &imports, &name)?
+                    }
+                    None => None,
+                };
+                if let Some((file, range)) = owner {
+                    let mut parameters = Vec::with_capacity(arguments.len());
+                    for arg in arguments {
+                        let Some(arg) = arg else { return Ok(None) };
+                        let Some(arg) =
+                            self.canonical_type(arg, source_package, source_file, depth + 1)?
+                        else {
+                            return Ok(None);
+                        };
+                        parameters.push(arg);
+                    }
+                    TypeShape::Named(path_key(&file), range, parameters)
+                } else if is_predeclared_type(&name) && arguments.is_empty() {
+                    match name.as_str() {
+                        "any" => TypeShape::Interface(Vec::new()),
+                        "byte" => TypeShape::Builtin("uint8".to_owned()),
+                        "rune" => TypeShape::Builtin("int32".to_owned()),
+                        _ => TypeShape::Builtin(name),
+                    }
+                } else {
+                    return Ok(None);
+                }
+            }
+            TypeKind::Container(container, _) => match *container {
+                Container::Slice(element) => {
+                    let Some(element) = nested(element)? else {
+                        return Ok(None);
+                    };
+                    TypeShape::Slice(Box::new(element))
+                }
+                Container::Array { element, length } => {
+                    let (Some(element), Some(length)) =
+                        (nested(element)?, length.as_deref().and_then(array_length))
+                    else {
+                        return Ok(None);
+                    };
+                    TypeShape::Array(Box::new(element), length)
+                }
+                Container::Map { key, value } => {
+                    let (Some(key), Some(value)) = (nested(key)?, nested(value)?) else {
+                        return Ok(None);
+                    };
+                    TypeShape::Map(Box::new(key), Box::new(value))
+                }
+                Container::Channel {
+                    element,
+                    receive,
+                    send,
+                } => {
+                    let Some(element) = nested(element)? else {
+                        return Ok(None);
+                    };
+                    TypeShape::Channel(Box::new(element), receive, send)
+                }
+            },
+            TypeKind::Function {
+                file,
+                signature,
+                substitutions,
+            } => {
+                let Some(signature) = self.canonical_signature(
+                    ty.package,
+                    &file,
+                    &signature,
+                    &substitutions,
+                    depth + 1,
+                )?
+                else {
+                    return Ok(None);
+                };
+                TypeShape::Function(Box::new(signature))
+            }
+            TypeKind::Inline { ref shape, .. } if shape.interface => {
+                let mut base = ty.clone();
+                base.pointers = 0;
+                let Some(methods) = self.interface_methods_at(base, depth + 1)? else {
+                    return Ok(None);
+                };
+                if !methods.complete || methods.has_type_terms {
+                    return Ok(None);
+                }
+                TypeShape::Interface(
+                    methods
+                        .methods
+                        .into_iter()
+                        .map(|(key, method)| (key, method.signature))
+                        .collect(),
+                )
+            }
+            TypeKind::Inline {
+                file,
+                shape,
+                substitutions,
+            } => {
+                let mut fields = Vec::with_capacity(shape.fields.len());
+                for field in &shape.fields {
+                    let Some(reference) = field.ty.clone() else {
+                        return Ok(None);
+                    };
+                    let Some(field_type) =
+                        self.implementation_type(ty.package, &file, reference, &substitutions)?
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(field_type) =
+                        self.canonical_type(field_type, ty.package, &file, depth + 1)?
+                    else {
+                        return Ok(None);
+                    };
+                    fields.push(Field {
+                        key: MethodKey::new(&field.name, ty.package),
+                        embedded: field.embedded,
+                        tag: field.tag.clone().filter(|tag| tag != "``" && tag != "\"\""),
+                        ty: field_type,
+                    });
+                }
+                TypeShape::Struct(fields)
+            }
+        };
+        Ok(Some((0..ty.pointers).fold(shape, |inner, _| {
+            TypeShape::Pointer(Box::new(inner))
+        })))
+    }
+
+    fn is_predeclared_named(&mut self, ty: &TypeIdentity<'w>, spelling: &str) -> Result<bool> {
+        Ok(ty.pointers == 0
+            && matches!(&ty.kind, TypeKind::Named { name, arguments } if name == spelling && arguments.is_empty())
+            && self.type_info(ty.package, spelling)?.is_none())
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct Signature {
+    parameters: Vec<TypeShape>,
+    results: Vec<TypeShape>,
+    variadic: bool,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+enum TypeShape {
+    Builtin(String),
+    Named(PathBuf, Range, Vec<TypeShape>),
+    Parameter(usize),
+    Pointer(Box<TypeShape>),
+    Slice(Box<TypeShape>),
+    Array(Box<TypeShape>, u64),
+    Map(Box<TypeShape>, Box<TypeShape>),
+    Channel(Box<TypeShape>, bool, bool),
+    Function(Box<Signature>),
+    Interface(Vec<(MethodKey, Signature)>),
+    Struct(Vec<Field>),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct Field {
+    key: MethodKey,
+    embedded: bool,
+    tag: Option<String>,
+    ty: TypeShape,
+}
+
+fn array_length(text: &str) -> Option<u64> {
+    let literal = text.trim().trim_start_matches('+').replace('_', "");
+    let (radix, digits) = match literal.as_bytes() {
+        [b'0', b'b' | b'B', ..] => (2, &literal[2..]),
+        [b'0', b'o' | b'O', ..] => (8, &literal[2..]),
+        [b'0', b'x' | b'X', ..] => (16, &literal[2..]),
+        [b'0', _, ..] => (8, &literal[1..]),
+        _ => (10, literal.as_str()),
+    };
+    u64::from_str_radix(digits, radix).ok()
+}
+
+#[derive(Default)]
+struct SignatureMatcher {
+    // Each side has its own type parameter indices. Keep bindings for all
+    // methods of the interface so a repeated parameter requires one type.
+    bindings: HashMap<(bool, usize), (bool, TypeShape)>,
+}
+
+impl SignatureMatcher {
+    fn signature(
+        &mut self,
+        left: &Signature,
+        a: bool,
+        right: &Signature,
+        b: bool,
+        depth: usize,
+    ) -> bool {
+        left.variadic == right.variadic
+            && self.list(&left.parameters, a, &right.parameters, b, depth)
+            && self.list(&left.results, a, &right.results, b, depth)
+    }
+
+    fn list(
+        &mut self,
+        left: &[TypeShape],
+        a: bool,
+        right: &[TypeShape],
+        b: bool,
+        depth: usize,
+    ) -> bool {
+        left.len() == right.len()
+            && left
+                .iter()
+                .zip(right)
+                .all(|(left, right)| self.ty(left, a, right, b, depth + 1))
+    }
+
+    fn ty(&mut self, left: &TypeShape, a: bool, right: &TypeShape, b: bool, depth: usize) -> bool {
+        if depth >= MAX_TYPE_DEPTH {
+            return false;
+        }
+        if let TypeShape::Parameter(index) = left {
+            if a == b && left == right {
+                return true;
+            }
+            if let Some((side, bound)) = self.bindings.get(&(a, *index)).cloned() {
+                return self.ty(&bound, side, right, b, depth + 1);
+            }
+            if let TypeShape::Parameter(other) = right
+                && let Some((side, bound)) = self.bindings.get(&(b, *other)).cloned()
+            {
+                return self.ty(left, a, &bound, side, depth + 1);
+            }
+            self.bindings.insert((a, *index), (b, right.clone()));
+            return true;
+        }
+        if matches!(right, TypeShape::Parameter(_)) {
+            return self.ty(right, b, left, a, depth + 1);
+        }
+        match (left, right) {
+            (TypeShape::Builtin(left), TypeShape::Builtin(right)) => left == right,
+            (TypeShape::Named(lp, lr, left), TypeShape::Named(rp, rr, right)) => {
+                lp == rp && lr == rr && self.list(left, a, right, b, depth)
+            }
+            (TypeShape::Pointer(left), TypeShape::Pointer(right))
+            | (TypeShape::Slice(left), TypeShape::Slice(right)) => {
+                self.ty(left, a, right, b, depth + 1)
+            }
+            (TypeShape::Array(left, n), TypeShape::Array(right, m)) => {
+                n == m && self.ty(left, a, right, b, depth + 1)
+            }
+            (TypeShape::Map(lk, lv), TypeShape::Map(rk, rv)) => {
+                self.ty(lk, a, rk, b, depth + 1) && self.ty(lv, a, rv, b, depth + 1)
+            }
+            (TypeShape::Channel(left, lr, ls), TypeShape::Channel(right, rr, rs)) => {
+                lr == rr && ls == rs && self.ty(left, a, right, b, depth + 1)
+            }
+            (TypeShape::Function(left), TypeShape::Function(right)) => {
+                self.signature(left, a, right, b, depth + 1)
+            }
+            (TypeShape::Interface(left), TypeShape::Interface(right)) => {
+                left.len() == right.len()
+                    && left.iter().zip(right).all(|((lk, left), (rk, right))| {
+                        lk == rk && self.signature(left, a, right, b, depth + 1)
+                    })
+            }
+            (TypeShape::Struct(left), TypeShape::Struct(right)) => {
+                left.len() == right.len()
+                    && left.iter().zip(right).all(|(left, right)| {
+                        left.key == right.key
+                            && left.embedded == right.embedded
+                            && left.tag == right.tag
+                            && self.ty(&left.ty, a, &right.ty, b, depth + 1)
+                    })
+            }
+            _ => false,
+        }
+    }
+}

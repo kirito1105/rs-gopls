@@ -24,12 +24,15 @@ use lsp_types::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
-    request::{GotoDefinition, GotoTypeDefinition, Initialize, References, Request as _, Shutdown},
+    request::{
+        GotoDefinition, GotoImplementation, GotoTypeDefinition, Initialize, References,
+        Request as _, Shutdown,
+    },
 };
 use serde_json::Value;
 use url::Url;
 
-use semantic::{DefinitionKind, Engine, QueryProgress, ReferenceSearch};
+use semantic::{DefinitionKind, Engine, QueryProgress, Search};
 use workspace::{Workspace, WorkspaceLoad, path_key};
 
 enum State {
@@ -40,6 +43,7 @@ enum State {
 
 enum NavigationKind {
     Definition(DefinitionKind),
+    Implementation,
     References { include_declaration: bool },
 }
 
@@ -50,9 +54,9 @@ struct NavigationRequest {
     position: Position,
 }
 
-struct ActiveReferenceSearch {
+struct ActiveSearch {
     id: RequestId,
-    search: ReferenceSearch,
+    search: Search,
 }
 
 struct WorkspaceResult {
@@ -64,7 +68,7 @@ struct Running {
     engine: Engine,
     watch_files: bool,
     pending: Vec<NavigationRequest>,
-    reference_searches: VecDeque<ActiveReferenceSearch>,
+    searches: VecDeque<ActiveSearch>,
     loading: Option<WorkspaceLoad>,
     requested: Option<WorkspaceLoad>,
 }
@@ -138,6 +142,10 @@ impl Running {
                 .engine
                 .definition(&request.path, request.position, kind)
                 .map(|progress| progress.map(serialize_location)),
+            NavigationKind::Implementation => self
+                .engine
+                .implementations(&request.path, request.position)
+                .map(|progress| progress.map(serialize_locations)),
             NavigationKind::References {
                 include_declaration,
             } => self
@@ -152,7 +160,7 @@ impl Running {
                 return Ok(());
             }
             Ok(QueryProgress::Searching(search)) => {
-                self.reference_searches.push_back(ActiveReferenceSearch {
+                self.searches.push_back(ActiveSearch {
                     id: request.id,
                     search,
                 });
@@ -164,13 +172,13 @@ impl Running {
         send_response(connection, request.id, result)
     }
 
-    fn advance_reference_search(&mut self, connection: &Connection) -> Result<()> {
-        let Some(mut active) = self.reference_searches.pop_front() else {
+    fn advance_search(&mut self, connection: &Connection) -> Result<()> {
+        let Some(mut active) = self.searches.pop_front() else {
             return Ok(());
         };
-        let response = match self.engine.advance_reference_search(&mut active.search) {
+        let response = match self.engine.advance_search(&mut active.search) {
             Ok(false) => {
-                self.reference_searches.push_back(active);
+                self.searches.push_back(active);
                 return Ok(());
             }
             Ok(true) => serialize_locations(active.search.into_matches()),
@@ -179,18 +187,18 @@ impl Running {
         send_response(connection, active.id, response)
     }
 
-    fn cancel_reference_searches(
+    fn cancel_searches(
         &mut self,
         connection: &Connection,
         mut matches: impl FnMut(&RequestId) -> bool,
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
-        for active in std::mem::take(&mut self.reference_searches) {
+        for active in std::mem::take(&mut self.searches) {
             if matches(&active.id) {
                 send_response(connection, active.id, Err((code, message.to_owned())))?;
             } else {
-                self.reference_searches.push_back(active);
+                self.searches.push_back(active);
             }
         }
         Ok(())
@@ -217,11 +225,11 @@ impl Running {
             ErrorCode::ContentModified,
             "the document changed while loading Go packages",
         )?;
-        self.cancel_reference_searches(
+        self.cancel_searches(
             connection,
             |_| true,
             ErrorCode::ContentModified,
-            "the document changed during reference search",
+            "the document changed during navigation search",
         )
     }
 }
@@ -242,9 +250,9 @@ fn serve(connection: &Connection) -> Result<()> {
     let search_idle = never();
     search_token
         .send(())
-        .context("scheduling reference searches")?;
+        .context("scheduling navigation searches")?;
     loop {
-        let search_receiver = if matches!(&state, State::Running(running) if !running.reference_searches.is_empty())
+        let search_receiver = if matches!(&state, State::Running(running) if !running.searches.is_empty())
         {
             &search_ready
         } else {
@@ -283,11 +291,11 @@ fn serve(connection: &Connection) -> Result<()> {
                 }
             }
             recv(search_receiver) -> ready => {
-                ready.context("receiving reference search work")?;
+                ready.context("receiving navigation search work")?;
                 if let State::Running(running) = &mut state {
-                    running.advance_reference_search(connection)?;
+                    running.advance_search(connection)?;
                 }
-                search_token.send(()).context("scheduling further reference searches")?;
+                search_token.send(()).context("scheduling further navigation searches")?;
             }
         }
         if let State::Running(running) = &mut state {
@@ -306,7 +314,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                     engine,
                     watch_files,
                     pending: Vec::new(),
-                    reference_searches: VecDeque::new(),
+                    searches: VecDeque::new(),
                     loading: None,
                     requested: None,
                 }));
@@ -333,7 +341,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                     ErrorCode::RequestFailed,
                     "the server is shutting down",
                 )?;
-                running.cancel_reference_searches(
+                running.cancel_searches(
                     connection,
                     |_| true,
                     ErrorCode::RequestFailed,
@@ -343,27 +351,30 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
             *state = State::Shutdown;
             Ok(Value::Null)
         }
-        (State::Running(running), GotoDefinition::METHOD | GotoTypeDefinition::METHOD) => {
-            match definition_position(params) {
-                Ok((path, position)) => {
-                    let kind = if method == GotoDefinition::METHOD {
-                        DefinitionKind::Declaration
-                    } else {
-                        DefinitionKind::Type
-                    };
-                    return running.resolve_navigation(
-                        connection,
-                        NavigationRequest {
-                            id,
-                            kind: NavigationKind::Definition(kind),
-                            path,
-                            position,
-                        },
-                    );
-                }
-                Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
+        (
+            State::Running(running),
+            GotoDefinition::METHOD | GotoTypeDefinition::METHOD | GotoImplementation::METHOD,
+        ) => match definition_position(params) {
+            Ok((path, position)) => {
+                let kind = match method.as_str() {
+                    GotoDefinition::METHOD => {
+                        NavigationKind::Definition(DefinitionKind::Declaration)
+                    }
+                    GotoTypeDefinition::METHOD => NavigationKind::Definition(DefinitionKind::Type),
+                    _ => NavigationKind::Implementation,
+                };
+                return running.resolve_navigation(
+                    connection,
+                    NavigationRequest {
+                        id,
+                        kind,
+                        path,
+                        position,
+                    },
+                );
             }
-        }
+            Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
+        },
         (State::Running(running), References::METHOD) => match reference_position(params) {
             Ok((path, position, include_declaration)) => {
                 return running.resolve_navigation(
@@ -426,6 +437,7 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
         )),
         definition_provider: Some(OneOf::Left(true)),
         type_definition_provider: Some(true.into()),
+        implementation_provider: Some(true.into()),
         references_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
@@ -541,11 +553,11 @@ fn handle_notification(
             }
             let after = running.engine.workspace_load();
             if after != before {
-                running.cancel_reference_searches(
+                running.cancel_searches(
                     connection,
                     |_| true,
                     ErrorCode::ContentModified,
-                    "the workspace changed during reference search",
+                    "the workspace changed during navigation search",
                 )?;
                 running.request_workspace(after);
             }
@@ -582,11 +594,11 @@ fn handle_notification(
                 ErrorCode::RequestCanceled,
                 "the client cancelled the navigation request",
             )?;
-            running.cancel_reference_searches(
+            running.cancel_searches(
                 connection,
                 |request| request == &id,
                 ErrorCode::RequestCanceled,
-                "the client cancelled the reference search",
+                "the client cancelled the navigation search",
             )
         }
         _ => Ok(()),

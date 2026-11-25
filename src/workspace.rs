@@ -155,6 +155,10 @@ impl Workspace {
         self.packages.get(import_path)
     }
 
+    pub(crate) fn navigation_packages(&self) -> impl Iterator<Item = &Package> {
+        self.packages.values()
+    }
+
     pub fn resolve_import(&self, from: &Package, import_path: &str) -> Option<&Package> {
         self.package(from.import_id(import_path))
     }

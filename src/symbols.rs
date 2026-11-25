@@ -31,9 +31,19 @@ pub(crate) struct NamedType {
 #[derive(Clone, Debug)]
 pub(crate) enum Container<T> {
     Slice(T),
-    Array { element: T, length: Option<String> },
-    Map { key: T, value: T },
-    Channel { element: T, receive: bool },
+    Array {
+        element: T,
+        length: Option<String>,
+    },
+    Map {
+        key: T,
+        value: T,
+    },
+    Channel {
+        element: T,
+        receive: bool,
+        send: bool,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -42,6 +52,16 @@ pub(crate) struct InlineType {
     pub(crate) interface: bool,
     pub(crate) members: HashMap<String, Symbol>,
     pub(crate) embedded: Vec<TypeRef>,
+    pub(crate) fields: Vec<InlineField>,
+    pub(crate) has_type_terms: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct InlineField {
+    pub(crate) name: String,
+    pub(crate) embedded: bool,
+    pub(crate) tag: Option<String>,
+    pub(crate) ty: Option<TypeRef>,
 }
 
 #[derive(Clone, Debug)]
@@ -82,6 +102,7 @@ pub(crate) struct FunctionSignature {
     pub(crate) result_tuple: Option<Range>,
     pub(crate) results: Arc<[Option<TypeRef>]>,
     pub(crate) parameters: Vec<Option<TypeRef>>,
+    pub(crate) variadic: bool,
     pub(crate) type_parameters: Vec<GenericParameter>,
 }
 
@@ -106,6 +127,7 @@ pub(crate) struct TypeDetails {
     pub(crate) method_names: Vec<String>,
     pub(crate) embedded: Vec<TypeRef>,
     pub(crate) parameters: Vec<GenericParameter>,
+    pub(crate) has_type_terms: bool,
 }
 
 #[derive(Default)]
@@ -126,6 +148,20 @@ impl FileSymbols {
 
     pub(crate) fn type_details(&self, ty: &str) -> Option<&TypeDetails> {
         self.types.get(ty)
+    }
+
+    pub(crate) fn type_declarations(&self) -> impl Iterator<Item = (&str, &TypeDetails)> {
+        self.types
+            .iter()
+            .map(|(name, details)| (name.as_str(), details))
+    }
+
+    pub(crate) fn member_owners<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> {
+        self.members.iter().filter_map(move |(owner, members)| {
+            members.get(name).and_then(|member| {
+                matches!(member.kind, SymbolKind::Function(_)).then_some(owner.as_str())
+            })
+        })
     }
 }
 
@@ -233,6 +269,7 @@ impl Indexer<'_> {
         }) = underlying
         {
             details.interface = inline.interface;
+            details.has_type_terms = inline.has_type_terms;
             if inline.interface {
                 details.method_names = inline.members.keys().cloned().collect();
             }
@@ -356,6 +393,7 @@ pub(crate) fn type_ref(
                 .filter(|child| !child.is_extra())
                 .nth(1)
                 .is_some_and(|second| second.kind() != "<-"),
+            send: node.child(0).is_some_and(|first| first.kind() != "<-"),
         })?,
         "struct_type" | "interface_type" => {
             TypeRefKind::Inline(Arc::new(inline_type(node, text, range)))
@@ -414,12 +452,13 @@ fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) ->
                     }
                 }
                 "type_elem" => {
-                    // A union or approximation constrains the type set without embedding methods.
                     if let Some(term) = only_named_child(element)
                         && let Some(reference) = type_ref(term, text, range)
                         && matches!(reference.kind, TypeRefKind::Named(_))
                     {
                         inline.embedded.push(reference);
+                    } else {
+                        inline.has_type_terms = true;
                     }
                 }
                 _ => {}
@@ -439,6 +478,9 @@ fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) ->
     {
         let field_type = field.child_by_field_name("type");
         let ty = field_type.and_then(|node| type_ref(node, text, range));
+        let tag = field
+            .child_by_field_name("tag")
+            .map(|tag| node_text(tag, text).to_owned());
         let mut name_cursor = field.walk();
         let mut names = field
             .children_by_field_name("name", &mut name_cursor)
@@ -447,6 +489,12 @@ fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) ->
         if names.peek().is_some() {
             for name in names {
                 let key = node_text(name, text);
+                inline.fields.push(InlineField {
+                    name: key.to_owned(),
+                    embedded: false,
+                    tag: tag.clone(),
+                    ty: ty.clone(),
+                });
                 if !key.is_empty() && key != "_" {
                     let symbol = Symbol::new(range(name), SymbolKind::Value(ty.clone()), true);
                     inline.members.entry(key.to_owned()).or_insert(symbol);
@@ -461,6 +509,12 @@ fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) ->
                 ty.pointers += 1;
             }
             let name = syntax.name;
+            inline.fields.push(InlineField {
+                name: node_text(name, text).to_owned(),
+                embedded: true,
+                tag,
+                ty: Some(ty.clone()),
+            });
             let symbol = Symbol::new(range(name), SymbolKind::Value(Some(ty.clone())), true);
             inline
                 .members
@@ -630,14 +684,23 @@ fn function_signature(
     range: &dyn Fn(Node<'_>) -> Range,
 ) -> Arc<FunctionSignature> {
     let type_parameters = type_parameters(function, text, range);
-    // Ordinary call sites only need result types.
-    let parameters = if type_parameters.is_empty() {
-        Vec::new()
+    let parameters = function.child_by_field_name("parameters");
+    let variadic = parameters.is_some_and(|list| {
+        list.named_children(&mut list.walk())
+            .any(|node| node.kind() == "variadic_parameter_declaration")
+    });
+    // Plain function calls only need result types. Method and function-type
+    // signatures retain their parameters for method-set comparison.
+    let parameters = if matches!(
+        function.kind(),
+        "method_declaration" | "method_elem" | "function_type"
+    ) || !type_parameters.is_empty()
+    {
+        parameters.map_or_else(Vec::new, |list| {
+            parameter_types(list, |node| type_ref(node, text, range))
+        })
     } else {
-        function
-            .child_by_field_name("parameters")
-            .map(|list| parameter_types(list, |node| type_ref(node, text, range)))
-            .unwrap_or_default()
+        Vec::new()
     };
     let function_type = function
         .child(0)
@@ -655,6 +718,7 @@ fn function_signature(
         result_tuple,
         results: function_results(function, text, range),
         parameters,
+        variadic,
         type_parameters,
     })
 }

@@ -38,3 +38,11 @@ Get-Content -LiteralPath (Join-Path $directory 'implementation-locations.tsv') -
 ```
 
 首行为 GoLand 构建号。后续各行为动作、查询 ID、目标路径、标识符起止行列、源码记号和导航行列，空结果用 `none` 表示。行列使用零起点 UTF-16，依赖和 SDK 路径分别归一化为 `GOMODCACHE:` 与 `GOROOT:`。
+
+## 正向查询验收
+
+发布构建通过真实项目的 12 个 **Go to Implementation** 对照，按集合比较 UTF-16 标识符范围。包图加载和扫描期间的取消、未保存缓冲区覆盖及包图更新也已验证。声明跳转、类型定义和引用的既有真实项目检查继续通过。
+
+```powershell
+python -B .\tools\check_goland_implementations.py $server --workspace $project --action implementation
+```

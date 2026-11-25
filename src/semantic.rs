@@ -21,6 +21,8 @@ use crate::symbols::{
 };
 use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 
+mod implementation;
+
 struct FileIndex {
     symbols: FileSymbols,
     imports: Vec<Import>,
@@ -83,7 +85,21 @@ pub enum DefinitionKind {
 pub enum QueryProgress<T> {
     Ready(T),
     Pending(WorkspaceLoad),
-    Searching(ReferenceSearch),
+    Searching(Search),
+}
+
+pub enum Search {
+    References(ReferenceSearch),
+    Implementations(implementation::ImplementationSearch),
+}
+
+impl Search {
+    pub fn into_matches(self) -> Vec<(PathBuf, Range)> {
+        match self {
+            Self::References(search) => search.matches,
+            Self::Implementations(search) => search.into_matches(),
+        }
+    }
 }
 
 pub struct ReferenceSearch {
@@ -99,12 +115,6 @@ struct ReferenceCandidate {
     key: PathBuf,
     path: PathBuf,
     package_id: String,
-}
-
-impl ReferenceSearch {
-    pub fn into_matches(self) -> Vec<(PathBuf, Range)> {
-        self.matches
-    }
 }
 
 impl<T> QueryProgress<T> {
@@ -340,13 +350,20 @@ impl Engine {
             return Ok(QueryProgress::Ready(locations));
         };
         Ok(if search.files.is_empty() {
-            QueryProgress::Ready(search.into_matches())
+            QueryProgress::Ready(search.matches)
         } else {
-            QueryProgress::Searching(search)
+            QueryProgress::Searching(Search::References(search))
         })
     }
 
-    pub fn advance_reference_search(&mut self, search: &mut ReferenceSearch) -> Result<bool> {
+    pub fn advance_search(&mut self, search: &mut Search) -> Result<bool> {
+        match search {
+            Search::References(search) => self.advance_reference_search(search),
+            Search::Implementations(search) => self.advance_implementation_search(search),
+        }
+    }
+
+    fn advance_reference_search(&mut self, search: &mut ReferenceSearch) -> Result<bool> {
         let workspace = self
             .workspace
             .as_ref()
@@ -1653,6 +1670,7 @@ impl<'w> Resolver<'w, '_> {
                         Container::Channel {
                             element,
                             receive: true,
+                            ..
                         },
                         0,
                     )),
@@ -1767,6 +1785,7 @@ impl<'w> Resolver<'w, '_> {
                             Container::Channel {
                                 element,
                                 receive: true,
+                                ..
                             },
                             0,
                         )) => Some(element),
@@ -2366,10 +2385,12 @@ impl<'w> Resolver<'w, '_> {
                         Container::Channel {
                             element: left,
                             receive: a,
+                            ..
                         },
                         Container::Channel {
                             element: right,
                             receive: b,
+                            ..
                         },
                     ) if a == b => self.unify_types(left, right, bindings, false),
                     _ => Ok(false),
@@ -2740,9 +2761,14 @@ fn materialize_type<'w>(
                     key: resolve(key)?,
                     value: resolve(value)?,
                 },
-                Container::Channel { element, receive } => Container::Channel {
+                Container::Channel {
+                    element,
+                    receive,
+                    send,
+                } => Container::Channel {
                     element: resolve(element)?,
                     receive,
+                    send,
                 },
             };
             (
