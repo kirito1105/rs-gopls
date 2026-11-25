@@ -500,6 +500,38 @@ def check_overlay_new_file(executable_path, root, timeout):
     if virtual.exists():
         raise RuntimeError(f"test overlay unexpectedly wrote {virtual}")
 
+def check_overlay_disk_restore(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/overlayrestore\n\ngo 1.22\n")
+    caller = write(
+        root / "caller.go",
+        'package overlayrestore\nimport "example.test/overlayrestore/dep"\n'
+        "func Caller() { dep.Run() }\n",
+    )
+    saved_text = "package dep\n\n// marker\nfunc Run() {}\n"
+    target_path = write(root / "dep" / "target.go", saved_text)
+    reference = site(caller, "dep.[[Run]]()")
+    saved = site(target_path, "func [[Run]]()")
+    overlay = site(target_path, "func [[Run]]()", "// unsaved overlay\n" + saved_text)
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(caller, reference.text)
+        check_location(client, reference, saved)
+
+        client.open_document(target_path, saved.text)
+        client.change_document(target_path, 2, overlay.text)
+        check_location(client, reference, overlay)
+        client.close_document(target_path)
+        check_location(client, reference, saved)
+
+        client.open_document(target_path, overlay.text)
+        original_stat = target_path.stat()
+        # Keep file size and modification time unchanged while moving the declaration.
+        write(target_path, "package dep\n\nfunc Run() {}\n// marker\n")
+        os.utime(target_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+        check_location(client, reference, overlay)
+        client.close_document(target_path)
+        check_location(client, reference, site(target_path, "func [[Run]]()"))
+
 CASES = {
     "mutations": check_mutations,
     "go-work": check_go_work,
@@ -507,6 +539,7 @@ CASES = {
     "gopath": check_gopath,
     "async-refresh": check_async_refresh,
     "overlay-new-file": check_overlay_new_file,
+    "overlay-disk-restore": check_overlay_disk_restore,
 }
 
 

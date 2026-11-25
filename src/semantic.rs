@@ -23,6 +23,30 @@ struct FileIndex {
     package_signature: u64,
 }
 
+struct DiskIndex {
+    declarations: FileIndex,
+    fingerprint: u64,
+}
+
+impl DiskIndex {
+    fn new(source: &Source) -> Self {
+        Self {
+            declarations: source.collect_declarations(),
+            fingerprint: text_fingerprint(&source.text),
+        }
+    }
+
+    fn still_current(&self, path: &Path) -> bool {
+        fs::read_to_string(path).is_ok_and(|text| self.fingerprint == text_fingerprint(&text))
+    }
+}
+
+fn text_fingerprint(text: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Clone, Copy)]
 enum ReferenceQuery<'tree> {
     Name(Node<'tree>),
@@ -76,7 +100,7 @@ pub struct Engine {
     parser: Parser,
     documents: HashMap<PathBuf, Source>,
     new_documents: HashSet<PathBuf>,
-    disk_index: HashMap<PathBuf, FileIndex>,
+    disk_index: HashMap<PathBuf, DiskIndex>,
     include_tests: bool,
 }
 
@@ -109,7 +133,6 @@ impl Engine {
             } else {
                 self.new_documents.remove(&key);
             }
-            self.disk_index.remove(&key);
             self.documents.insert(key, source);
         }
         Ok(())
@@ -128,7 +151,13 @@ impl Engine {
         let key = path_key(path);
         self.documents.remove(&key);
         self.new_documents.remove(&key);
-        self.disk_index.remove(&key);
+        if self
+            .disk_index
+            .get(&key)
+            .is_some_and(|index| !index.still_current(path))
+        {
+            self.disk_index.remove(&key);
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -182,8 +211,8 @@ impl Engine {
             && let Some(previous) = previous
             && let Ok(disk) = read_source(&mut self.parser, path)
         {
-            let updated = disk.collect_declarations();
-            if previous.package_signature == updated.package_signature {
+            let updated = DiskIndex::new(&disk);
+            if previous.declarations.package_signature == updated.declarations.package_signature {
                 self.disk_index.insert(key, updated);
                 return;
             }
@@ -382,7 +411,7 @@ fn draft_package<'w>(workspace: &'w Workspace, source: &Source) -> Option<&'w Pa
 struct IndexReader<'a> {
     parser: &'a mut Parser,
     documents: &'a HashMap<PathBuf, Source>,
-    disk_index: &'a mut HashMap<PathBuf, FileIndex>,
+    disk_index: &'a mut HashMap<PathBuf, DiskIndex>,
     drafts: HashMap<&'a str, Vec<&'a PathBuf>>,
 }
 
@@ -406,13 +435,14 @@ impl IndexReader<'_> {
         if let Some(source) = self.documents.get(&key) {
             return Ok(source.declarations());
         }
-        Ok(match self.disk_index.entry(key) {
+        let cached = match self.disk_index.entry(key) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
                 let source = read_source(self.parser, file)?;
-                entry.insert(source.collect_declarations())
+                entry.insert(DiskIndex::new(&source))
             }
-        })
+        };
+        Ok(&cached.declarations)
     }
 
     fn find(
