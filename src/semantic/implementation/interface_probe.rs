@@ -1,15 +1,39 @@
 type MethodShape = (usize, usize, bool);
 
-/// Checks explicit spellings only. A caller looking for aliases or promoted
-/// methods must also keep importers of packages with matching spellings.
-pub(super) fn may_declare_interface_method(
-    text: &str,
-    matches: impl Fn(&str, Option<MethodShape>) -> bool,
-) -> bool {
-    text.contains("interface") && probe(text, matches).unwrap_or(true)
+pub(super) struct InterfaceSpellings {
+    // Missing spellings mean the scan could not rule out a match.
+    methods: Option<Vec<(String, Option<MethodShape>)>>,
 }
 
-fn probe(text: &str, matches: impl Fn(&str, Option<MethodShape>) -> bool) -> Result<bool, ()> {
+impl Default for InterfaceSpellings {
+    fn default() -> Self {
+        Self {
+            methods: Some(Vec::new()),
+        }
+    }
+}
+
+impl InterfaceSpellings {
+    pub(super) fn matches(&self, matches: impl Fn(&str, Option<MethodShape>) -> bool) -> bool {
+        self.methods
+            .as_ref()
+            .is_none_or(|methods| methods.iter().any(|(name, shape)| matches(name, *shape)))
+    }
+}
+
+/// Collects explicit spellings for reuse across queries. Callers looking for
+/// aliases or promoted methods must also keep importers of matching packages.
+pub(super) fn interface_spellings(text: &str) -> InterfaceSpellings {
+    if !text.contains("interface") {
+        return InterfaceSpellings::default();
+    }
+    InterfaceSpellings {
+        methods: scan(text).ok(),
+    }
+}
+
+fn scan(text: &str) -> Result<Vec<(String, Option<MethodShape>)>, ()> {
+    let mut methods = Vec::new();
     let mut lexer = Lexer { rest: text };
     let mut interface_depth = 0;
     while let Some(token) = lexer.next()? {
@@ -22,18 +46,19 @@ fn probe(text: &str, matches: impl Fn(&str, Option<MethodShape>) -> bool) -> Res
             }
             Kind::Byte(b'{') if interface_depth != 0 => interface_depth += 1,
             Kind::Byte(b'}') if interface_depth != 0 => interface_depth -= 1,
-            Kind::Word(name) if interface_depth != 0 && matches(name, None) => {
+            Kind::Word(name) if interface_depth != 0 => {
                 let mut signature = lexer;
-                if signature.next()?.map(|token| token.kind) == Some(Kind::Byte(b'('))
-                    && method_shape(signature).is_none_or(|shape| matches(name, Some(shape)))
-                {
-                    return Ok(true);
+                if signature.next()?.map(|token| token.kind) == Some(Kind::Byte(b'(')) {
+                    methods.push((name.to_owned(), method_shape(signature)));
                 }
             }
             _ => {}
         }
     }
-    Ok(interface_depth != 0)
+    if interface_depth != 0 {
+        return Err(());
+    }
+    Ok(methods)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -235,10 +260,14 @@ fn identifier(kind: Kind<'_>) -> Option<()> {
 mod tests {
     use super::*;
 
-    fn finds(source: &str, name: &str, shape: MethodShape) -> bool {
-        may_declare_interface_method(source, |candidate, fingerprint| {
+    fn matches(spellings: &InterfaceSpellings, name: &str, shape: MethodShape) -> bool {
+        spellings.matches(|candidate, fingerprint| {
             name == candidate && fingerprint.is_none_or(|candidate| shape == candidate)
         })
+    }
+
+    fn finds(source: &str, name: &str, shape: MethodShape) -> bool {
+        matches(&interface_spellings(source), name, shape)
     }
 
     #[test]
@@ -250,10 +279,11 @@ mod tests {
                 Outer(interface { Nested() })\n \
                 Match /* comment */ (\n a, b *p.T, args ...[]T,\n) (x, y error)\n \
             }";
-        assert!(finds(source, "Match", (3, 2, true)));
-        assert!(!finds(source, "Match", (0, 0, false)));
-        assert!(finds(source, "Nested", (0, 0, false)));
-        assert!(!finds(source, "Missing", (0, 0, false)));
+        let spellings = interface_spellings(source);
+        assert!(matches(&spellings, "Match", (3, 2, true)));
+        assert!(!matches(&spellings, "Match", (0, 0, false)));
+        assert!(matches(&spellings, "Nested", (0, 0, false)));
+        assert!(!matches(&spellings, "Missing", (0, 0, false)));
     }
 
     #[test]

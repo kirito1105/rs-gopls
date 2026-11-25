@@ -44,7 +44,7 @@ struct Method {
     location: MethodLocation,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct MethodShape {
     pub(super) name: String,
     pub(super) parameters: usize,

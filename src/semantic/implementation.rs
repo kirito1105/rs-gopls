@@ -5,7 +5,8 @@ mod interface_index;
 mod interface_probe;
 mod method_sets;
 
-use candidates::{CandidatePackages, PackageProbe};
+pub(super) use candidates::InterfaceSources;
+use candidates::{CandidatePackages, PackageProbe, PackageProbeKey};
 use interface_index::{IndexedInterface, InterfaceIndex};
 use method_sets::{InterfaceMethods, MethodKey, MethodShape};
 
@@ -15,7 +16,7 @@ type QueryKey = (PathBuf, Position);
 #[derive(Default)]
 pub(super) struct ImplementationCache {
     results: HashMap<QueryKey, Vec<Location>>,
-    packages: HashMap<String, HashSet<String>>,
+    packages: HashMap<PackageProbeKey, HashSet<String>>,
     interfaces: HashMap<String, InterfaceIndex>,
 }
 
@@ -38,12 +39,10 @@ impl ImplementationCache {
     }
 
     fn remember_packages(&mut self, candidates: CandidatePackages) {
-        if let PackageProbe::Method(method) = candidates.probe {
-            if self.packages.len() >= 32 {
-                self.packages.clear();
-            }
-            self.packages.insert(method, candidates.eligible);
+        if self.packages.len() >= 32 {
+            self.packages.clear();
         }
+        self.packages.insert(candidates.key, candidates.eligible);
     }
 
     pub(super) fn shift(&mut self, path: &Path, shift: LineShift) {
@@ -308,29 +307,29 @@ impl Engine {
             Direction::Interfaces { .. } => subject.method.as_ref().map(MethodKey::name),
         };
         // The predeclared error interface can supply Error outside the go list graph.
-        let package_filter = if let Some(method) =
+        let probe = if let Some(method) =
             filter_method.filter(|method| !package_only && *method != "Error")
         {
-            if let Some(eligible) = self.implementation_cache.packages.get(method) {
-                packages.retain(|id| eligible.contains(id));
-                None
-            } else {
-                Some(CandidatePackages::new(
-                    PackageProbe::Method(method.to_owned()),
-                    &packages,
-                ))
-            }
+            Some(PackageProbe::Method(method.to_owned()))
         } else if let Direction::Interfaces {
             shapes: Some(shapes),
             ..
         } = &direction
         {
-            (!shapes.iter().any(|shape| shape.name == "Error")).then(|| {
-                CandidatePackages::new(PackageProbe::Interface(Rc::clone(shapes)), &packages)
-            })
+            (!shapes.iter().any(|shape| shape.name == "Error"))
+                .then(|| PackageProbe::Interface(Rc::clone(shapes)))
         } else {
             None
         };
+        let package_filter = probe.and_then(|probe| {
+            let key = probe.key();
+            if let Some(eligible) = self.implementation_cache.packages.get(&key) {
+                packages.retain(|id| eligible.contains(id));
+                None
+            } else {
+                Some(CandidatePackages::new(probe, key, &packages))
+            }
+        });
         Ok(QueryProgress::Searching(Search::Implementations(
             ImplementationSearch {
                 key,
@@ -365,7 +364,7 @@ impl Engine {
         };
         let mut resolver = Resolver { workspace, indexes };
         if let Some(filter) = &mut search.package_filter {
-            if filter.advance(&resolver) {
+            if filter.advance(&resolver, &mut self.implementation_sources) {
                 search.packages.retain(|id| filter.eligible.contains(id));
                 if let Some(filter) = search.package_filter.take() {
                     self.implementation_cache.remember_packages(filter);

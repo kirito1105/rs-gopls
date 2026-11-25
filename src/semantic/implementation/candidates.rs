@@ -1,29 +1,122 @@
 use super::super::*;
-use super::{interface_probe::may_declare_interface_method, method_sets::MethodShape};
+use super::{
+    interface_probe::{InterfaceSpellings, interface_spellings},
+    method_sets::MethodShape,
+};
 
 pub(super) enum PackageProbe {
     Method(String),
     Interface(Rc<HashSet<MethodShape>>),
 }
 
+#[derive(PartialEq, Eq, Hash)]
+pub(super) enum PackageProbeKey {
+    Method(String),
+    Interface(Vec<MethodShape>),
+}
+
 impl PackageProbe {
-    fn matches(&self, text: &str) -> bool {
+    pub(super) fn key(&self) -> PackageProbeKey {
         match self {
-            Self::Method(method) => text.contains(method),
-            Self::Interface(methods) => may_declare_interface_method(text, |name, arity| {
-                methods.iter().any(|method| {
-                    method.name == name
-                        && arity.is_none_or(|arity| {
-                            arity == (method.parameters, method.results, method.variadic)
-                        })
-                })
+            Self::Method(method) => PackageProbeKey::Method(method.clone()),
+            Self::Interface(shapes) => {
+                let mut shapes: Vec<_> = shapes.iter().cloned().collect();
+                shapes.sort_unstable();
+                PackageProbeKey::Interface(shapes)
+            }
+        }
+    }
+
+    fn matches_file(
+        &self,
+        file: &Path,
+        key: &Path,
+        indexes: &IndexReader<'_>,
+        sources: &mut InterfaceSources,
+    ) -> bool {
+        // The import edge from an unsaved file may be absent from go list.
+        if indexes.documents.contains_key(key) {
+            return true;
+        }
+        match self {
+            Self::Method(method) => fs::read_to_string(file).map_or(true, |text| {
+                text.contains(method)
+                    || indexes
+                        .disk_index
+                        .get(key)
+                        .is_some_and(|index| index.fingerprint != text_fingerprint(&text))
             }),
+            Self::Interface(methods) => sources.matches_file(file, key, indexes, methods),
         }
     }
 }
 
+#[derive(Default)]
+pub(in crate::semantic) struct InterfaceSources {
+    files: HashMap<PathBuf, InterfaceSource>,
+}
+
+struct InterfaceSource {
+    fingerprint: u64,
+    spellings: InterfaceSpellings,
+}
+
+impl InterfaceSources {
+    pub(in crate::semantic) fn invalidate(&mut self, key: &Path) {
+        self.files.remove(key);
+    }
+
+    pub(in crate::semantic) fn retain_workspace(&mut self, workspace: &Workspace) {
+        if !self.files.is_empty() {
+            let active: HashSet<_> = workspace
+                .navigation_packages()
+                .flat_map(|package| package.files.iter().map(|file| path_key(file)))
+                .collect();
+            self.files.retain(|key, _| active.contains(key));
+        }
+    }
+
+    fn matches_file(
+        &mut self,
+        file: &Path,
+        key: &Path,
+        indexes: &IndexReader<'_>,
+        methods: &HashSet<MethodShape>,
+    ) -> bool {
+        let source = match self.files.entry(key.to_owned()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let Ok(text) = fs::read_to_string(file) else {
+                    return true;
+                };
+                entry.insert(InterfaceSource {
+                    fingerprint: text_fingerprint(&text),
+                    spellings: interface_spellings(&text),
+                })
+            }
+        };
+        // Exact resolution can still use the indexed snapshot until a watch event.
+        if indexes
+            .disk_index
+            .get(key)
+            .is_some_and(|index| index.fingerprint != source.fingerprint)
+        {
+            return true;
+        }
+        source.spellings.matches(|name, arity| {
+            methods.iter().any(|method| {
+                method.name == name
+                    && arity.is_none_or(|arity| {
+                        arity == (method.parameters, method.results, method.variadic)
+                    })
+            })
+        })
+    }
+}
+
 pub(super) struct CandidatePackages {
-    pub(super) probe: PackageProbe,
+    probe: PackageProbe,
+    pub(super) key: PackageProbeKey,
     pub(super) eligible: HashSet<String>,
     pending: Vec<String>,
     current: Option<(String, Vec<PathBuf>)>,
@@ -31,9 +124,14 @@ pub(super) struct CandidatePackages {
 }
 
 impl CandidatePackages {
-    pub(super) fn new(probe: PackageProbe, packages: &VecDeque<String>) -> Self {
+    pub(super) fn new(
+        probe: PackageProbe,
+        key: PackageProbeKey,
+        packages: &VecDeque<String>,
+    ) -> Self {
         Self {
             probe,
+            key,
             eligible: HashSet::new(),
             pending: packages.iter().rev().cloned().collect(),
             current: None,
@@ -41,7 +139,11 @@ impl CandidatePackages {
         }
     }
 
-    pub(super) fn advance(&mut self, resolver: &Resolver<'_, '_>) -> bool {
+    pub(super) fn advance(
+        &mut self,
+        resolver: &Resolver<'_, '_>,
+        sources: &mut InterfaceSources,
+    ) -> bool {
         let started = Instant::now();
         for _ in 0..32 {
             if self.current.is_none() {
@@ -68,16 +170,8 @@ impl CandidatePackages {
             if let Some(file) = files.pop() {
                 let key = path_key(&file);
                 let may_declare = *self.files.entry(key.clone()).or_insert_with(|| {
-                    // An overlay can introduce an import absent from go list. Including
-                    // its package also keeps disk importers that can inherit its methods.
-                    resolver.indexes.documents.contains_key(&key)
-                        || fs::read_to_string(&file).map_or(true, |text| {
-                            self.probe.matches(&text)
-                                || resolver.indexes.disk_index.get(&key).is_some_and(|index| {
-                                    // Resolution can use the indexed snapshot until a watch event.
-                                    index.fingerprint != text_fingerprint(&text)
-                                })
-                        })
+                    self.probe
+                        .matches_file(&file, &key, &resolver.indexes, sources)
                 });
                 if may_declare {
                     let id = std::mem::take(id);

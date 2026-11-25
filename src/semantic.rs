@@ -167,6 +167,7 @@ pub struct Engine {
     new_documents: HashSet<PathBuf>,
     disk_index: HashMap<PathBuf, DiskIndex>,
     implementation_cache: implementation::ImplementationCache,
+    implementation_sources: implementation::InterfaceSources,
     include_tests: bool,
 }
 
@@ -186,6 +187,7 @@ impl Engine {
             new_documents: HashSet::new(),
             disk_index: HashMap::new(),
             implementation_cache: implementation::ImplementationCache::default(),
+            implementation_sources: implementation::InterfaceSources::default(),
             include_tests: false,
         }
     }
@@ -241,6 +243,7 @@ impl Engine {
     pub fn close(&mut self, path: &Path) {
         self.implementation_cache.clear();
         let key = path_key(path);
+        self.implementation_sources.invalidate(&key);
         self.documents.remove(&key);
         self.new_documents.remove(&key);
         if self
@@ -271,6 +274,7 @@ impl Engine {
         if load.generation != self.generation {
             return false;
         }
+        self.implementation_sources.retain_workspace(&workspace);
         self.workspace = Some(workspace);
         self.graph_changes = GraphChanges::Clean;
         self.implementation_cache.clear();
@@ -298,6 +302,7 @@ impl Engine {
 
         self.implementation_cache.clear();
         let key = path_key(path);
+        self.implementation_sources.invalidate(&key);
         if change == FileChangeType::CREATED && path.is_file() {
             self.new_documents.remove(&key);
         }

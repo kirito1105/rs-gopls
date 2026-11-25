@@ -1030,6 +1030,53 @@ def check_implementation_reverse_candidates(executable_path, root, timeout):
         raise RuntimeError(f"test overlay unexpectedly wrote {draft.path}")
 
 
+def check_implementation_reverse_watched_sources(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/reversewatch\n\ngo 1.22\n")
+    provider = write(
+        root / "provider.go",
+        "package provider\n\ntype Starter struct{}\nfunc (Starter) StartParcel() {}\n"
+        "type Inspector struct{}\nfunc (Inspector) InspectParcel() {}\n",
+    )
+    starter = site(provider, "type [[Starter]] struct")
+    inspector = site(provider, "type [[Inspector]] struct")
+    active = site(
+        write(root / "active" / "active.go", "package active\n\ntype Starting interface { StartParcel() }\n"),
+        "type [[Starting]] interface",
+    )
+    pending = write(root / "pending" / "pending.go", "package pending\n\ntype Pending interface { DispatchParcel() }\n")
+
+    with session(executable_path, root, timeout, watch_files=True) as client:
+        client.open_document(provider, starter.text)
+        check_implementations(client, starter, active)
+        check_implementations(client, inspector)
+
+        changed = site(
+            write(active.path, "package active\n\ntype Inspection interface { InspectParcel() }\n"),
+            "type [[Inspection]] interface",
+        )
+        notify_changes(client, (active.path, 2))
+        check_implementations(client, starter)
+        check_implementations(client, inspector, changed)
+
+        # This file was previously pruned from both reverse searches.
+        added = site(
+            write(pending, "package pending\n\ntype Inspection interface { InspectParcel() }\n"),
+            "type [[Inspection]] interface",
+        )
+        notify_changes(client, (pending, 2))
+        check_implementations(client, inspector, changed, added)
+
+        client.open_document(pending, added.text)
+        saved = site(
+            write(pending, "package pending\n\ntype Starting interface { StartParcel() }\n"),
+            "type [[Starting]] interface",
+        )
+        check_implementations(client, inspector, changed, added)
+        client.close_document(pending)
+        check_implementations(client, starter, saved)
+        check_implementations(client, inspector, changed)
+
+
 def check_implementation_cancel(executable_path, root, timeout):
     control = root / "control"
     environment = go_list_relay(control, timeout)
@@ -1114,6 +1161,7 @@ CASES = {
     "implementation-updates": check_implementation_updates,
     "implementation-candidate-packages": check_implementation_candidate_packages,
     "implementation-reverse-candidates": check_implementation_reverse_candidates,
+    "implementation-reverse-watched-sources": check_implementation_reverse_watched_sources,
     "implementation-cancel": check_implementation_cancel,
     "implementation-active-cancel": check_active_implementation_cancel,
 }

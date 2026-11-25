@@ -88,6 +88,38 @@ python -B .\tools\check_workspace_updates.py $server
 
 原始结果位于 Cargo 产物目录的 `goland-implementation-timing-76aa881.tsv`、`goland-implementation-timing-76aa881.json` 和 `rs-gopls-goland-warm-76aa881.json`。
 
+### 复用具体类型反查的候选范围
+
+反查先按文件缓存显式接口方法的名称、参数和结果个数及可变参数标记，再按具体类型的整组方法形状复用候选包范围。精确匹配继续使用完整签名。文件监听事件和关闭缓冲区会移除对应文件的探测记录。工作区切换后只保留活动文件的记录。[候选范围实现](../src/semantic/implementation/candidates.rs)
+
+2026-11-26 在同一主机、项目修订及 Go 1.27.4 下复测。GoLand `GO-263.7307.354` 的项目已完成索引，使用智能模式中的 **Go to Super** 或 **Go to Implementation** 到完整源码目标的耗时。rs-gopls 测量 stdio LSP 请求往返。每次逐项核对完整目标与 UTF-16 范围。两边的计时均排除界面操作和进程启动。
+
+- **换光标**　rs-gopls 在每个会话发起过相同符号查询后，遍历该标识符内尚未请求的 UTF-16 位置，运行 5 个独立会话。GoLand 在当前 IDE 中遍历相同位置 5 轮，保留 IDE 内部缓存。`SqlStore`、`LocalFileBackend` 和 `Store` 分别采集 35、75、20 个样本。
+- **重复同一光标**　rs-gopls 每例 150 个样本，GoLand 每例 30 个样本。
+- **先查另一类型**　GoLand 在索引完成后的同一 IDE 中交替查询，每例 30 个样本。rs-gopls 每例另启 5 个会话，打开相同文件，先完成一次另一具体类型的反查。`SqlStore` 由 `LocalFileBackend` 预热，其余用例由 `SqlStore` 预热。该场景允许请求期间继续准备包索引，两个工具的索引准备程度不同。
+
+| 查询 | 场景 | 落点数 | GoLand P50 / P95（ms） | rs-gopls `76aa881` P50 / P95（ms） | 优化版 P50 / P95（ms） |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `SqlStore` 查接口 | 换光标 | 1 | 20.12 / 28.07 | 197.24 / 233.53 | 0.84 / 1.13 |
+| `SqlStore` 查接口 | 重复同一光标 | 1 | 22.56 / 28.89 | 0.179 / 0.245 | 0.148 / 0.217 |
+| `SqlStore` 查接口 | 先查另一类型 | 1 | 22.83 / 29.24 | 125.06 / 143.30 | 25.01 / 27.03 |
+| `LocalFileBackend` 查接口 | 换光标 | 1 | 4.43 / 5.44 | 160.12 / 183.19 | 0.34 / 0.47 |
+| `LocalFileBackend` 查接口 | 重复同一光标 | 1 | 5.33 / 5.97 | 0.174 / 0.229 | 0.132 / 0.207 |
+| `LocalFileBackend` 查接口 | 先查另一类型 | 1 | 4.64 / 6.41 | 1979.68 / 2155.93 | 1772.83 / 1802.87 |
+| `Store` 查实现 | 换光标 | 39 | 199.85 / 230.26 | 44.01 / 70.74 | 28.63 / 47.37 |
+| `Store` 查实现 | 重复同一光标 | 39 | 216.44 / 265.53 | 0.429 / 0.588 | 0.320 / 0.446 |
+| `Store` 查实现 | 先查另一类型 | 39 | 200.41 / 260.63 | 147.89 / 165.48 | 150.42 / 155.05 |
+
+两个具体类型在换光标时均低于 GoLand。本轮 `LocalFileBackend` 的主要差距出现在首次切换类型。Go 1.27.4 的 `io/fs.ReadFileFS` 和它有相同的 `ReadFile` 方法形状，因此预筛会保留 `io/fs` 及其导入方。精确阶段再根据嵌入的 `FS` 判断。首次命中这类候选范围时，rs-gopls 仍需准备未建立的包索引。
+
+`SqlUserStore` 单列诊断。GoLand 返回 3 个落点，rs-gopls 返回活动包图内的 2 个落点，两者均与各自记录的完整范围一致。换光标各 55 个样本，rs-gopls P50 / P95 从 169.87 / 207.68 ms 降至 2.95 / 4.26 ms。先查 `SqlStore` 后，首次查询从 601.37 / 651.74 ms 降至 494.80 / 509.78 ms。GoLand 对应两组为 37.81 / 48.39 ms、42.59 / 54.12 ms。重复同一光标的 GoLand、rs-gopls 旧版和优化版分别为 41.32 / 53.51 ms、0.253 / 0.394 ms 和 0.201 / 0.274 ms。
+
+另用 5 个独立进程测量每版 rs-gopls 从进程启动到 `SqlUserStore` 首次正确结果的时间。旧版 P50 / P95 为 1213.59 / 1226.46 ms，优化版为 1220.58 / 1240.64 ms，两版 10 次查询均返回精确结果。此组用于检查启动回归，原始数据为 `implementation-first-reverse-shapes.json`。
+
+发布版通过 49 项 GoLand 实现跳转对照、18 项工作区回归、21 个 GoLand 声明位置、124 个合成声明位置、16 个项目声明锚点、58 项类型定义及 34 组引用检查。新增用例核对已预热后监听到的接口修改、原先被筛掉的接口新增、未保存缓冲区优先及关闭后恢复磁盘落点。本轮编辑场景收集了正确性结果。
+
+优化版 SHA-256 为 `878444691C3905242013281C9D2309A192198479885578FA33180514FAC241E9`。原始结果位于 Cargo 产物目录的 `goland-warm-reverse-native.tsv`、`goland-warm-reverse-native.json`、`goland-warm-reverse-76aa881.json` 和 `goland-warm-reverse-shapes.json`。
+
 ## 性能对照
 
 本节及后续首响优化章节保留第四阶段此前与 gopls 的历史测量和复现命令。新的性能验收使用上方 [GoLand 直接对照](#与-goland-直接对照) 的口径。
@@ -178,7 +210,7 @@ python -B .\tools\compare_first_implementations.py $server --workspace $project 
 
 Zed 1.29.3 已用仓库隔离配置打开 `localchat/server` 的 `filestore.go`。进程检查确认 Zed 启动了 `rs-gopls-8d4f0a4bad3f4f96.exe`，与正式测速的发布版 SHA-256 `8D4F0A4BAD3F4F96C2D01869BC14DDCAFEFE457E77FF8560D9B5B7EFB97A9927` 一致。发布版的 stdio 初始化声明了 `implementationProvider`，全部 GoLand 对照已通过。
 
-以下位置可在当前隔离窗口用 **Go to Implementation**（`Ctrl+F12`）重放。行列从 1 开始。Windows UI 自动化的启动错误 `CreateProcessWithLogonW 1920` 阻塞了编辑器动作观察，实际结果待补记。
+以下位置可在隔离窗口用 **Go to Implementation**（`Ctrl+F12`）重放。行列从 1 开始。首次 Windows UI 自动化启动出现 `CreateProcessWithLogonW 1920`。候选范围优化后复试，界面自动化进程仍在初始化时退出（`trusted Node process exited unexpectedly`），实际结果待补记。
 
 | 查询位置 | 预期界面行为 |
 | --- | --- |
