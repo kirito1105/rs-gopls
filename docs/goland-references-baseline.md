@@ -38,3 +38,19 @@ Get-Content -LiteralPath (Join-Path $directory 'reference-locations.tsv') -Encod
 ~~~
 
 输出首行为 GoLand 构建号。每个结果由类别、查询 ID、文件、起始行列、结束行列和源码记号组成。
+
+## 检查与性能对照
+
+用同一个 Go 1.27.4 工具链运行候选版和 gopls。检查器分别比较 `includeDeclaration=false` 的源码用法与 `includeDeclaration=true` 的源码用法加声明，并报告多余、缺失、重复结果。
+
+~~~powershell
+$sdk = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.27.4.windows-amd64'
+$env:PATH = (Join-Path $sdk 'bin') + ';' + $env:PATH
+$env:GOTOOLCHAIN = 'local'
+$workspace = 'E:\Code\localchat\server'
+$server = '.\target\release\rs-gopls.exe'
+python -B .\tools\check_goland_references.py $server --workspace $workspace
+python -B .\tools\compare_workspace_references.py $server --workspace $workspace --sessions 5 --iterations 80 --json .\target\references-performance.json
+~~~
+
+gopls v0.24.0 与 GoLand 在 34 组设置中有 32 组的集合一致。在 `UserStore.GetAll` 上，gopls 还返回 `internal/app/user_avatar_test.go` 中的一条具体实现调用。性能采样使用已有共同结果的九个案例，包含局部、同包和跨包各三例。
