@@ -82,3 +82,11 @@ python -B .\tools\compare_workspace_definitions.py .\target\release\rs-gopls.exe
 同一 GoLand 构建另外验证了 `internal/api/docmost_test.go` 中 `call("wrong").Code`，以及 `internal/app/svn_feature_tag_admin.go` 中 `slices.Contains` 的声明跳转。两个 GoLand 动作在这两个位置均返回相同目标。参照位置见[回调与泛型函数用例](../tools/fixtures/localchat-goland-calls.tsv)。
 
 这些目标来自 SDK 包，按各自的 `GOROOT` 解析文件。Go 1.27.4 与 Go 1.25.0 在本组标识符上的 UTF-16 范围一致。容器版本在回调用例上返回空结果，加入函数值支持后两个用例均通过。
+
+### 保存后的包图变化
+
+单独用临时 Go Modules 工作区交替保存两种 `go.mod` 依赖替换，经过动态监听通知后请求同一个跨包符号。每一轮计量从保存到首次正确落点的时间，并统计途中的旧落点、空结果和错误。
+
+~~~powershell
+python -B .\tools\compare_graph_refresh.py .\target\release\rs-gopls.exe --sessions 5 --iterations 10 --json .\target\final-graph-refresh.json
+~~~
