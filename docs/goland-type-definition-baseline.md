@@ -20,4 +20,20 @@
 
 打开固定修订的 `localchat/server`，等 GoLand 完成索引。按既有采集步骤，使用 `tools/fixtures/localchat-goland-types.tsv` 的前五列生成 `queries.tsv`，再调用仓库里的 `tools/capture_goland_definitions.groovy`。脚本在 IDE 进程中执行类型声明动作使用的 `GttdKt.gotoTypeDeclaration`，并生成 `type-declarations.tsv`、`destinations.tsv` 和 `ctrl-b.tsv`。[已有采集命令](goland-definition-baseline.md#重新采集)
 
-SDK 的四个目标在 Go 的不同版本上可能移动。严格比较已固定的 SDK 范围时使用 Go 1.27.4，并令客户端和语言服务器通过同一 `PATH` 选择它。普通项目仍可使用自己的工具链。
+SDK 的目标在 Go 的不同版本上可能移动。严格比较已固定的 SDK 范围时使用 Go 1.27.4，并令客户端和语言服务器通过同一 `PATH` 选择它。普通项目仍可使用自己的工具链。
+
+## 检查与对照
+
+在本机选择与 GoLand 基线相同的 Go 1.27.4 工具链，再运行类型定义检查或性能对照。保留 `--allow-differences` 仅用于记录对照服务的差异。候选发布版用默认严格模式验收。
+
+~~~powershell
+$sdk = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.27.4.windows-amd64'
+$env:PATH = (Join-Path $sdk 'bin') + ';' + $env:PATH
+$env:GOTOOLCHAIN = 'local'
+$workspace = 'E:\Code\localchat\server'
+$server = '.\target\release\rs-gopls.exe'
+python -B .\tools\check_goland_definitions.py $server --workspace $workspace --method typeDefinition
+python -B .\tools\compare_workspace_definitions.py $server --workspace $workspace --method typeDefinition --dependency-iterations 20 --json .\target\type-definition-performance.json
+~~~
+
+固定 SDK 后，gopls v0.24.0 的 34 个对照结果中，24 个与 GoLand 落点一致，5 个目标有差异，5 个请求返回错误。共同性能样本使用 8 个已经核对范围的局部、接口、成员及跨包位置。

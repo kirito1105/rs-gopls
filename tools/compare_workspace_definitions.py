@@ -16,14 +16,21 @@ import sys
 import threading
 import time
 
-from check_goland_definitions import classify_response, load_cases
+from check_goland_definitions import (
+    classify_response, load_cases, navigation_arguments, navigation_fixture,
+)
 from compare_definitions import LspClient, executable
 
 
-FIXTURE = Path(__file__).with_name("fixtures") / "localchat-goland.tsv"
-DEFAULT_CASES = (
-    "corsmiddleware", "inituser", "getsession", "interface-method", "config", "third-party-method",
-)
+DEFAULT_CASES = {
+    "definition": (
+        "corsmiddleware", "inituser", "getsession", "interface-method", "config", "third-party-method",
+    ),
+    "typeDefinition": (
+        "api-receiver-field", "route-root-field", "handler-interface-param", "named-function-param",
+        "inferred-session", "nested-interface-method", "slice-iter-value", "local-string",
+    ),
+}
 PREFIX = "// rs-gopls benchmark overlay\n"
 START = {"line": 0, "character": 0}
 AFTER_PREFIX = {"line": 1, "character": 0}
@@ -157,12 +164,14 @@ def shifted_position(position, line_offset):
     return {"line": position["line"] + line_offset, "character": position["character"]}
 
 
-def record_definition(samples, client, workspace, case, lane, started, *, query_offset=0, target_offset=0):
+def record_definition(
+    samples, client, method, workspace, case, lane, started, *, query_offset=0, target_offset=0,
+):
     position = shifted_position(case.position, query_offset)
     request_error = None
     try:
         response = client.request(
-            "textDocument/definition",
+            method,
             textDocument={"uri": case.query.path.as_uri()},
             position=position,
         )
@@ -184,6 +193,7 @@ def record_definition(samples, client, workspace, case, lane, started, *, query_
 
 
 def run_session(command, workspace, cases, args, environment):
+    method = f"textDocument/{args.method}"
     result = {"samples": []}
     client = None
     memory = None
@@ -195,7 +205,7 @@ def run_session(command, workspace, cases, args, environment):
         client.initialize()
         client.open_document(start_case.query.path, start_case.query.text)
         samples = result["samples"]
-        record_definition(samples, client, workspace, start_case, "first-definition", started)
+        record_definition(samples, client, method, workspace, start_case, "first-definition", started)
 
         versions = {start_case.query.path: 1}
         for case in cases[1:]:
@@ -204,7 +214,7 @@ def run_session(command, workspace, cases, args, environment):
                 client.open_document(path, case.query.text)
                 versions[path] = 1
             client.request(
-                "textDocument/definition", textDocument={"uri": path.as_uri()}, position=case.position
+                method, textDocument={"uri": path.as_uri()}, position=case.position
             )
 
         edited = set()
@@ -221,7 +231,7 @@ def run_session(command, workspace, cases, args, environment):
             started = time.perf_counter_ns()
             client.change_document_range(path, versions[path], START, end, text)
             record_definition(
-                samples, client, workspace, case, "caller-range-edit", started,
+                samples, client, method, workspace, case, "caller-range-edit", started,
                 query_offset=int(path in edited), target_offset=int(case.target.path in edited),
             )
 
@@ -239,18 +249,18 @@ def run_session(command, workspace, cases, args, environment):
             client.open_document(caller, case.query.text)
             client.open_document(target, case.target.text)
             client.request(
-                "textDocument/definition", textDocument={"uri": caller.as_uri()}, position=case.position
+                method, textDocument={"uri": caller.as_uri()}, position=case.position
             )
 
             started = time.perf_counter_ns()
             client.change_document_range(target, 2, START, START, PREFIX)
             record_definition(
-                samples, client, workspace, case, "dependency-overlay", started, target_offset=1,
+                samples, client, method, workspace, case, "dependency-overlay", started, target_offset=1,
             )
 
             started = time.perf_counter_ns()
             client.close_document(target)
-            record_definition(samples, client, workspace, case, "dependency-restore", started)
+            record_definition(samples, client, method, workspace, case, "dependency-restore", started)
             client.close_document(caller)
 
         result["memory"] = memory.finish()
@@ -332,7 +342,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
     parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--fixture", type=Path, default=FIXTURE)
+    navigation_arguments(parser)
     parser.add_argument("--prior", type=executable, help="path to the previous rs-gopls executable")
     parser.add_argument("--gopls", type=executable, default="gopls")
     parser.add_argument("--case", action="append", dest="case_ids", help="exact-target case (repeatable)")
@@ -358,11 +368,12 @@ def main():
             ["go", "env", "-json", *GO_ENV_KEYS], cwd=workspace, env=environment,
             encoding="utf-8", timeout=args.timeout,
         ))
+        fixture = navigation_fixture(args.method, args.fixture)
         available = {
-            case.id: case for case in load_cases(args.fixture, workspace, Path(go_env["GOMODCACHE"]))
+            case.id: case for case in load_cases(fixture, workspace, Path(go_env["GOMODCACHE"]))
             if case.target_kind == "file"
         }
-        case_ids = list(dict.fromkeys(args.case_ids or DEFAULT_CASES))
+        case_ids = list(dict.fromkeys(args.case_ids or DEFAULT_CASES[args.method]))
         missing = [case_id for case_id in case_ids if case_id not in available]
         if missing:
             raise RuntimeError(f"cases lack pinned file targets: {', '.join(missing)}")
@@ -375,11 +386,12 @@ def main():
         roles = list(commands)
         report = {
             "workspace": str(workspace),
-            "fixture": str(args.fixture.resolve()),
-            "fixture_sha256": hashlib.sha256(args.fixture.read_bytes()).hexdigest(),
+            "fixture": str(fixture.resolve()),
+            "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
             "sources": describe_sources(workspace, cases, args.timeout),
             "go": go_env,
             "workload": {
+                "method": f"textDocument/{args.method}",
                 "cases": case_ids,
                 "sessions_per_server": args.sessions,
                 "caller_range_edits_per_session": args.iterations,

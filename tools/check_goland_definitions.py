@@ -18,7 +18,10 @@ if TYPE_CHECKING:
     from check_definitions import Site
 
 
-DEFAULT_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "localchat-goland.tsv"
+FIXTURES = {
+    "definition": "localchat-goland.tsv",
+    "typeDefinition": "localchat-goland-types.tsv",
+}
 COLUMNS = tuple(
     "id query_path query_line query_character query_token target_kind target_path "
     "target_line target_character target_end_line target_end_character target_token".split()
@@ -36,6 +39,15 @@ class Case:
     target_kind: str
     target_path: str
     target: Site | None
+
+
+def navigation_arguments(parser):
+    parser.add_argument("--method", choices=FIXTURES, default="definition")
+    parser.add_argument("--fixture", type=Path, help="defaults to the GoLand corpus for the selected method")
+
+
+def navigation_fixture(method, fixture):
+    return fixture if fixture is not None else Path(__file__).resolve().parent / "fixtures" / FIXTURES[method]
 
 
 def utf16_offset(text, line, character):
@@ -225,7 +237,7 @@ def classify_response(case: Case, result, *, target_line_offset: int = 0):
     return {**record, "status": status, "locations": locations}
 
 
-def check_cases(command, workspace, cases, timeout):
+def check_cases(command, workspace, cases, timeout, *, method="definition"):
     from compare_definitions import LspClient
 
     client = LspClient(command, workspace, timeout)
@@ -237,7 +249,7 @@ def check_cases(command, workspace, cases, timeout):
         for case in cases:
             try:
                 result = client.request(
-                    "textDocument/definition",
+                    f"textDocument/{method}",
                     textDocument={"uri": case.query.path.as_uri()},
                     position=case.position,
                 )
@@ -268,7 +280,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
     parser.add_argument("--workspace", required=True, type=Path)
-    parser.add_argument("--fixture", type=Path, default=DEFAULT_FIXTURE)
+    navigation_arguments(parser)
     parser.add_argument("--gomodcache", type=Path)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--json", action="store_true", help="emit machine-readable results")
@@ -282,8 +294,9 @@ def main():
 
     try:
         workspace = args.workspace.resolve()
-        cases = load_cases(args.fixture, workspace, args.gomodcache)
-        records = check_cases([args.candidate], workspace, cases, args.timeout)
+        fixture = navigation_fixture(args.method, args.fixture)
+        cases = load_cases(fixture, workspace, args.gomodcache)
+        records = check_cases([args.candidate], workspace, cases, args.timeout, method=args.method)
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
         print(f"GoLand comparison failed: {exc}", file=sys.stderr)
         return 1
