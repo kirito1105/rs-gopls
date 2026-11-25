@@ -1,0 +1,2032 @@
+{
+  "goland_build": "GO-263.7307.354",
+  "workspace_revision": "532228d3d36bd9f0fffb4bda35c180485b2eadd6",
+  "scope": "project, direct methods, semantic Go usages",
+  "cases": [
+    {
+      "id": "local-exec-path",
+      "query": {
+        "path": "internal/api/api.go",
+        "line": 156,
+        "character": 42,
+        "token": "execPath"
+      },
+      "declaration": {
+        "path": "internal/api/api.go",
+        "range": {
+          "start": {
+            "line": 155,
+            "character": 1
+          },
+          "end": {
+            "line": 155,
+            "character": 9
+          }
+        },
+        "token": "execPath"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 156,
+              "character": 41
+            },
+            "end": {
+              "line": 156,
+              "character": 49
+            }
+          },
+          "token": "execPath"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "local-auth-header",
+      "query": {
+        "path": "internal/api/api.go",
+        "line": 242,
+        "character": 23,
+        "token": "authHeader"
+      },
+      "declaration": {
+        "path": "internal/api/api.go",
+        "range": {
+          "start": {
+            "line": 241,
+            "character": 1
+          },
+          "end": {
+            "line": 241,
+            "character": 11
+          }
+        },
+        "token": "authHeader"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 242,
+              "character": 22
+            },
+            "end": {
+              "line": 242,
+              "character": 32
+            }
+          },
+          "token": "authHeader"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 243,
+              "character": 28
+            },
+            "end": {
+              "line": 243,
+              "character": 38
+            }
+          },
+          "token": "authHeader"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "local-session-variable",
+      "query": {
+        "path": "internal/api/api.go",
+        "line": 233,
+        "character": 16,
+        "token": "session"
+      },
+      "declaration": {
+        "path": "internal/api/api.go",
+        "range": {
+          "start": {
+            "line": 228,
+            "character": 2
+          },
+          "end": {
+            "line": 228,
+            "character": 9
+          }
+        },
+        "token": "session"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 233,
+              "character": 15
+            },
+            "end": {
+              "line": 233,
+              "character": 22
+            }
+          },
+          "token": "session"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "same-file-cors",
+      "query": {
+        "path": "internal/api/api.go",
+        "line": 72,
+        "character": 13,
+        "token": "corsMiddleware"
+      },
+      "declaration": {
+        "path": "internal/api/api.go",
+        "range": {
+          "start": {
+            "line": 132,
+            "character": 5
+          },
+          "end": {
+            "line": 132,
+            "character": 19
+          }
+        },
+        "token": "corsMiddleware"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 72,
+              "character": 12
+            },
+            "end": {
+              "line": 72,
+              "character": 26
+            }
+          },
+          "token": "corsMiddleware"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "same-package-getmux",
+      "query": {
+        "path": "internal/api/context.go",
+        "line": 127,
+        "character": 6,
+        "token": "GetMuxVars"
+      },
+      "declaration": {
+        "path": "internal/api/context.go",
+        "range": {
+          "start": {
+            "line": 127,
+            "character": 5
+          },
+          "end": {
+            "line": 127,
+            "character": 15
+          }
+        },
+        "token": "GetMuxVars"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 208,
+              "character": 11
+            },
+            "end": {
+              "line": 208,
+              "character": 21
+            }
+          },
+          "token": "GetMuxVars"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 219,
+              "character": 11
+            },
+            "end": {
+              "line": 219,
+              "character": 21
+            }
+          },
+          "token": "GetMuxVars"
+        },
+        {
+          "path": "internal/api/bot.go",
+          "range": {
+            "start": {
+              "line": 53,
+              "character": 11
+            },
+            "end": {
+              "line": 53,
+              "character": 21
+            }
+          },
+          "token": "GetMuxVars"
+        }
+      ],
+      "ide_usages": [
+        {
+          "path": "internal/api/context.go",
+          "range": {
+            "start": {
+              "line": 126,
+              "character": 3
+            },
+            "end": {
+              "line": 126,
+              "character": 13
+            }
+          },
+          "token": "GetMuxVars"
+        }
+      ]
+    },
+    {
+      "id": "same-package-getmux-use",
+      "query": {
+        "path": "internal/api/bot.go",
+        "line": 53,
+        "character": 12,
+        "token": "GetMuxVars"
+      },
+      "declaration": {
+        "path": "internal/api/context.go",
+        "range": {
+          "start": {
+            "line": 127,
+            "character": 5
+          },
+          "end": {
+            "line": 127,
+            "character": 15
+          }
+        },
+        "token": "GetMuxVars"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 208,
+              "character": 11
+            },
+            "end": {
+              "line": 208,
+              "character": 21
+            }
+          },
+          "token": "GetMuxVars"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 219,
+              "character": 11
+            },
+            "end": {
+              "line": 219,
+              "character": 21
+            }
+          },
+          "token": "GetMuxVars"
+        },
+        {
+          "path": "internal/api/bot.go",
+          "range": {
+            "start": {
+              "line": 53,
+              "character": 11
+            },
+            "end": {
+              "line": 53,
+              "character": 21
+            }
+          },
+          "token": "GetMuxVars"
+        }
+      ],
+      "ide_usages": [
+        {
+          "path": "internal/api/context.go",
+          "range": {
+            "start": {
+              "line": 126,
+              "character": 3
+            },
+            "end": {
+              "line": 126,
+              "character": 13
+            }
+          },
+          "token": "GetMuxVars"
+        }
+      ]
+    },
+    {
+      "id": "multi-file-route-field",
+      "query": {
+        "path": "internal/api/api.go",
+        "line": 74,
+        "character": 13,
+        "token": "APIRoot"
+      },
+      "declaration": {
+        "path": "internal/api/api.go",
+        "range": {
+          "start": {
+            "line": 27,
+            "character": 1
+          },
+          "end": {
+            "line": 27,
+            "character": 8
+          }
+        },
+        "token": "APIRoot"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 101,
+              "character": 30
+            },
+            "end": {
+              "line": 101,
+              "character": 37
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 103,
+              "character": 41
+            },
+            "end": {
+              "line": 103,
+              "character": 48
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 105,
+              "character": 41
+            },
+            "end": {
+              "line": 105,
+              "character": 48
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 108,
+              "character": 40
+            },
+            "end": {
+              "line": 108,
+              "character": 47
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 261,
+              "character": 12
+            },
+            "end": {
+              "line": 261,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 74,
+              "character": 12
+            },
+            "end": {
+              "line": 74,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 75,
+              "character": 31
+            },
+            "end": {
+              "line": 75,
+              "character": 38
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 77,
+              "character": 31
+            },
+            "end": {
+              "line": 77,
+              "character": 38
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 81,
+              "character": 34
+            },
+            "end": {
+              "line": 81,
+              "character": 41
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 85,
+              "character": 31
+            },
+            "end": {
+              "line": 85,
+              "character": 38
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 87,
+              "character": 31
+            },
+            "end": {
+              "line": 87,
+              "character": 38
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 89,
+              "character": 34
+            },
+            "end": {
+              "line": 89,
+              "character": 41
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 92,
+              "character": 30
+            },
+            "end": {
+              "line": 92,
+              "character": 37
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 96,
+              "character": 33
+            },
+            "end": {
+              "line": 96,
+              "character": 40
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 98,
+              "character": 37
+            },
+            "end": {
+              "line": 98,
+              "character": 44
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/code_review.go",
+          "range": {
+            "start": {
+              "line": 18,
+              "character": 12
+            },
+            "end": {
+              "line": 18,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/doc.go",
+          "range": {
+            "start": {
+              "line": 23,
+              "character": 12
+            },
+            "end": {
+              "line": 23,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/docmost.go",
+          "range": {
+            "start": {
+              "line": 29,
+              "character": 22
+            },
+            "end": {
+              "line": 29,
+              "character": 29
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/oidc.go",
+          "range": {
+            "start": {
+              "line": 12,
+              "character": 12
+            },
+            "end": {
+              "line": 12,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/oidc.go",
+          "range": {
+            "start": {
+              "line": 13,
+              "character": 12
+            },
+            "end": {
+              "line": 13,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/oidc.go",
+          "range": {
+            "start": {
+              "line": 14,
+              "character": 12
+            },
+            "end": {
+              "line": 14,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/shared_resource.go",
+          "range": {
+            "start": {
+              "line": 16,
+              "character": 12
+            },
+            "end": {
+              "line": 16,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/shared_resource.go",
+          "range": {
+            "start": {
+              "line": 17,
+              "character": 12
+            },
+            "end": {
+              "line": 17,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/shared_resource.go",
+          "range": {
+            "start": {
+              "line": 18,
+              "character": 12
+            },
+            "end": {
+              "line": 18,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/svn_feature_tag.go",
+          "range": {
+            "start": {
+              "line": 22,
+              "character": 12
+            },
+            "end": {
+              "line": 22,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/svn_feature_tag.go",
+          "range": {
+            "start": {
+              "line": 23,
+              "character": 12
+            },
+            "end": {
+              "line": 23,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/svn_feature_tag.go",
+          "range": {
+            "start": {
+              "line": 24,
+              "character": 12
+            },
+            "end": {
+              "line": 24,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/system.go",
+          "range": {
+            "start": {
+              "line": 14,
+              "character": 12
+            },
+            "end": {
+              "line": 14,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/system.go",
+          "range": {
+            "start": {
+              "line": 15,
+              "character": 12
+            },
+            "end": {
+              "line": 15,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        },
+        {
+          "path": "internal/api/system.go",
+          "range": {
+            "start": {
+              "line": 16,
+              "character": 12
+            },
+            "end": {
+              "line": 16,
+              "character": 19
+            }
+          },
+          "token": "APIRoot"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "cross-package-getsession",
+      "query": {
+        "path": "internal/app/session.go",
+        "line": 4,
+        "character": 15,
+        "token": "GetSession"
+      },
+      "declaration": {
+        "path": "internal/app/session.go",
+        "range": {
+          "start": {
+            "line": 4,
+            "character": 14
+          },
+          "end": {
+            "line": 4,
+            "character": 24
+          }
+        },
+        "token": "GetSession"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 228,
+              "character": 29
+            },
+            "end": {
+              "line": 228,
+              "character": 39
+            }
+          },
+          "token": "GetSession"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "cross-package-getsession-use",
+      "query": {
+        "path": "internal/api/api.go",
+        "line": 228,
+        "character": 30,
+        "token": "GetSession"
+      },
+      "declaration": {
+        "path": "internal/app/session.go",
+        "range": {
+          "start": {
+            "line": 4,
+            "character": 14
+          },
+          "end": {
+            "line": 4,
+            "character": 24
+          }
+        },
+        "token": "GetSession"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 228,
+              "character": 29
+            },
+            "end": {
+              "line": 228,
+              "character": 39
+            }
+          },
+          "token": "GetSession"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "cross-package-type",
+      "query": {
+        "path": "internal/store/store.go",
+        "line": 159,
+        "character": 6,
+        "token": "ReviewItemFilters"
+      },
+      "declaration": {
+        "path": "internal/store/store.go",
+        "range": {
+          "start": {
+            "line": 159,
+            "character": 5
+          },
+          "end": {
+            "line": 159,
+            "character": 22
+          }
+        },
+        "token": "ReviewItemFilters"
+      },
+      "usages": [
+        {
+          "path": "internal/api/code_review.go",
+          "range": {
+            "start": {
+              "line": 255,
+              "character": 18
+            },
+            "end": {
+              "line": 255,
+              "character": 35
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 164,
+              "character": 73
+            },
+            "end": {
+              "line": 164,
+              "character": 90
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 175,
+              "character": 77
+            },
+            "end": {
+              "line": 175,
+              "character": 94
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 188,
+              "character": 62
+            },
+            "end": {
+              "line": 188,
+              "character": 79
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 192,
+              "character": 63
+            },
+            "end": {
+              "line": 192,
+              "character": 80
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 199,
+              "character": 71
+            },
+            "end": {
+              "line": 199,
+              "character": 88
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 157,
+              "character": 77
+            },
+            "end": {
+              "line": 157,
+              "character": 94
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 178,
+              "character": 81
+            },
+            "end": {
+              "line": 178,
+              "character": 98
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 231,
+              "character": 79
+            },
+            "end": {
+              "line": 231,
+              "character": 96
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 501,
+              "character": 68
+            },
+            "end": {
+              "line": 501,
+              "character": 85
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 157,
+              "character": 74
+            },
+            "end": {
+              "line": 157,
+              "character": 91
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 178,
+              "character": 78
+            },
+            "end": {
+              "line": 178,
+              "character": 95
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 231,
+              "character": 76
+            },
+            "end": {
+              "line": 231,
+              "character": 93
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 502,
+              "character": 62
+            },
+            "end": {
+              "line": 502,
+              "character": 79
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/store.go",
+          "range": {
+            "start": {
+              "line": 192,
+              "character": 40
+            },
+            "end": {
+              "line": 192,
+              "character": 57
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/store.go",
+          "range": {
+            "start": {
+              "line": 193,
+              "character": 44
+            },
+            "end": {
+              "line": 193,
+              "character": 61
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/store.go",
+          "range": {
+            "start": {
+              "line": 194,
+              "character": 42
+            },
+            "end": {
+              "line": 194,
+              "character": 59
+            }
+          },
+          "token": "ReviewItemFilters"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "cross-package-type-use",
+      "query": {
+        "path": "internal/api/code_review.go",
+        "line": 255,
+        "character": 19,
+        "token": "ReviewItemFilters"
+      },
+      "declaration": {
+        "path": "internal/store/store.go",
+        "range": {
+          "start": {
+            "line": 159,
+            "character": 5
+          },
+          "end": {
+            "line": 159,
+            "character": 22
+          }
+        },
+        "token": "ReviewItemFilters"
+      },
+      "usages": [
+        {
+          "path": "internal/api/code_review.go",
+          "range": {
+            "start": {
+              "line": 255,
+              "character": 18
+            },
+            "end": {
+              "line": 255,
+              "character": 35
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 164,
+              "character": 73
+            },
+            "end": {
+              "line": 164,
+              "character": 90
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 175,
+              "character": 77
+            },
+            "end": {
+              "line": 175,
+              "character": 94
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 188,
+              "character": 62
+            },
+            "end": {
+              "line": 188,
+              "character": 79
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 192,
+              "character": 63
+            },
+            "end": {
+              "line": 192,
+              "character": 80
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/app/code_review.go",
+          "range": {
+            "start": {
+              "line": 199,
+              "character": 71
+            },
+            "end": {
+              "line": 199,
+              "character": 88
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 157,
+              "character": 77
+            },
+            "end": {
+              "line": 157,
+              "character": 94
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 178,
+              "character": 81
+            },
+            "end": {
+              "line": 178,
+              "character": 98
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 231,
+              "character": 79
+            },
+            "end": {
+              "line": 231,
+              "character": 96
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlitestore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 501,
+              "character": 68
+            },
+            "end": {
+              "line": 501,
+              "character": 85
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 157,
+              "character": 74
+            },
+            "end": {
+              "line": 157,
+              "character": 91
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 178,
+              "character": 78
+            },
+            "end": {
+              "line": 178,
+              "character": 95
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 231,
+              "character": 76
+            },
+            "end": {
+              "line": 231,
+              "character": 93
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/sqlstore/code_review_store.go",
+          "range": {
+            "start": {
+              "line": 502,
+              "character": 62
+            },
+            "end": {
+              "line": 502,
+              "character": 79
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/store.go",
+          "range": {
+            "start": {
+              "line": 192,
+              "character": 40
+            },
+            "end": {
+              "line": 192,
+              "character": 57
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/store.go",
+          "range": {
+            "start": {
+              "line": 193,
+              "character": 44
+            },
+            "end": {
+              "line": 193,
+              "character": 61
+            }
+          },
+          "token": "ReviewItemFilters"
+        },
+        {
+          "path": "internal/store/store.go",
+          "range": {
+            "start": {
+              "line": 194,
+              "character": 42
+            },
+            "end": {
+              "line": 194,
+              "character": 59
+            }
+          },
+          "token": "ReviewItemFilters"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "same-package-struct-field-and-test",
+      "query": {
+        "path": "internal/app/card_action.go",
+        "line": 58,
+        "character": 2,
+        "token": "AttachmentID"
+      },
+      "declaration": {
+        "path": "internal/app/card_action.go",
+        "range": {
+          "start": {
+            "line": 58,
+            "character": 1
+          },
+          "end": {
+            "line": 58,
+            "character": 13
+          }
+        },
+        "token": "AttachmentID"
+      },
+      "usages": [
+        {
+          "path": "internal/app/card_action.go",
+          "range": {
+            "start": {
+              "line": 297,
+              "character": 3
+            },
+            "end": {
+              "line": 297,
+              "character": 15
+            }
+          },
+          "token": "AttachmentID"
+        },
+        {
+          "path": "internal/app/card_action_test.go",
+          "range": {
+            "start": {
+              "line": 27,
+              "character": 12
+            },
+            "end": {
+              "line": 27,
+              "character": 24
+            }
+          },
+          "token": "AttachmentID"
+        },
+        {
+          "path": "internal/app/card_action_test.go",
+          "range": {
+            "start": {
+              "line": 74,
+              "character": 3
+            },
+            "end": {
+              "line": 74,
+              "character": 15
+            }
+          },
+          "token": "AttachmentID"
+        },
+        {
+          "path": "internal/app/card_action_test.go",
+          "range": {
+            "start": {
+              "line": 81,
+              "character": 3
+            },
+            "end": {
+              "line": 81,
+              "character": 15
+            }
+          },
+          "token": "AttachmentID"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "same-package-struct-field-use-test",
+      "query": {
+        "path": "internal/app/card_action_test.go",
+        "line": 27,
+        "character": 13,
+        "token": "AttachmentID"
+      },
+      "declaration": {
+        "path": "internal/app/card_action.go",
+        "range": {
+          "start": {
+            "line": 58,
+            "character": 1
+          },
+          "end": {
+            "line": 58,
+            "character": 13
+          }
+        },
+        "token": "AttachmentID"
+      },
+      "usages": [
+        {
+          "path": "internal/app/card_action.go",
+          "range": {
+            "start": {
+              "line": 297,
+              "character": 3
+            },
+            "end": {
+              "line": 297,
+              "character": 15
+            }
+          },
+          "token": "AttachmentID"
+        },
+        {
+          "path": "internal/app/card_action_test.go",
+          "range": {
+            "start": {
+              "line": 27,
+              "character": 12
+            },
+            "end": {
+              "line": 27,
+              "character": 24
+            }
+          },
+          "token": "AttachmentID"
+        },
+        {
+          "path": "internal/app/card_action_test.go",
+          "range": {
+            "start": {
+              "line": 74,
+              "character": 3
+            },
+            "end": {
+              "line": 74,
+              "character": 15
+            }
+          },
+          "token": "AttachmentID"
+        },
+        {
+          "path": "internal/app/card_action_test.go",
+          "range": {
+            "start": {
+              "line": 81,
+              "character": 3
+            },
+            "end": {
+              "line": 81,
+              "character": 15
+            }
+          },
+          "token": "AttachmentID"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "interface-method",
+      "query": {
+        "path": "internal/app/session.go",
+        "line": 5,
+        "character": 38,
+        "token": "Get"
+      },
+      "declaration": {
+        "path": "internal/store/store.go",
+        "range": {
+          "start": {
+            "line": 124,
+            "character": 1
+          },
+          "end": {
+            "line": 124,
+            "character": 4
+          }
+        },
+        "token": "Get"
+      },
+      "usages": [
+        {
+          "path": "internal/app/session.go",
+          "range": {
+            "start": {
+              "line": 5,
+              "character": 37
+            },
+            "end": {
+              "line": 5,
+              "character": 40
+            }
+          },
+          "token": "Get"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "empty-concrete-method",
+      "query": {
+        "path": "internal/app/session.go",
+        "line": 19,
+        "character": 15,
+        "token": "GetSessions"
+      },
+      "declaration": {
+        "path": "internal/app/session.go",
+        "range": {
+          "start": {
+            "line": 19,
+            "character": 14
+          },
+          "end": {
+            "line": 19,
+            "character": 25
+          }
+        },
+        "token": "GetSessions"
+      },
+      "usages": [],
+      "ide_usages": []
+    },
+    {
+      "id": "concrete-package-method",
+      "query": {
+        "path": "internal/app/app.go",
+        "line": 22,
+        "character": 15,
+        "token": "Config"
+      },
+      "declaration": {
+        "path": "internal/app/app.go",
+        "range": {
+          "start": {
+            "line": 22,
+            "character": 14
+          },
+          "end": {
+            "line": 22,
+            "character": 20
+          }
+        },
+        "token": "Config"
+      },
+      "usages": [
+        {
+          "path": "internal/api/api.go",
+          "range": {
+            "start": {
+              "line": 287,
+              "character": 28
+            },
+            "end": {
+              "line": 287,
+              "character": 34
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/docmost.go",
+          "range": {
+            "start": {
+              "line": 42,
+              "character": 16
+            },
+            "end": {
+              "line": 42,
+              "character": 22
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/docmost.go",
+          "range": {
+            "start": {
+              "line": 47,
+              "character": 19
+            },
+            "end": {
+              "line": 47,
+              "character": 25
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/docmost.go",
+          "range": {
+            "start": {
+              "line": 61,
+              "character": 32
+            },
+            "end": {
+              "line": 61,
+              "character": 38
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/docmost_test.go",
+          "range": {
+            "start": {
+              "line": 59,
+              "character": 24
+            },
+            "end": {
+              "line": 59,
+              "character": 30
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/docmost_test.go",
+          "range": {
+            "start": {
+              "line": 62,
+              "character": 24
+            },
+            "end": {
+              "line": 62,
+              "character": 30
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_excel_check.go",
+          "range": {
+            "start": {
+              "line": 121,
+              "character": 44
+            },
+            "end": {
+              "line": 121,
+              "character": 50
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_excel_check.go",
+          "range": {
+            "start": {
+              "line": 147,
+              "character": 44
+            },
+            "end": {
+              "line": 147,
+              "character": 50
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_excel_check.go",
+          "range": {
+            "start": {
+              "line": 85,
+              "character": 44
+            },
+            "end": {
+              "line": 85,
+              "character": 50
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_excel_check_test.go",
+          "range": {
+            "start": {
+              "line": 111,
+              "character": 9
+            },
+            "end": {
+              "line": 111,
+              "character": 15
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_feature_tag_admin_test.go",
+          "range": {
+            "start": {
+              "line": 138,
+              "character": 9
+            },
+            "end": {
+              "line": 138,
+              "character": 15
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_feature_tag_admin_test.go",
+          "range": {
+            "start": {
+              "line": 20,
+              "character": 13
+            },
+            "end": {
+              "line": 20,
+              "character": 19
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/svn_feature_tag_admin_test.go",
+          "range": {
+            "start": {
+              "line": 22,
+              "character": 14
+            },
+            "end": {
+              "line": 22,
+              "character": 20
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/system.go",
+          "range": {
+            "start": {
+              "line": 22,
+              "character": 27
+            },
+            "end": {
+              "line": 22,
+              "character": 33
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/system.go",
+          "range": {
+            "start": {
+              "line": 27,
+              "character": 18
+            },
+            "end": {
+              "line": 27,
+              "character": 24
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/api/system.go",
+          "range": {
+            "start": {
+              "line": 57,
+              "character": 18
+            },
+            "end": {
+              "line": 57,
+              "character": 24
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/post.go",
+          "range": {
+            "start": {
+              "line": 196,
+              "character": 27
+            },
+            "end": {
+              "line": 196,
+              "character": 33
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/post.go",
+          "range": {
+            "start": {
+              "line": 196,
+              "character": 6
+            },
+            "end": {
+              "line": 196,
+              "character": 12
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/svn_excel_check.go",
+          "range": {
+            "start": {
+              "line": 47,
+              "character": 46
+            },
+            "end": {
+              "line": 47,
+              "character": 52
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/svn_feature_tag_admin.go",
+          "range": {
+            "start": {
+              "line": 17,
+              "character": 53
+            },
+            "end": {
+              "line": 17,
+              "character": 59
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/svn_feature_tag_admin.go",
+          "range": {
+            "start": {
+              "line": 67,
+              "character": 21
+            },
+            "end": {
+              "line": 67,
+              "character": 27
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/urgent_speech.go",
+          "range": {
+            "start": {
+              "line": 38,
+              "character": 6
+            },
+            "end": {
+              "line": 38,
+              "character": 12
+            }
+          },
+          "token": "Config"
+        },
+        {
+          "path": "internal/app/urgent_speech.go",
+          "range": {
+            "start": {
+              "line": 41,
+              "character": 15
+            },
+            "end": {
+              "line": 41,
+              "character": 21
+            }
+          },
+          "token": "Config"
+        }
+      ],
+      "ide_usages": []
+    },
+    {
+      "id": "distinct-method-collision",
+      "query": {
+        "path": "internal/app/user.go",
+        "line": 73,
+        "character": 33,
+        "token": "GetAll"
+      },
+      "declaration": {
+        "path": "internal/store/store.go",
+        "range": {
+          "start": {
+            "line": 37,
+            "character": 1
+          },
+          "end": {
+            "line": 37,
+            "character": 7
+          }
+        },
+        "token": "GetAll"
+      },
+      "usages": [
+        {
+          "path": "internal/app/bootstrap.go",
+          "range": {
+            "start": {
+              "line": 19,
+              "character": 32
+            },
+            "end": {
+              "line": 19,
+              "character": 38
+            }
+          },
+          "token": "GetAll"
+        },
+        {
+          "path": "internal/app/user.go",
+          "range": {
+            "start": {
+              "line": 73,
+              "character": 32
+            },
+            "end": {
+              "line": 73,
+              "character": 38
+            }
+          },
+          "token": "GetAll"
+        }
+      ],
+      "ide_usages": []
+    }
+  ]
+}
