@@ -1,0 +1,11 @@
+id = "rs-gopls-lsp"
+name = "rs-gopls"
+description = "An opt-in Go language server for cross-package go-to-definition."
+version = "0.1.0"
+schema_version = 1
+authors = ["rs-gopls contributors"]
+
+[language_servers.rs-gopls]
+name = "rs-gopls"
+languages = ["Go"]
+opt_in_languages = ["Go"]
