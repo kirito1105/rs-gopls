@@ -600,6 +600,181 @@ def check_type_overlay(executable_path, root, timeout):
         check_type_location(client, shadowed, shadow)
 
 
+
+def reference_params(query, include_declaration=False):
+    return {
+        "textDocument": {"uri": query.path.as_uri()},
+        "position": query.cursor(),
+        "context": {"includeDeclaration": include_declaration},
+    }
+
+
+def check_references(client, query, expected, *, include_declaration=False):
+    def location_key(path, span):
+        start, end = span["start"], span["end"]
+        return path, start["line"], start["character"], end["line"], end["character"]
+
+    result = client.request("textDocument/references", **reference_params(query, include_declaration))
+    if result is not None and not isinstance(result, list):
+        raise RuntimeError(f"expected an array of references, received {result!r}")
+    actual = [
+        location_key(Path(location["path"]), location["range"])
+        for location in normalize_locations(result)
+    ]
+    targets = sorted(location_key(target.path, target.selection()) for target in expected)
+    if actual != targets:
+        raise RuntimeError(
+            f"references from {query.path} at {query.cursor()} "
+            f"(includeDeclaration={include_declaration}): expected {targets!r}, got {actual!r}"
+        )
+
+
+def check_reference_locals(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/reflocal\n\ngo 1.22\n")
+    caller = write(
+        root / "caller.go",
+        "package reflocal\n\n"
+        "func split(n int) (int, bool) { return n, true }\n"
+        "func call() int {\n"
+        "    value := 1\n"
+        "    value, ok := split(value)\n"
+        "    if !ok { return 0 }\n"
+        "    {\n"
+        "        value := value + 1\n"
+        "        _ = value\n"
+        "    }\n"
+        "    /* \U0001f9ea */ return value\n"
+        "}\n",
+    )
+    outer_decl = site(caller, "    [[value]] := 1")
+    reused = site(caller, "    [[value]], ok :=")
+    input_use = site(caller, "split([[value]])")
+    shadow_decl = site(caller, "        [[value]] := value + 1")
+    shadow_initializer = site(caller, "value := [[value]] + 1")
+    shadow_use = site(caller, "        _ = [[value]]")
+    outer_use = site(caller, "*/ return [[value]]")
+    outer_uses = (reused, input_use, shadow_initializer, outer_use)
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(caller, outer_decl.text)
+        check_references(client, reused, outer_uses)
+        check_references(client, outer_use, (*outer_uses, outer_decl), include_declaration=True)
+        check_references(client, shadow_initializer, outer_uses)
+        check_references(client, shadow_decl, (shadow_use,))
+        check_references(client, shadow_use, (shadow_decl, shadow_use), include_declaration=True)
+
+
+def check_reference_workspace(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/refscope\n\ngo 1.22\n")
+    target = write(root / "dep" / "target.go", "package dep\n\nfunc Run() {}\n")
+    sibling = write(root / "dep" / "sibling.go", "package dep\n\nfunc localUse() { Run() }\n")
+    internal = write(
+        root / "dep" / "internal_test.go",
+        "package dep\n\nfunc internalUse() { Run() }\n",
+    )
+    external = write(
+        root / "dep" / "external_test.go",
+        'package dep_test\nimport target "example.test/refscope/dep"\n'
+        "func externalUse() { target.Run() }\n",
+    )
+    write(
+        root / "other" / "other.go",
+        "package other\n\ntype Other struct{}\nfunc (Other) Run() {}\nfunc Run() {}\n",
+    )
+    caller = write(
+        root / "consumer" / "caller.go",
+        'package consumer\nimport ("example.test/refscope/other"; target "example.test/refscope/dep")\n'
+        "func Run() {}\n"
+        "func call() { target.Run(); other.Run(); Run(); (other.Other{}).Run() }\n",
+    )
+    declaration = site(target, "func [[Run]]()")
+    same_package = site(sibling, "{ [[Run]]()")
+    internal_use = site(internal, "{ [[Run]]()")
+    external_use = site(external, "target.[[Run]]()")
+    cross_package = site(caller, "target.[[Run]]()")
+    other_uses = (same_package, internal_use, external_use)
+
+    draft_path = root / "dep" / "draft_use.go"
+    draft_text = "package dep\n\nfunc draftUse() { Run() }\n"
+    draft = site(draft_path, "{ [[Run]]()", draft_text)
+    start = {"line": 0, "character": 0}
+    prefix = "// shifted by an unsaved edit\n"
+    shifted = site(caller, "target.[[Run]]()", prefix + cross_package.text)
+
+    with session(executable_path, root, timeout, watch_files=True) as client:
+        client.open_document(target, declaration.text)
+        check_references(client, declaration, (*other_uses, cross_package))
+        check_references(
+            client,
+            cross_package,
+            (declaration, *other_uses, cross_package),
+            include_declaration=True,
+        )
+        # Internal-test and external-test calls identify the same source declaration.
+        check_references(client, internal_use, (*other_uses, cross_package))
+        check_references(client, external_use, (*other_uses, cross_package))
+
+        client.open_document(caller, cross_package.text)
+        client.change_document_range(caller, 2, start, start, prefix)
+        client.open_document(draft_path, draft.text)
+        check_references(client, shifted, (*other_uses, shifted, draft))
+
+        client.close_document(draft_path)
+        check_references(client, declaration, (*other_uses, shifted))
+        client.close_document(caller)
+        check_references(client, declaration, (*other_uses, cross_package))
+
+        sibling.unlink()
+        notify_changes(client, (sibling, 3))
+        check_references(client, declaration, (internal_use, external_use, cross_package))
+
+    if draft_path.exists():
+        raise RuntimeError(f"test overlay unexpectedly wrote {draft_path}")
+
+
+
+def check_reference_cancel(executable_path, root, timeout):
+    control = root / "control"
+    environment = go_list_relay(control, timeout)
+    project = root / "project"
+    go_mod = write(project / "go.mod", "module example.test/refcancel\n\ngo 1.22\n")
+    write(project / "dep" / "target.go", "package dep\n\nfunc Run() {}\n")
+    source = (
+        'package refcancel\nimport "example.test/refcancel/dep"\n'
+        "func run() { dep.Run() }\n"
+    )
+    primary = site(write(project / "primary.go", source), "dep.[[Run]]()")
+    editable = site(
+        write(project / "editable.go", source.replace("func run()", "func edit()")),
+        "dep.[[Run]]()",
+    )
+    prefix = "// shifted while metadata was pending\n"
+    shifted = site(editable.path, "dep.[[Run]]()", prefix + editable.text)
+    start = {"line": 0, "character": 0}
+
+    with session(executable_path, project, timeout, watch_files=True, **environment) as client:
+        client.open_document(primary.path, primary.text)
+        client.open_document(editable.path, editable.text)
+        check_references(client, primary, (primary, editable))
+
+        write(control / "arm", "")
+        write(go_mod, go_mod.read_text(encoding="utf-8") + "\n// refresh the package graph\n")
+        notify_changes(client, (go_mod, 2))
+        client.send(id="cancel-refs", method="textDocument/references", params=reference_params(primary))
+        try:
+            wait_for_snapshot(control, timeout)
+            client.notify("$/cancelRequest", id="cancel-refs")
+            expect_error(wait_for_response(client, "cancel-refs", min(timeout, 5)), -32800)
+
+            client.send(id="changed-refs", method="textDocument/references", params=reference_params(editable))
+            client.change_document_range(editable.path, 2, start, start, prefix)
+            expect_error(wait_for_response(client, "changed-refs", min(timeout, 5)), -32801)
+        finally:
+            write(control / "release", "")
+
+        check_references(client, shifted, (primary, shifted))
+
+
 CASES = {
     "mutations": check_mutations,
     "go-work": check_go_work,
@@ -610,12 +785,18 @@ CASES = {
     "overlay-disk-restore": check_overlay_disk_restore,
     "type-overlay": check_type_overlay,
 }
+REFERENCE_CASES = {
+    "reference-locals": check_reference_locals,
+    "reference-workspace": check_reference_workspace,
+    "reference-cancel": check_reference_cancel,
+}
 
 
 def main():
+    cases = {**CASES, **REFERENCE_CASES}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
-    parser.add_argument("--case", choices=tuple(CASES), action="append", help="run only this case; may repeat")
+    parser.add_argument("--case", choices=tuple(cases), action="append", help="run only this case; may repeat")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
@@ -626,7 +807,7 @@ def main():
         root = Path(directory).resolve()
         for name in dict.fromkeys(args.case or CASES):
             try:
-                CASES[name](args.candidate, root / name, args.timeout)
+                cases[name](args.candidate, root / name, args.timeout)
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 print(f"FAIL {name}: {exc}", file=sys.stderr)
                 failures += 1

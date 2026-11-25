@@ -26,6 +26,7 @@ pub struct Package {
 }
 
 pub struct Workspace {
+    roots: Vec<PathBuf>,
     packages: BTreeMap<String, Package>,
     file_packages: HashMap<PathBuf, String>,
     importers: HashMap<String, Vec<String>>,
@@ -114,7 +115,18 @@ impl Workspace {
                     .or_insert_with(|| id.clone());
             }
         }
+        let roots = roots
+            .iter()
+            .map(|directory| {
+                path_key(
+                    &directory
+                        .canonicalize()
+                        .unwrap_or_else(|_| directory.clone()),
+                )
+            })
+            .collect();
         Ok(Self {
+            roots,
             packages,
             file_packages,
             importers,
@@ -168,6 +180,23 @@ impl Workspace {
         self.packages.values().filter(move |package| {
             package.directory == owner.directory && (&package.id == id || &package.for_test == id)
         })
+    }
+
+    pub(crate) fn is_project_package(&self, package: &Package) -> bool {
+        self.roots
+            .iter()
+            .any(|root| package.directory.starts_with(root))
+    }
+
+    pub(crate) fn direct_importers<'a>(
+        &'a self,
+        package: &Package,
+    ) -> impl Iterator<Item = &'a Package> {
+        self.importers
+            .get(&package.id)
+            .into_iter()
+            .flatten()
+            .filter_map(|id| self.package(id))
     }
 
     pub(crate) fn affected_packages(&self, path: &Path) -> Option<HashSet<String>> {

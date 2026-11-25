@@ -824,8 +824,14 @@ impl<'w> Resolver<'w, '_> {
         }) else {
             return Ok(Vec::new());
         };
+        let transitive = if is_exported(spelling) {
+            self.is_member_declaration(&target, target_range)?
+        } else {
+            false
+        };
+        let packages = self.reference_packages(owner, is_exported(spelling), transitive);
         let mut candidates = BTreeMap::new();
-        for view in self.workspace.same_package_variants(owner) {
+        for view in packages {
             for path in self.indexes.files(view).iter() {
                 let context = self.workspace.package_of_file(path).unwrap_or(view);
                 candidates
@@ -834,6 +840,9 @@ impl<'w> Resolver<'w, '_> {
             }
         }
         let mut matches = Vec::new();
+        if include_declaration && !candidates.contains_key(&target_key) {
+            matches.push((target, target_range));
+        }
         for (key, (path, package)) in candidates {
             let Some(file) = self.indexes.reference_source(&path)? else {
                 continue;
@@ -857,6 +866,90 @@ impl<'w> Resolver<'w, '_> {
             }
         }
         Ok(matches)
+    }
+
+    fn is_member_declaration(&mut self, path: &Path, range: Range) -> Result<bool> {
+        let Some(source) = self.indexes.reference_source(path)? else {
+            return Ok(false);
+        };
+        let source = source.as_ref();
+        let Some(mut node) = source.reference_at(range.start).map(ReferenceQuery::name) else {
+            return Ok(false);
+        };
+        while let Some(owner) = node.parent() {
+            match owner.kind() {
+                "method_declaration" | "method_elem" | "field_declaration" => return Ok(true),
+                "function_declaration"
+                | "type_spec"
+                | "type_alias"
+                | "var_spec"
+                | "const_spec"
+                | "source_file" => return Ok(false),
+                _ => node = owner,
+            }
+        }
+        Ok(false)
+    }
+
+    fn reference_packages(
+        &self,
+        owner: &'w Package,
+        exported: bool,
+        transitive: bool,
+    ) -> Vec<&'w Package> {
+        let mut queue: Vec<_> = self.workspace.same_package_variants(owner).collect();
+        if queue.is_empty() {
+            queue.push(owner);
+        }
+        let mut seen: HashSet<_> = queue.iter().map(|package| package.id.as_str()).collect();
+        if exported {
+            let overlay_importers = self.overlay_importers();
+            let seeds = queue.len();
+            let mut next = 0;
+            while next < if transitive { queue.len() } else { seeds } {
+                let package = queue[next];
+                next += 1;
+                for importer in self.workspace.direct_importers(package).chain(
+                    overlay_importers
+                        .get(package.id.as_str())
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                ) {
+                    if seen.insert(importer.id.as_str()) {
+                        queue.push(importer);
+                    }
+                }
+            }
+        }
+        queue.retain(|package| self.workspace.is_project_package(package));
+        queue
+    }
+
+    fn overlay_importers(&self) -> HashMap<&'w str, Vec<&'w Package>> {
+        let mut importers = HashMap::<_, Vec<_>>::new();
+        for source in self.indexes.documents.values() {
+            let from = self.workspace.package_of_file(&source.path).or_else(|| {
+                let package = draft_package(self.workspace, source)?;
+                self.indexes
+                    .drafts
+                    .get(&package.directory_and_name())?
+                    .contains(&&source.path)
+                    .then_some(package)
+            });
+            let Some(from) = from else {
+                continue;
+            };
+            if !self.workspace.is_project_package(from) {
+                continue;
+            }
+            for import in &source.imports {
+                if let Some(target) = self.workspace.resolve_import(from, &import.path) {
+                    importers.entry(target.id.as_str()).or_default().push(from);
+                }
+            }
+        }
+        importers
     }
 
     fn type_definition(
