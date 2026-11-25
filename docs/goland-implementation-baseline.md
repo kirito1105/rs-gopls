@@ -18,6 +18,16 @@
 
 三个具体类型的反查结果还包含 `golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams` 中的 `C[P any]`。Go 1.27.4 的 `go list -m` 包含该模块，`go list -deps -test -e ./...` 的活动包图没有这个 `testdata` 包。语料保留这些 GoLand 目标并用 `exclusions` 标出原因。LSP 对照按计划采用活动包图，并要求其余目标与标识符范围完全匹配。
 
+## 补充模块实测
+
+在同一 GoLand 构建中打开 [补充模块](../tools/fixtures/implementation-navigation)，设置 Go 1.27.4 后采集 29 个查询和两个动作的 95 个目标。[补充查询语料](../tools/fixtures/implementation-navigation/goland-implementations.json)
+
+- `Reader` 的类型候选包含值与指针接收者、提升实现、类型别名和扩展接口。两个同深度嵌入导致的歧义和同名异签名被排除。方法查询将多个提升来源归并到实际声明。
+- 跨包嵌入 `Secret` 的类型出现在正向类型查询。直接声明同名私有方法的外包类型没有匹配。具体类型反查遵循 GoLand 观察到的私有方法范围。
+- 泛型方法的用法定位到泛型声明。`NumericConvert` 的类型查询结合类型参数约束，包含整数转换器和可实例化的泛型转换器。空接口及无实现的接口给出空结果。
+
+补充模块可复制到临时工作区，在 GoLand 中配置其 Go SDK 后，用同一脚本重放。将下方的项目和语料路径改为补充模块对应的路径。
+
 ## 重新采集
 
 在指定 GoLand 中打开项目并等待索引完成。脚本在 IDE 进程的智能模式运行搜索，使用 **Go to Implementation** 的完整候选查询及 **Go to Super** 的 Go 搜索处理器。它记录目标标识符范围和 IDE 导航偏移。

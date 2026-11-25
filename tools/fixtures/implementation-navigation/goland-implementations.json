@@ -1,0 +1,335 @@
+{
+  "goland_build": "GO-263.7307.354",
+  "go_sdk": "1.27.4",
+  "cases": [
+    {
+      "id": "reader-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 6, "character": 6, "token": "Reader"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"},
+        {"path": "navigation.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 15}}, "token": "ReadWriter"},
+        {"path": "navigation.go", "range": {"start": {"line": 17, "character": 5}, "end": {"line": 17, "character": 16}}, "token": "ValueReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 21, "character": 5}, "end": {"line": 21, "character": 18}}, "token": "PointerReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 25, "character": 5}, "end": {"line": 25, "character": 16}}, "token": "AliasReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 33, "character": 5}, "end": {"line": 33, "character": 18}}, "token": "EmbeddedValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 34, "character": 5}, "end": {"line": 34, "character": 20}}, "token": "EmbeddedPointer"},
+        {"path": "navigation.go", "range": {"start": {"line": 35, "character": 5}, "end": {"line": 35, "character": 25}}, "token": "EmbeddedPointerValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 41, "character": 5}, "end": {"line": 41, "character": 21}}, "token": "EmbeddedContract"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "reader-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 7, "character": 2, "token": "ReadPhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 19, "character": 19}, "end": {"line": 19, "character": 32}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 23, "character": 22}, "end": {"line": 23, "character": 35}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 27, "character": 19}, "end": {"line": 27, "character": 32}}, "token": "ReadPhaseFour"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "reader-alias-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 10, "character": 6, "token": "ReaderAlias"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 15}}, "token": "ReadWriter"},
+        {"path": "navigation.go", "range": {"start": {"line": 17, "character": 5}, "end": {"line": 17, "character": 16}}, "token": "ValueReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 21, "character": 5}, "end": {"line": 21, "character": 18}}, "token": "PointerReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 25, "character": 5}, "end": {"line": 25, "character": 16}}, "token": "AliasReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 33, "character": 5}, "end": {"line": 33, "character": 18}}, "token": "EmbeddedValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 34, "character": 5}, "end": {"line": 34, "character": 20}}, "token": "EmbeddedPointer"},
+        {"path": "navigation.go", "range": {"start": {"line": 35, "character": 5}, "end": {"line": 35, "character": 25}}, "token": "EmbeddedPointerValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 41, "character": 5}, "end": {"line": 41, "character": 21}}, "token": "EmbeddedContract"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"}
+      ]
+    },
+    {
+      "id": "reader-alias-target",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 10, "character": 20, "token": "Reader"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"},
+        {"path": "navigation.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 15}}, "token": "ReadWriter"},
+        {"path": "navigation.go", "range": {"start": {"line": 17, "character": 5}, "end": {"line": 17, "character": 16}}, "token": "ValueReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 21, "character": 5}, "end": {"line": 21, "character": 18}}, "token": "PointerReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 25, "character": 5}, "end": {"line": 25, "character": 16}}, "token": "AliasReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 33, "character": 5}, "end": {"line": 33, "character": 18}}, "token": "EmbeddedValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 34, "character": 5}, "end": {"line": 34, "character": 20}}, "token": "EmbeddedPointer"},
+        {"path": "navigation.go", "range": {"start": {"line": 35, "character": 5}, "end": {"line": 35, "character": 25}}, "token": "EmbeddedPointerValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 41, "character": 5}, "end": {"line": 41, "character": 21}}, "token": "EmbeddedContract"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"}
+      ]
+    },
+    {
+      "id": "reader-use-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 80, "character": 22, "token": "Reader"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"},
+        {"path": "navigation.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 15}}, "token": "ReadWriter"},
+        {"path": "navigation.go", "range": {"start": {"line": 17, "character": 5}, "end": {"line": 17, "character": 16}}, "token": "ValueReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 21, "character": 5}, "end": {"line": 21, "character": 18}}, "token": "PointerReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 25, "character": 5}, "end": {"line": 25, "character": 16}}, "token": "AliasReader"},
+        {"path": "navigation.go", "range": {"start": {"line": 33, "character": 5}, "end": {"line": 33, "character": 18}}, "token": "EmbeddedValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 34, "character": 5}, "end": {"line": 34, "character": 20}}, "token": "EmbeddedPointer"},
+        {"path": "navigation.go", "range": {"start": {"line": 35, "character": 5}, "end": {"line": 35, "character": 25}}, "token": "EmbeddedPointerValue"},
+        {"path": "navigation.go", "range": {"start": {"line": 41, "character": 5}, "end": {"line": 41, "character": 21}}, "token": "EmbeddedContract"}
+      ],
+      "super": []
+    },
+    {
+      "id": "reader-use-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 81, "character": 9, "token": "ReadPhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 7, "character": 1}, "end": {"line": 7, "character": 14}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 19, "character": 19}, "end": {"line": 19, "character": 32}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 23, "character": 22}, "end": {"line": 23, "character": 35}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 27, "character": 19}, "end": {"line": 27, "character": 32}}, "token": "ReadPhaseFour"}
+      ],
+      "super": []
+    },
+    {
+      "id": "reader-alias-use-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 82, "character": 8, "token": "ReadPhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 7, "character": 1}, "end": {"line": 7, "character": 14}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 19, "character": 19}, "end": {"line": 19, "character": 32}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 23, "character": 22}, "end": {"line": 23, "character": 35}}, "token": "ReadPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 27, "character": 19}, "end": {"line": 27, "character": 32}}, "token": "ReadPhaseFour"}
+      ],
+      "super": []
+    },
+    {
+      "id": "readwriter-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 12, "character": 6, "token": "ReadWriter"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 41, "character": 5}, "end": {"line": 41, "character": 21}}, "token": "EmbeddedContract"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "write-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 14, "character": 2, "token": "WritePhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 43, "character": 24}, "end": {"line": 43, "character": 38}}, "token": "WritePhaseFour"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "value-reader-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 17, "character": 6, "token": "ValueReader"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "pointer-reader-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 21, "character": 6, "token": "PointerReader"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "pointer-reader-method-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 23, "character": 23, "token": "ReadPhaseFour"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 7, "character": 1}, "end": {"line": 7, "character": 14}}, "token": "ReadPhaseFour"}
+      ]
+    },
+    {
+      "id": "embedded-pointer-value-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 35, "character": 6, "token": "EmbeddedPointerValue"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"}
+      ]
+    },
+    {
+      "id": "embedded-reader-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 41, "character": 6, "token": "EmbeddedContract"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 6, "character": 5}, "end": {"line": 6, "character": 11}}, "token": "Reader"},
+        {"path": "navigation.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 16}}, "token": "ReaderAlias"},
+        {"path": "navigation.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 15}}, "token": "ReadWriter"}
+      ]
+    },
+    {
+      "id": "ambiguous-reader-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 36, "character": 6, "token": "Ambiguous"},
+      "implementations": [],
+      "super": []
+    },
+    {
+      "id": "wrong-signature-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 29, "character": 6, "token": "OtherReader"},
+      "implementations": [],
+      "super": []
+    },
+    {
+      "id": "secret-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 45, "character": 6, "token": "Secret"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 49, "character": 5}, "end": {"line": 49, "character": 16}}, "token": "LocalSecret"},
+        {"path": "other/other.go", "range": {"start": {"line": 8, "character": 5}, "end": {"line": 8, "character": 19}}, "token": "EmbeddedSecret"}
+      ],
+      "super": []
+    },
+    {
+      "id": "secret-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 46, "character": 2, "token": "secretPhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 51, "character": 19}, "end": {"line": 51, "character": 34}}, "token": "secretPhaseFour"}
+      ],
+      "super": []
+    },
+    {
+      "id": "other-secret-super",
+      "action": "super",
+      "query": {"path": "other/other.go", "line": 4, "character": 6, "token": "OtherSecret"},
+      "implementations": [],
+      "super": []
+    },
+    {
+      "id": "embedded-secret-super",
+      "action": "super",
+      "query": {"path": "other/other.go", "line": 8, "character": 6, "token": "EmbeddedSecret"},
+      "implementations": [],
+      "super": []
+    },
+    {
+      "id": "generic-interface-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 53, "character": 6, "token": "Convert"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 57, "character": 5}, "end": {"line": 57, "character": 21}}, "token": "GenericConverter"},
+        {"path": "navigation.go", "range": {"start": {"line": 61, "character": 5}, "end": {"line": 61, "character": 17}}, "token": "IntConverter"},
+        {"path": "navigation.go", "range": {"start": {"line": 65, "character": 5}, "end": {"line": 65, "character": 20}}, "token": "StringConverter"},
+        {"path": "navigation.go", "range": {"start": {"line": 69, "character": 5}, "end": {"line": 69, "character": 19}}, "token": "NumericConvert"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 69, "character": 5}, "end": {"line": 69, "character": 19}}, "token": "NumericConvert"}
+      ]
+    },
+    {
+      "id": "generic-interface-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 54, "character": 2, "token": "ConvertPhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 59, "character": 27}, "end": {"line": 59, "character": 43}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 63, "character": 20}, "end": {"line": 63, "character": 36}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 67, "character": 23}, "end": {"line": 67, "character": 39}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 71, "character": 1}, "end": {"line": 71, "character": 17}}, "token": "ConvertPhaseFour"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 69, "character": 5}, "end": {"line": 69, "character": 19}}, "token": "NumericConvert"}
+      ]
+    },
+    {
+      "id": "generic-converter-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 57, "character": 6, "token": "GenericConverter"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 53, "character": 5}, "end": {"line": 53, "character": 12}}, "token": "Convert"},
+        {"path": "navigation.go", "range": {"start": {"line": 69, "character": 5}, "end": {"line": 69, "character": 19}}, "token": "NumericConvert"}
+      ]
+    },
+    {
+      "id": "generic-converter-used-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 83, "character": 12, "token": "ConvertPhaseFour"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 54, "character": 1}, "end": {"line": 54, "character": 17}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 59, "character": 27}, "end": {"line": 59, "character": 43}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 63, "character": 20}, "end": {"line": 63, "character": 36}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 67, "character": 23}, "end": {"line": 67, "character": 39}}, "token": "ConvertPhaseFour"},
+        {"path": "navigation.go", "range": {"start": {"line": 71, "character": 1}, "end": {"line": 71, "character": 17}}, "token": "ConvertPhaseFour"}
+      ],
+      "super": []
+    },
+    {
+      "id": "int-converter-super",
+      "action": "super",
+      "query": {"path": "navigation.go", "line": 61, "character": 6, "token": "IntConverter"},
+      "implementations": [],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 53, "character": 5}, "end": {"line": 53, "character": 12}}, "token": "Convert"},
+        {"path": "navigation.go", "range": {"start": {"line": 69, "character": 5}, "end": {"line": 69, "character": 19}}, "token": "NumericConvert"}
+      ]
+    },
+    {
+      "id": "constraint-interface-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 69, "character": 6, "token": "NumericConvert"},
+      "implementations": [
+        {"path": "navigation.go", "range": {"start": {"line": 53, "character": 5}, "end": {"line": 53, "character": 12}}, "token": "Convert"},
+        {"path": "navigation.go", "range": {"start": {"line": 57, "character": 5}, "end": {"line": 57, "character": 21}}, "token": "GenericConverter"},
+        {"path": "navigation.go", "range": {"start": {"line": 61, "character": 5}, "end": {"line": 61, "character": 17}}, "token": "IntConverter"}
+      ],
+      "super": [
+        {"path": "navigation.go", "range": {"start": {"line": 53, "character": 5}, "end": {"line": 53, "character": 12}}, "token": "Convert"}
+      ]
+    },
+    {
+      "id": "empty-interface-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 74, "character": 6, "token": "Empty"},
+      "implementations": [],
+      "super": []
+    },
+    {
+      "id": "never-type",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 76, "character": 6, "token": "Never"},
+      "implementations": [],
+      "super": []
+    },
+    {
+      "id": "never-method",
+      "action": "implementation",
+      "query": {"path": "navigation.go", "line": 77, "character": 2, "token": "NeverPhaseFour"},
+      "implementations": [],
+      "super": []
+    }
+  ]
+}

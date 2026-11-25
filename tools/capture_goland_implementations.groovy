@@ -91,11 +91,13 @@ def append = { String action, String id, Collection locations ->
 input.drop(1).each { row ->
     def (id, relative, line, character, token) = row.split('\t', -1)
     def file = files.findFileByNioFile(root.resolve(relative))
-    def document = file ? documents.getDocument(file) : null
-    if (!document || documents.isDocumentUnsaved(document)) {
-        throw new IllegalStateException("Open and save the query document before capture: $relative")
-    }
-    def offset = document.getLineStartOffset(line.toInteger()) + character.toInteger()
+    def (document, offset) = dumb.runReadActionInSmartMode({
+        def saved = file ? documents.getDocument(file) : null
+        if (!saved || documents.isDocumentUnsaved(saved)) {
+            throw new IllegalStateException("Open and save the query document before capture: $relative")
+        }
+        [saved, saved.getLineStartOffset(line.toInteger()) + character.toInteger()]
+    } as Computable)
     def editor
     try {
         edt {
