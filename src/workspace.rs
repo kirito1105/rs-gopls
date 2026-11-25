@@ -22,7 +22,7 @@ pub struct Package {
     pub files: Vec<PathBuf>,
     directory: PathBuf,
     import_map: HashMap<String, String>,
-    test_variant: bool,
+    for_test: String,
 }
 
 pub struct Workspace {
@@ -101,8 +101,12 @@ impl Workspace {
         let mut file_packages = HashMap::new();
         // Ordinary files belong to their normal package, even when the Go
         // command also reports an in-package test compilation of those files.
-        let ordinary = packages.iter().filter(|(_, package)| !package.test_variant);
-        let testing = packages.iter().filter(|(_, package)| package.test_variant);
+        let ordinary = packages
+            .iter()
+            .filter(|(_, package)| package.for_test.is_empty());
+        let testing = packages
+            .iter()
+            .filter(|(_, package)| !package.for_test.is_empty());
         for (id, package) in ordinary.chain(testing) {
             for file in &package.files {
                 file_packages
@@ -146,10 +150,24 @@ impl Workspace {
     pub(crate) fn package_of_draft(&self, path: &Path, name: &str) -> Option<&Package> {
         let directory = path_key(path.parent()?);
         let mut packages = self.packages.values().filter(|package| {
-            !package.test_variant && package.directory == directory && package.name == name
+            package.for_test.is_empty() && package.directory == directory && package.name == name
         });
         let package = packages.next()?;
         packages.next().is_none().then_some(package)
+    }
+
+    pub(crate) fn same_package_variants<'w>(
+        &'w self,
+        owner: &'w Package,
+    ) -> impl Iterator<Item = &'w Package> {
+        let id = if owner.for_test.is_empty() {
+            &owner.id
+        } else {
+            &owner.for_test
+        };
+        self.packages.values().filter(move |package| {
+            package.directory == owner.directory && (&package.id == id || &package.for_test == id)
+        })
     }
 
     pub(crate) fn affected_packages(&self, path: &Path) -> Option<HashSet<String>> {
@@ -277,7 +295,7 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
             files,
             directory: path_key(&package.dir),
             import_map: package.import_map,
-            test_variant: !package.for_test.is_empty(),
+            for_test: package.for_test,
         });
         for import in package.imports {
             let id = owner.import_id(&import);

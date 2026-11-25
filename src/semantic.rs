@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
@@ -28,6 +29,7 @@ struct FileIndex {
 struct DiskIndex {
     declarations: FileIndex,
     fingerprint: u64,
+    reference_source: Option<Rc<Source>>,
 }
 
 impl DiskIndex {
@@ -35,6 +37,7 @@ impl DiskIndex {
         Self {
             declarations: source.collect_declarations(),
             fingerprint: text_fingerprint(&source.text),
+            reference_source: None,
         }
     }
 
@@ -60,6 +63,14 @@ enum ReferenceQuery<'tree> {
         value: Node<'tree>,
         name: Node<'tree>,
     },
+}
+
+impl<'tree> ReferenceQuery<'tree> {
+    fn name(self) -> Node<'tree> {
+        match self {
+            Self::Name(name) | Self::Member { name, .. } | Self::LiteralKey { name, .. } => name,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -261,8 +272,11 @@ impl Engine {
         } else {
             return Ok(QueryProgress::Ready(Vec::new()));
         };
+        let Some(reference) = source.reference_at(position) else {
+            return Ok(QueryProgress::Ready(Vec::new()));
+        };
         let mut locations = Vec::new();
-        if let Some(ReferenceQuery::Name(name)) = source.reference_at(position)
+        if let ReferenceQuery::Name(name) = reference
             && let Some(declaration) = reference_binding(name, &source.text)
             && let Some(scope) = local_reference_scope(declaration)
         {
@@ -274,8 +288,31 @@ impl Engine {
                     locations.push((source.path.clone(), source.range(candidate)));
                 }
             });
+            return Ok(QueryProgress::Ready(locations));
         }
-        Ok(QueryProgress::Ready(locations))
+
+        self.include_tests = true;
+        let load = self.workspace_load();
+        let Some(workspace) = &self.workspace else {
+            return Ok(QueryProgress::Pending(load));
+        };
+        if !workspace.includes_tests() || !matches!(self.graph_changes, GraphChanges::Clean) {
+            return Ok(QueryProgress::Pending(load));
+        }
+        let Some(from) = active_package(workspace, source, &self.new_documents) else {
+            return Ok(QueryProgress::Ready(locations));
+        };
+        let drafts = draft_files(workspace, &self.documents, &self.new_documents);
+        let indexes = IndexReader {
+            parser: &mut self.parser,
+            documents: &self.documents,
+            disk_index: &mut self.disk_index,
+            drafts,
+        };
+        let mut resolver = Resolver { workspace, indexes };
+        resolver
+            .package_references(from, source, reference, &self.root, include_declaration)
+            .map(QueryProgress::Ready)
     }
 
     pub fn definition(
@@ -325,12 +362,7 @@ impl Engine {
         if test_source && !workspace.includes_tests() {
             return Ok(DefinitionProgress::Pending(load));
         }
-        let from = workspace.package_of_file(path).or_else(|| {
-            self.new_documents
-                .contains(&path_key(path))
-                .then(|| draft_package(workspace, source))
-                .flatten()
-        });
+        let from = active_package(workspace, source, &self.new_documents);
         if !matches!(self.graph_changes, GraphChanges::Clean)
             && from.is_none_or(|package| {
                 self.graph_changes.affects(package)
@@ -346,21 +378,7 @@ impl Engine {
         let Some(from) = from else {
             return Ok(DefinitionProgress::Ready(None));
         };
-        let mut drafts = HashMap::<_, Vec<_>>::new();
-        for path in &self.new_documents {
-            if let Some(document) = self.documents.get(path)
-                && workspace.package_of_file(&document.path).is_none()
-                && let Some(package) = draft_package(workspace, document)
-            {
-                drafts
-                    .entry(package.directory_and_name())
-                    .or_default()
-                    .push(&document.path);
-            }
-        }
-        for files in drafts.values_mut() {
-            files.sort_unstable();
-        }
+        let drafts = draft_files(workspace, &self.documents, &self.new_documents);
         let indexes = IndexReader {
             parser: &mut self.parser,
             documents: &self.documents,
@@ -368,37 +386,11 @@ impl Engine {
             drafts,
         };
 
-        if kind == DefinitionKind::Type {
-            let mut resolver = Resolver { workspace, indexes };
-            return resolver
-                .type_definition(from, source, reference, &self.root)
-                .map(DefinitionProgress::Ready);
-        }
-        let location = match reference {
-            ReferenceQuery::Name(name) => {
-                let mut resolver = Resolver { workspace, indexes };
-                resolver.name_location(from, source, name, &self.root)
-            }
-            ReferenceQuery::Member { receiver, name } => {
-                let mut resolver = Resolver { workspace, indexes };
-                let member =
-                    resolver.selector(from, source, receiver, node_text(name, &source.text), 0)?;
-                Ok(member.map(ResolvedSymbol::location))
-            }
-            ReferenceQuery::LiteralKey { value, name } => {
-                let mut resolver = Resolver { workspace, indexes };
-                let Some(ty) = resolver.literal_type(from, source, value, 0)? else {
-                    return Ok(DefinitionProgress::Ready(None));
-                };
-                if resolver.container(ty.clone())?.is_some() {
-                    return resolver
-                        .name_location(from, source, name, &self.root)
-                        .map(DefinitionProgress::Ready);
-                }
-                let member = resolver.member(from, &ty, node_text(name, &source.text), false)?;
-                let member =
-                    member.filter(|found| matches!(found.symbol.kind, SymbolKind::Value(_)));
-                Ok(member.map(ResolvedSymbol::location))
+        let mut resolver = Resolver { workspace, indexes };
+        let location = match kind {
+            DefinitionKind::Type => resolver.type_definition(from, source, reference, &self.root),
+            DefinitionKind::Declaration => {
+                resolver.declaration_location(from, source, reference, &self.root)
             }
         }?;
         Ok(DefinitionProgress::Ready(location))
@@ -418,6 +410,44 @@ fn local_reference_scope(declaration: Node<'_>) -> Option<Node<'_>> {
         }
     }
     None
+}
+
+type DraftFiles<'a> = HashMap<(&'a Path, &'a str), Vec<&'a PathBuf>>;
+
+fn active_package<'w>(
+    workspace: &'w Workspace,
+    source: &Source,
+    new_documents: &HashSet<PathBuf>,
+) -> Option<&'w Package> {
+    workspace.package_of_file(&source.path).or_else(|| {
+        new_documents
+            .contains(&path_key(&source.path))
+            .then(|| draft_package(workspace, source))
+            .flatten()
+    })
+}
+
+fn draft_files<'a>(
+    workspace: &'a Workspace,
+    documents: &'a HashMap<PathBuf, Source>,
+    new_documents: &HashSet<PathBuf>,
+) -> DraftFiles<'a> {
+    let mut drafts = DraftFiles::new();
+    for path in new_documents {
+        if let Some(document) = documents.get(path)
+            && workspace.package_of_file(&document.path).is_none()
+            && let Some(package) = draft_package(workspace, document)
+        {
+            drafts
+                .entry(package.directory_and_name())
+                .or_default()
+                .push(&document.path);
+        }
+    }
+    for files in drafts.values_mut() {
+        files.sort_unstable();
+    }
+    drafts
 }
 
 fn draft_package<'w>(workspace: &'w Workspace, source: &Source) -> Option<&'w Package> {
@@ -492,10 +522,61 @@ struct IndexReader<'a> {
     parser: &'a mut Parser,
     documents: &'a HashMap<PathBuf, Source>,
     disk_index: &'a mut HashMap<PathBuf, DiskIndex>,
-    drafts: HashMap<(&'a Path, &'a str), Vec<&'a PathBuf>>,
+    drafts: DraftFiles<'a>,
 }
 
-impl IndexReader<'_> {
+enum ReferenceSource<'a> {
+    Open(&'a Source),
+    Disk(Rc<Source>),
+}
+
+impl AsRef<Source> for ReferenceSource<'_> {
+    fn as_ref(&self) -> &Source {
+        match self {
+            Self::Open(source) => source,
+            Self::Disk(source) => source,
+        }
+    }
+}
+
+impl<'a> IndexReader<'a> {
+    fn reference_source(&mut self, path: &Path) -> Result<Option<ReferenceSource<'a>>> {
+        let key = path_key(path);
+        if let Some(source) = self.documents.get(&key) {
+            return Ok(Some(ReferenceSource::Open(source)));
+        }
+        if let Some(source) = self
+            .disk_index
+            .get(&key)
+            .and_then(|entry| entry.reference_source.as_ref())
+        {
+            return Ok(Some(ReferenceSource::Disk(Rc::clone(source))));
+        }
+        let source = match read_source(self.parser, path) {
+            Ok(source) => Rc::new(source),
+            Err(error)
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        let fingerprint = text_fingerprint(&source.text);
+        let entry = match self.disk_index.entry(key) {
+            Entry::Occupied(mut entry) => {
+                if entry.get().fingerprint != fingerprint {
+                    entry.insert(DiskIndex::new(&source));
+                }
+                entry.into_mut()
+            }
+            Entry::Vacant(entry) => entry.insert(DiskIndex::new(&source)),
+        };
+        entry.reference_source = Some(Rc::clone(&source));
+        Ok(Some(ReferenceSource::Disk(source)))
+    }
+
     fn files<'p>(&self, package: &'p Package) -> Cow<'p, [PathBuf]> {
         match self.drafts.get(&package.directory_and_name()) {
             None => Cow::Borrowed(&package.files),
@@ -665,6 +746,119 @@ struct Resolver<'w, 'idx> {
 }
 
 impl<'w> Resolver<'w, '_> {
+    fn declaration_location(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        reference: ReferenceQuery<'_>,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        match reference {
+            ReferenceQuery::Name(name) => self.name_location(from, source, name, root),
+            ReferenceQuery::Member { receiver, name } => {
+                let member =
+                    self.selector(from, source, receiver, node_text(name, &source.text), 0)?;
+                Ok(member.map(ResolvedSymbol::location))
+            }
+            ReferenceQuery::LiteralKey { value, name } => {
+                let Some(ty) = self.literal_type(from, source, value, 0)? else {
+                    return Ok(None);
+                };
+                if self.container(ty.clone())?.is_some() {
+                    return self.name_location(from, source, name, root);
+                }
+                let member = self.member(from, &ty, node_text(name, &source.text), false)?;
+                let member =
+                    member.filter(|found| matches!(found.symbol.kind, SymbolKind::Value(_)));
+                Ok(member.map(ResolvedSymbol::location))
+            }
+        }
+    }
+
+    fn reference_location(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        reference: ReferenceQuery<'_>,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        if let ReferenceQuery::Name(name) = reference {
+            if let Some(binding) = reference_binding(name, &source.text) {
+                return Ok(Some((source.path.clone(), source.range(binding))));
+            }
+            if is_declaration_name(name) {
+                return Ok(Some((source.path.clone(), source.range(name))));
+            }
+        }
+        self.declaration_location(from, source, reference, root)
+    }
+
+    fn package_references(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        reference: ReferenceQuery<'_>,
+        root: &Path,
+        include_declaration: bool,
+    ) -> Result<Vec<(PathBuf, Range)>> {
+        let spelling = node_text(reference.name(), &source.text);
+        if spelling == "_"
+            || !spelling
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+        {
+            return Ok(Vec::new());
+        }
+        let Some((target, target_range)) =
+            self.reference_location(from, source, reference, root)?
+        else {
+            return Ok(Vec::new());
+        };
+        let target_key = path_key(&target);
+        let Some(owner) = self.workspace.package_of_file(&target).or_else(|| {
+            self.indexes
+                .documents
+                .get(&target_key)
+                .and_then(|source| draft_package(self.workspace, source))
+        }) else {
+            return Ok(Vec::new());
+        };
+        let mut candidates = BTreeMap::new();
+        for view in self.workspace.same_package_variants(owner) {
+            for path in self.indexes.files(view).iter() {
+                let context = self.workspace.package_of_file(path).unwrap_or(view);
+                candidates
+                    .entry(path_key(path))
+                    .or_insert_with(|| (path.clone(), context));
+            }
+        }
+        let mut matches = Vec::new();
+        for (key, (path, package)) in candidates {
+            let Some(file) = self.indexes.reference_source(&path)? else {
+                continue;
+            };
+            let file = file.as_ref();
+            for &offset in file.name_offsets(spelling) {
+                let Some(candidate) = file.reference_at_offset(offset) else {
+                    continue;
+                };
+                let range = file.range(candidate.name());
+                if !include_declaration && key == target_key && range == target_range {
+                    continue;
+                }
+                if let Some((declaration, declaration_range)) =
+                    self.reference_location(package, file, candidate, root)?
+                    && declaration_range == target_range
+                    && path_key(&declaration) == target_key
+                {
+                    matches.push((file.path.clone(), range));
+                }
+            }
+        }
+        Ok(matches)
+    }
+
     fn type_definition(
         &mut self,
         from: &'w Package,
@@ -2414,6 +2608,7 @@ struct Source {
     tree: Tree,
     imports: Vec<Import>,
     declarations: OnceCell<FileIndex>,
+    reference_names: OnceCell<HashMap<String, Vec<usize>>>,
 }
 
 impl Source {
@@ -2443,6 +2638,7 @@ impl Source {
             tree,
             imports,
             declarations: OnceCell::new(),
+            reference_names: OnceCell::new(),
         })
     }
 
@@ -2498,6 +2694,10 @@ impl Source {
 
     fn reference_at(&self, position: Position) -> Option<ReferenceQuery<'_>> {
         let offset = self.lines.offset(&self.text, position)?;
+        self.reference_at_offset(offset)
+    }
+
+    fn reference_at_offset(&self, offset: usize) -> Option<ReferenceQuery<'_>> {
         let root = self.tree.root_node();
         let leaf = root.named_descendant_for_byte_range(offset, offset)?;
         self.reference_from_leaf(leaf, offset)
@@ -2509,14 +2709,39 @@ impl Source {
         spelling: &str,
         mut visit: impl FnMut(Node<'tree>),
     ) {
+        Self::for_each_identifier(root, |node| {
+            if node_text(node, &self.text) == spelling {
+                visit(node);
+            }
+        });
+    }
+
+    fn name_offsets(&self, spelling: &str) -> &[usize] {
+        self.reference_names
+            .get_or_init(|| {
+                let mut names = HashMap::<String, Vec<usize>>::new();
+                Self::for_each_identifier(self.tree.root_node(), |node| {
+                    let name = node_text(node, &self.text);
+                    if let Some(offsets) = names.get_mut(name) {
+                        offsets.push(node.start_byte());
+                    } else {
+                        names.insert(name.to_owned(), vec![node.start_byte()]);
+                    }
+                });
+                names
+            })
+            .get(spelling)
+            .map_or(&[], Vec::as_slice)
+    }
+
+    fn for_each_identifier<'tree>(root: Node<'tree>, mut visit: impl FnMut(Node<'tree>)) {
         let mut cursor = root.walk();
         loop {
             let node = cursor.node();
             if matches!(
                 node.kind(),
                 "identifier" | "type_identifier" | "field_identifier" | "package_identifier"
-            ) && node_text(node, &self.text) == spelling
-            {
+            ) {
                 visit(node);
             }
             if cursor.goto_first_child() {
