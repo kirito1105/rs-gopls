@@ -8,7 +8,7 @@ use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::scope::lexical_binding;
-use crate::symbols::{self, FileSymbols, Symbol, SymbolKind, TypeRef};
+use crate::symbols::{self, FileSymbols, Symbol, SymbolKind, TypeDetails, TypeRef};
 use crate::workspace::{Package, Workspace, path_key};
 
 struct FileIndex {
@@ -149,7 +149,9 @@ impl Engine {
                 let Some(ty) = resolver.source_type(from, source, ty) else {
                     return Ok(None);
                 };
-                let member = resolver.member(from, &ty, node_text(name, &source.text))?;
+                let member = resolver.member(from, &ty, node_text(name, &source.text), false)?;
+                let member =
+                    member.filter(|found| matches!(found.symbol.kind, SymbolKind::Value(_)));
                 Ok(member.map(ResolvedSymbol::location))
             }
             ReferenceQuery::Import(literal) => {
@@ -202,15 +204,27 @@ impl IndexReader<'_> {
 
 const MAX_TYPE_DEPTH: usize = 32;
 
+#[derive(Clone)]
 struct TypeIdentity<'w> {
     package: &'w Package,
     name: String,
+    pointers: u8,
+    arguments: Vec<Option<TypeIdentity<'w>>>,
+    addressable: bool,
+    type_expression: bool,
+}
+
+impl TypeIdentity<'_> {
+    fn key(&self) -> (*const Package, String) {
+        (std::ptr::from_ref(self.package), self.name.clone())
+    }
 }
 
 struct ResolvedSymbol<'w> {
     package: &'w Package,
     file: PathBuf,
     symbol: Symbol,
+    receiver: Option<TypeIdentity<'w>>,
 }
 
 impl ResolvedSymbol<'_> {
@@ -218,6 +232,8 @@ impl ResolvedSymbol<'_> {
         (self.file, self.symbol.range)
     }
 }
+
+type Substitutions<'w> = Vec<(String, Option<TypeIdentity<'w>>)>;
 
 struct Resolver<'w, 'idx> {
     workspace: &'w Workspace,
@@ -246,10 +262,10 @@ impl<'w> Resolver<'w, '_> {
             }
         }
 
-        let Some(ty) = self.infer_type(from, source, receiver, depth + 1)? else {
+        let Some(ty) = self.infer_type(from, source, receiver, depth + 1, 0)? else {
             return Ok(None);
         };
-        self.member(from, &ty, name)
+        self.member(from, &ty, name, true)
     }
 
     fn member(
@@ -257,11 +273,104 @@ impl<'w> Resolver<'w, '_> {
         from: &Package,
         ty: &TypeIdentity<'w>,
         name: &str,
+        promote: bool,
     ) -> Result<Option<ResolvedSymbol<'w>>> {
-        if !is_exported(name) && !std::ptr::eq(from, ty.package) {
+        if ty.pointers > 1 {
             return Ok(None);
         }
-        self.find_symbol(ty.package, name, Some(&ty.name))
+        type TypeKey = (*const Package, String);
+        let mut frontier: Vec<(TypeIdentity<'w>, Vec<TypeKey>)> = vec![(ty.clone(), Vec::new())];
+
+        // A unique match at the shallowest embedding depth wins. Distinct
+        // paths to the same declaration are still ambiguous for struct fields.
+        for _ in 0..MAX_TYPE_DEPTH {
+            let mut next = Vec::new();
+            let mut found = None;
+            let mut blocked = false;
+            for (mut owner, mut visited) in frontier {
+                loop {
+                    let key = owner.key();
+                    if owner.pointers > 1 || visited.contains(&key) {
+                        break;
+                    }
+                    visited.push(key);
+
+                    if (is_exported(name) || std::ptr::eq(from, owner.package))
+                        && let Some(mut symbol) =
+                            self.find_symbol(owner.package, name, Some(&owner.name))?
+                    {
+                        if found.is_some() || blocked {
+                            return Ok(None);
+                        }
+                        let method = matches!(symbol.symbol.kind, SymbolKind::Function(_));
+                        blocked = (owner.type_expression && !method)
+                            || (symbol.symbol.pointer_receiver
+                                && owner.pointers == 0
+                                && !owner.addressable);
+                        if !blocked {
+                            symbol.receiver = Some(owner);
+                            found = Some(symbol);
+                        }
+                        break;
+                    }
+
+                    let Some((file, details)) = self.type_info(&owner)? else {
+                        break;
+                    };
+                    let substitutions = type_substitutions(&owner, &details.parameters, &[]);
+                    let index = self.indexes.file_index(&file)?;
+                    if let Some(alias) = details.alias {
+                        let Some(mut target) = materialize_type(
+                            self.workspace,
+                            owner.package,
+                            &index.imports,
+                            alias,
+                            &substitutions,
+                        ) else {
+                            break;
+                        };
+                        target.pointers = target.pointers.saturating_add(owner.pointers);
+                        target.addressable = owner.addressable;
+                        target.type_expression = owner.type_expression;
+                        owner = target;
+                        continue;
+                    }
+                    if promote && found.is_none() && !blocked {
+                        for embedded in details.embedded {
+                            let Some(mut target) = materialize_type(
+                                self.workspace,
+                                owner.package,
+                                &index.imports,
+                                embedded,
+                                &substitutions,
+                            ) else {
+                                continue;
+                            };
+                            target.addressable = owner.addressable && !owner.type_expression;
+                            target.pointers = target.pointers.max(owner.pointers);
+                            target.type_expression = owner.type_expression;
+                            next.push((target, visited.clone()));
+                        }
+                    }
+                    break;
+                }
+            }
+            if blocked || found.is_some() || next.is_empty() {
+                return Ok(found);
+            }
+            frontier = next;
+        }
+        Ok(None)
+    }
+
+    fn type_info(&mut self, ty: &TypeIdentity<'w>) -> Result<Option<(PathBuf, TypeDetails)>> {
+        for file in &ty.package.files {
+            let index = &self.indexes.file_index(file)?.symbols;
+            if let Some(details) = index.type_details(&ty.name) {
+                return Ok(Some((file.clone(), details.clone())));
+            }
+        }
+        Ok(None)
     }
 
     fn find_symbol(
@@ -281,6 +390,7 @@ impl<'w> Resolver<'w, '_> {
                     package,
                     file: file.clone(),
                     symbol: symbol.clone(),
+                    receiver: None,
                 }));
             }
         }
@@ -293,48 +403,74 @@ impl<'w> Resolver<'w, '_> {
         source: &Source,
         expression: Node<'_>,
         depth: usize,
+        result_index: usize,
     ) -> Result<Option<TypeIdentity<'w>>> {
         if depth >= MAX_TYPE_DEPTH {
+            return Ok(None);
+        }
+        if expression.kind() == "call_expression" {
+            return self.call_result(from, source, expression, depth + 1, result_index);
+        }
+        if result_index != 0 {
             return Ok(None);
         }
         match expression.kind() {
             "identifier" => {
                 let name = node_text(expression, &source.text);
                 if let Some(binding) = lexical_binding(expression, name, &source.text) {
-                    if let Some(ty) = binding.explicit_type {
-                        return Ok(self.source_type(from, source, ty));
-                    }
-                    return match binding.initializer {
-                        Some(initializer) if binding.result_index == 0 => {
-                            self.infer_type(from, source, initializer, depth + 1)
-                        }
-                        _ => Ok(None),
+                    let addressable = binding
+                        .name
+                        .parent()
+                        .is_none_or(|node| node.kind() != "const_spec");
+                    let result = if let Some(ty) = binding.explicit_type {
+                        self.source_type(from, source, ty)
+                    } else if let Some(initializer) = binding.initializer {
+                        self.infer_type(from, source, initializer, depth + 1, binding.result_index)?
+                    } else {
+                        None
                     };
+                    return Ok(result.map(|mut ty| {
+                        ty.addressable = addressable;
+                        ty
+                    }));
                 }
                 let Some(symbol) = self.find_symbol(from, name, None)? else {
                     return Ok(None);
                 };
-                self.value_type(symbol)
+                self.symbol_type(&symbol, name)
             }
-            "composite_literal" => Ok(expression
-                .child_by_field_name("type")
-                .and_then(|ty| self.source_type(from, source, ty))),
-            "unary_expression" | "parenthesized_expression" => {
-                let inner = expression
-                    .child_by_field_name("operand")
-                    .or_else(|| expression.named_child(0));
-                match inner {
-                    Some(inner)
-                        if expression.kind() == "parenthesized_expression"
-                            || matches!(
-                                node_text(expression, &source.text).as_bytes().first(),
-                                Some(b'&' | b'*')
-                            ) =>
-                    {
-                        self.infer_type(from, source, inner, depth + 1)
-                    }
-                    _ => Ok(None),
+            "composite_literal" | "type_conversion_expression" | "type_assertion_expression" => {
+                Ok(expression
+                    .child_by_field_name("type")
+                    .and_then(|ty| self.source_type(from, source, ty)))
+            }
+            "parenthesized_expression" => match expression.named_child(0) {
+                Some(inner) => self.infer_type(from, source, inner, depth + 1, 0),
+                None => Ok(None),
+            },
+            "unary_expression" => {
+                let (Some(operator), Some(operand)) = (
+                    expression.child_by_field_name("operator"),
+                    expression.child_by_field_name("operand"),
+                ) else {
+                    return Ok(None);
+                };
+                if !matches!(operator.kind(), "&" | "*") {
+                    return Ok(None);
                 }
+                let Some(mut ty) = self.infer_type(from, source, operand, depth + 1, 0)? else {
+                    return Ok(None);
+                };
+                if operator.kind() == "&" {
+                    ty.pointers = ty.pointers.saturating_add(1);
+                    ty.addressable = false;
+                } else if ty.pointers > 0 {
+                    ty.pointers -= 1;
+                    ty.addressable = !ty.type_expression;
+                } else {
+                    return Ok(None);
+                }
+                Ok(Some(ty))
             }
             "selector_expression" => {
                 let Some(receiver) = expression.child_by_field_name("operand") else {
@@ -343,18 +479,79 @@ impl<'w> Resolver<'w, '_> {
                 let Some(name) = expression.child_by_field_name("field") else {
                     return Ok(None);
                 };
-                let Some(symbol) = self.selector(
-                    from,
-                    source,
-                    receiver,
-                    node_text(name, &source.text),
-                    depth + 1,
-                )?
-                else {
+                let name = node_text(name, &source.text);
+                let Some(symbol) = self.selector(from, source, receiver, name, depth + 1)? else {
                     return Ok(None);
                 };
-                self.value_type(symbol)
+                self.symbol_type(&symbol, name)
             }
+            _ => Ok(None),
+        }
+    }
+
+    fn call_result(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        call: Node<'_>,
+        depth: usize,
+        result_index: usize,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        let Some(function) = call.child_by_field_name("function") else {
+            return Ok(None);
+        };
+        let (name, target) = match function.kind() {
+            "identifier" => {
+                let name = node_text(function, &source.text);
+                if lexical_binding(function, name, &source.text).is_some() {
+                    return Ok(None);
+                }
+                let target = self.find_symbol(from, name, None)?;
+                if target.is_none() && name == "new" && result_index == 0 {
+                    let argument = call
+                        .child_by_field_name("arguments")
+                        .and_then(|args| args.named_child(0));
+                    let Some(mut ty) =
+                        argument.and_then(|node| self.source_type(from, source, node))
+                    else {
+                        return Ok(None);
+                    };
+                    ty.pointers = ty.pointers.saturating_add(1);
+                    return Ok(Some(ty));
+                }
+                (name, target)
+            }
+            "selector_expression" => {
+                let Some(receiver) = function.child_by_field_name("operand") else {
+                    return Ok(None);
+                };
+                let Some(name) = function.child_by_field_name("field") else {
+                    return Ok(None);
+                };
+                let name = node_text(name, &source.text);
+                (
+                    name,
+                    self.selector(from, source, receiver, name, depth + 1)?,
+                )
+            }
+            _ => return Ok(None),
+        };
+        let Some(target) = target else {
+            return Ok(None);
+        };
+        match &target.symbol.kind {
+            SymbolKind::Function(results) => match results.get(result_index) {
+                Some(Some(reference)) => self.type_from_symbol(&target, reference.clone(), false),
+                _ => Ok(None),
+            },
+            SymbolKind::Type if result_index == 0 => Ok(Some(TypeIdentity {
+                package: target.package,
+                name: name.to_owned(),
+                pointers: 0,
+                arguments: Vec::new(),
+                addressable: false,
+                type_expression: false,
+            })),
             _ => Ok(None),
         }
     }
@@ -371,36 +568,121 @@ impl<'w> Resolver<'w, '_> {
         {
             return None;
         }
-        type_identity(self.workspace, from, &source.imports, reference)
+        materialize_type(self.workspace, from, &source.imports, reference, &[])
     }
 
-    fn value_type(&mut self, resolved: ResolvedSymbol<'w>) -> Result<Option<TypeIdentity<'w>>> {
-        let SymbolKind::Value(Some(reference)) = resolved.symbol.kind else {
-            return Ok(None);
-        };
+    fn symbol_type(
+        &mut self,
+        resolved: &ResolvedSymbol<'w>,
+        name: &str,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        match &resolved.symbol.kind {
+            SymbolKind::Value(Some(reference)) => {
+                let addressable = resolved.symbol.addressable
+                    && resolved
+                        .receiver
+                        .as_ref()
+                        .is_none_or(|ty| ty.addressable || ty.pointers > 0);
+                self.type_from_symbol(resolved, reference.clone(), addressable)
+            }
+            SymbolKind::Type => Ok(Some(TypeIdentity {
+                package: resolved.package,
+                name: name.to_owned(),
+                pointers: 0,
+                arguments: Vec::new(),
+                addressable: false,
+                type_expression: true,
+            })),
+            _ => Ok(None),
+        }
+    }
+
+    fn type_from_symbol(
+        &mut self,
+        resolved: &ResolvedSymbol<'w>,
+        reference: TypeRef,
+        addressable: bool,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        let mut substitutions = Vec::new();
+        if let Some(receiver) = &resolved.receiver
+            && !receiver.arguments.is_empty()
+            && let Some((_, details)) = self.type_info(receiver)?
+        {
+            substitutions = type_substitutions(
+                receiver,
+                &details.parameters,
+                &resolved.symbol.receiver_parameters,
+            );
+        }
         let index = self.indexes.file_index(&resolved.file)?;
-        Ok(type_identity(
+        Ok(materialize_type(
             self.workspace,
             resolved.package,
             &index.imports,
             reference,
-        ))
+            &substitutions,
+        )
+        .map(|mut ty| {
+            ty.addressable = addressable;
+            ty
+        }))
     }
 }
 
-fn type_identity<'w>(
+fn type_substitutions<'w>(
+    owner: &TypeIdentity<'w>,
+    parameters: &[String],
+    receiver_parameters: &[Option<String>],
+) -> Substitutions<'w> {
+    owner
+        .arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| {
+            let name = if receiver_parameters.is_empty() {
+                parameters.get(index)?
+            } else {
+                receiver_parameters.get(index)?.as_ref()?
+            };
+            Some((name.clone(), argument.clone()))
+        })
+        .collect()
+}
+
+fn materialize_type<'w>(
     workspace: &'w Workspace,
     from: &'w Package,
     imports: &[Import],
     reference: TypeRef,
+    substitutions: &[(String, Option<TypeIdentity<'w>>)],
 ) -> Option<TypeIdentity<'w>> {
+    if reference.qualifier.is_none()
+        && let Some((_, argument)) = substitutions
+            .iter()
+            .find(|(name, _)| *name == reference.name)
+    {
+        let mut ty = argument.clone()?;
+        ty.pointers = ty.pointers.saturating_add(reference.pointers);
+        return Some(ty);
+    }
     let package = match reference.qualifier {
         Some(qualifier) => imported_package(imports, workspace, from, &qualifier)?.1,
         None => from,
     };
+    let arguments = reference
+        .arguments
+        .into_iter()
+        .map(|argument| {
+            argument.and_then(|ty| materialize_type(workspace, from, imports, ty, substitutions))
+        })
+        .collect();
     Some(TypeIdentity {
         package,
         name: reference.name,
+        pointers: reference.pointers,
+        arguments,
+        addressable: false,
+        type_expression: false,
     })
 }
 

@@ -7,12 +7,29 @@ use tree_sitter::{Node, Tree};
 pub(crate) struct TypeRef {
     pub(crate) qualifier: Option<String>,
     pub(crate) name: String,
+    pub(crate) pointers: u8,
+    pub(crate) arguments: Vec<Option<TypeRef>>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct Symbol {
     pub(crate) range: Range,
     pub(crate) kind: SymbolKind,
+    pub(crate) pointer_receiver: bool,
+    pub(crate) receiver_parameters: Vec<Option<String>>,
+    pub(crate) addressable: bool,
+}
+
+impl Symbol {
+    fn new(range: Range, kind: SymbolKind, addressable: bool) -> Self {
+        Self {
+            range,
+            kind,
+            pointer_receiver: false,
+            receiver_parameters: Vec::new(),
+            addressable,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -22,10 +39,11 @@ pub(crate) enum SymbolKind {
     Function(Vec<Option<TypeRef>>),
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct TypeDetails {
     pub(crate) alias: Option<TypeRef>,
     pub(crate) embedded: Vec<TypeRef>,
+    pub(crate) parameters: Vec<String>,
 }
 
 #[derive(Default)]
@@ -90,7 +108,7 @@ impl Indexer<'_> {
             "function_declaration" => {
                 if let Some(name) = declaration.child_by_field_name("name") {
                     let results = function_results(declaration, self.text);
-                    self.insert_declaration(name, SymbolKind::Function(results));
+                    self.insert_declaration(name, SymbolKind::Function(results), false);
                 }
             }
             "method_declaration" => self.method_declaration(declaration),
@@ -126,11 +144,15 @@ impl Indexer<'_> {
             } else {
                 explicit_type.clone()
             };
-            self.insert_declaration(name, SymbolKind::Value(ty));
+            self.insert_declaration(
+                name,
+                SymbolKind::Value(ty),
+                declaration.kind() == "var_spec",
+            );
         }
     }
 
-    fn insert_declaration(&mut self, name: Node<'_>, kind: SymbolKind) {
+    fn insert_declaration(&mut self, name: Node<'_>, kind: SymbolKind, addressable: bool) {
         let key = node_text(name, self.text);
         if key.is_empty() || key == "_" {
             return;
@@ -138,10 +160,7 @@ impl Indexer<'_> {
         self.symbols
             .declarations
             .entry(key.to_owned())
-            .or_insert_with(|| Symbol {
-                range: (self.range)(name),
-                kind,
-            });
+            .or_insert_with(|| Symbol::new((self.range)(name), kind, addressable));
     }
 
     fn type_declaration(&mut self, declaration: Node<'_>) {
@@ -151,10 +170,13 @@ impl Indexer<'_> {
         ) else {
             return;
         };
-        self.insert_declaration(name, SymbolKind::Type);
+        self.insert_declaration(name, SymbolKind::Type, false);
 
         let owner = node_text(name, self.text);
-        let mut details = TypeDetails::default();
+        let mut details = TypeDetails {
+            parameters: type_parameters(declaration, self.text),
+            ..TypeDetails::default()
+        };
         if declaration.kind() == "type_alias" {
             details.alias = named_type(ty, self.text);
         }
@@ -194,11 +216,28 @@ impl Indexer<'_> {
                 .peekable();
             if names.peek().is_some() {
                 for name in names {
-                    self.insert_member(owner, name, SymbolKind::Value(ty.clone()));
+                    let symbol =
+                        Symbol::new((self.range)(name), SymbolKind::Value(ty.clone()), true);
+                    self.insert_member(owner, name, symbol);
                 }
-            } else if let (Some(ty), Some((_, name))) = (ty, field_type.and_then(named_type_nodes))
+            } else if let (Some(mut ty), Some(syntax)) =
+                (ty, field_type.and_then(named_type_syntax))
             {
-                self.insert_member(owner, name, SymbolKind::Value(Some(ty.clone())));
+                // In an embedded field declaration, the optional star belongs to the field,
+                // not its named type child.
+                if field
+                    .children(&mut field.walk())
+                    .any(|child| child.kind() == "*")
+                {
+                    ty.pointers += 1;
+                }
+                let name = syntax.name;
+                let symbol = Symbol::new(
+                    (self.range)(name),
+                    SymbolKind::Value(Some(ty.clone())),
+                    true,
+                );
+                self.insert_member(owner, name, symbol);
                 details.embedded.push(ty);
             }
         }
@@ -211,7 +250,9 @@ impl Indexer<'_> {
                 "method_elem" => {
                     if let Some(name) = element.child_by_field_name("name") {
                         let results = function_results(element, self.text);
-                        self.insert_member(owner, name, SymbolKind::Function(results));
+                        let symbol =
+                            Symbol::new((self.range)(name), SymbolKind::Function(results), false);
+                        self.insert_member(owner, name, symbol);
                     }
                 }
                 "type_elem" => {
@@ -249,21 +290,33 @@ impl Indexer<'_> {
         if parameters.next().is_some() {
             return;
         }
-        let Some((None, owner)) = parameter
+        let Some(owner) = parameter
             .child_by_field_name("type")
-            .and_then(named_type_nodes)
+            .and_then(|ty| named_type(ty, self.text))
         else {
             return;
         };
+        if owner.qualifier.is_some() || owner.pointers > 1 {
+            return;
+        }
         let results = function_results(declaration, self.text);
-        self.insert_member(
-            node_text(owner, self.text),
-            name,
-            SymbolKind::Function(results),
-        );
+        let mut symbol = Symbol::new((self.range)(name), SymbolKind::Function(results), false);
+        symbol.pointer_receiver = owner.pointers == 1;
+        symbol.receiver_parameters = owner
+            .arguments
+            .into_iter()
+            .map(|argument| {
+                argument
+                    .filter(|ty| {
+                        ty.qualifier.is_none() && ty.pointers == 0 && ty.arguments.is_empty()
+                    })
+                    .map(|ty| ty.name)
+            })
+            .collect();
+        self.insert_member(&owner.name, name, symbol);
     }
 
-    fn insert_member(&mut self, owner: &str, name: Node<'_>, kind: SymbolKind) {
+    fn insert_member(&mut self, owner: &str, name: Node<'_>, symbol: Symbol) {
         let key = node_text(name, self.text);
         if key.is_empty() || key == "_" {
             return;
@@ -273,41 +326,90 @@ impl Indexer<'_> {
             .entry(owner.to_owned())
             .or_default()
             .entry(key.to_owned())
-            .or_insert_with(|| Symbol {
-                range: (self.range)(name),
-                kind,
-            });
+            .or_insert(symbol);
     }
 }
 
 pub(crate) fn named_type(node: Node<'_>, text: &str) -> Option<TypeRef> {
-    let (qualifier, name) = named_type_nodes(node)?;
-    let name = node_text(name, text);
-    let qualifier = qualifier.map(|qualifier| node_text(qualifier, text));
+    let syntax = named_type_syntax(node)?;
+    let name = node_text(syntax.name, text);
+    let qualifier = syntax.qualifier.map(|qualifier| node_text(qualifier, text));
     if name.is_empty() || name == "_" || qualifier.is_some_and(|qualifier| qualifier.is_empty()) {
         return None;
     }
+    let arguments = syntax
+        .arguments
+        .map(|list| {
+            list.named_children(&mut list.walk())
+                .filter(|node| node.kind() == "type_elem")
+                .map(|node| only_named_child(node).and_then(|ty| named_type(ty, text)))
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(TypeRef {
         qualifier: qualifier.map(str::to_owned),
         name: name.to_owned(),
+        pointers: syntax.pointers,
+        arguments,
     })
 }
 
-fn named_type_nodes(mut node: Node<'_>) -> Option<(Option<Node<'_>>, Node<'_>)> {
+struct NamedTypeSyntax<'tree> {
+    qualifier: Option<Node<'tree>>,
+    name: Node<'tree>,
+    pointers: u8,
+    arguments: Option<Node<'tree>>,
+}
+
+fn named_type_syntax(mut node: Node<'_>) -> Option<NamedTypeSyntax<'_>> {
+    let mut pointers = 0_u8;
+    let mut arguments = None;
     loop {
         node = match node.kind() {
-            "type_identifier" | "identifier" => return Some((None, node)),
-            "qualified_type" => {
-                return Some((
-                    Some(node.child_by_field_name("package")?),
-                    node.child_by_field_name("name")?,
-                ));
+            "type_identifier" | "identifier" => {
+                return Some(NamedTypeSyntax {
+                    qualifier: None,
+                    name: node,
+                    pointers,
+                    arguments,
+                });
             }
-            "pointer_type" | "parenthesized_type" => only_named_child(node)?,
-            "generic_type" => node.child_by_field_name("type")?,
+            "qualified_type" => {
+                return Some(NamedTypeSyntax {
+                    qualifier: Some(node.child_by_field_name("package")?),
+                    name: node.child_by_field_name("name")?,
+                    pointers,
+                    arguments,
+                });
+            }
+            "pointer_type" => {
+                pointers = pointers.checked_add(1)?;
+                only_named_child(node)?
+            }
+            "parenthesized_type" => only_named_child(node)?,
+            "generic_type" => {
+                arguments = Some(node.child_by_field_name("type_arguments")?);
+                node.child_by_field_name("type")?
+            }
             _ => return None,
         };
     }
+}
+
+fn type_parameters(declaration: Node<'_>, text: &str) -> Vec<String> {
+    let mut parameters = Vec::new();
+    if let Some(list) = declaration.child_by_field_name("type_parameters") {
+        let mut cursor = list.walk();
+        for parameter in list.named_children(&mut cursor) {
+            let mut cursor = parameter.walk();
+            let names = parameter
+                .children_by_field_name("name", &mut cursor)
+                .filter(|node| node.kind() == "identifier");
+            parameters.extend(names.map(|name| node_text(name, text).to_owned()));
+        }
+    }
+    parameters
 }
 
 fn unparenthesized_type(mut node: Node<'_>) -> Option<Node<'_>> {
@@ -327,12 +429,13 @@ fn only_named_child(node: Node<'_>) -> Option<Node<'_>> {
 }
 
 fn composite_value_type(mut value: Node<'_>, text: &str) -> Option<TypeRef> {
+    let mut pointers = 0_u8;
     loop {
         value = match value.kind() {
             "composite_literal" => {
-                return value
-                    .child_by_field_name("type")
-                    .and_then(|ty| named_type(ty, text));
+                let mut ty = named_type(value.child_by_field_name("type")?, text)?;
+                ty.pointers = ty.pointers.checked_add(pointers)?;
+                return Some(ty);
             }
             "parenthesized_expression" => only_named_child(value)?,
             "unary_expression"
@@ -340,6 +443,7 @@ fn composite_value_type(mut value: Node<'_>, text: &str) -> Option<TypeRef> {
                     .child_by_field_name("operator")
                     .is_some_and(|op| op.kind() == "&") =>
             {
+                pointers = pointers.checked_add(1)?;
                 value.child_by_field_name("operand")?
             }
             _ => return None,
