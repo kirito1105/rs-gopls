@@ -27,10 +27,10 @@ foreach ($path in @($server, $wasm, $manifest)) {
 }
 
 $testRoot = Join-Path $target 'zed-rs-gopls'
-$profile = Join-Path $testRoot 'profile'
-$profileConfig = Join-Path $profile 'config'
-$installedExtension = Join-Path $profile 'extensions\installed\rs-gopls-lsp'
-$extensionWork = Join-Path $profile 'extensions\work\rs-gopls-lsp'
+$zedProfile = Join-Path $testRoot 'profile'
+$profileConfig = Join-Path $zedProfile 'config'
+$installedExtension = Join-Path $zedProfile 'extensions\installed\rs-gopls-lsp'
+$extensionWork = Join-Path $zedProfile 'extensions\work\rs-gopls-lsp'
 $demo = Join-Path $testRoot 'demo'
 $demoSettings = Join-Path $demo '.zed'
 $greeting = Join-Path $demo 'greeting'
@@ -51,17 +51,41 @@ if ($manifestChanged -or $wasmChanged) {
     # Zed compares its index timestamp with the installed directory's timestamp.
     [IO.Directory]::SetLastWriteTimeUtc((Split-Path -Parent $installedExtension), [DateTime]::UtcNow)
 }
-[void](Copy-BuiltFile $server (Join-Path $extensionWork 'rs-gopls.exe'))
+# Use a versioned path because Windows locks the binary while Zed runs it.
+$serverVersion = (Get-FileHash -LiteralPath $server).Hash.Substring(0, 16).ToLowerInvariant()
+$stagedServer = Join-Path $extensionWork "rs-gopls-$serverVersion.exe"
+[void](Copy-BuiltFile $server $stagedServer)
+
+function Get-SettingsObject($parent, $name) {
+    if ($null -eq $parent.$name) {
+        $parent | Add-Member -NotePropertyName $name -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+    return $parent.$name
+}
 
 $profileSettings = Join-Path $profileConfig 'settings.json'
-if (-not (Test-Path -LiteralPath $profileSettings)) {
-    $profileSettingsJson = @{
+if (Test-Path -LiteralPath $profileSettings) {
+    $configuration = Get-Content -LiteralPath $profileSettings -Raw | ConvertFrom-Json
+} else {
+    $configuration = [pscustomobject]@{
         languages = @{
             Go = @{ language_servers = @('rs-gopls', '!gopls') }
             'Go Mod' = @{ enable_language_server = $false }
             'Go Work' = @{ enable_language_server = $false }
         }
-    } | ConvertTo-Json -Depth 6
+    }
+}
+$servers = Get-SettingsObject $configuration 'lsp'
+$serverOptions = Get-SettingsObject $servers 'rs-gopls'
+$binaryOptions = Get-SettingsObject $serverOptions 'binary'
+$configuredPath = [string]$binaryOptions.path
+$managedPath = $configuredPath -eq '' -or (
+    [IO.Path]::GetDirectoryName($configuredPath) -eq $extensionWork -and
+    [IO.Path]::GetFileName($configuredPath) -match '^rs-gopls(?:-[0-9a-f]{16})?\.exe$'
+)
+if ($managedPath -and $configuredPath -ne $stagedServer) {
+    $binaryOptions | Add-Member -NotePropertyName 'path' -NotePropertyValue $stagedServer -Force
+    $profileSettingsJson = $configuration | ConvertTo-Json -Depth 32
     [IO.File]::WriteAllText($profileSettings, $profileSettingsJson + [Environment]::NewLine)
 }
 
@@ -110,7 +134,7 @@ func Hello() {}
 '@ + [Environment]::NewLine)
 }
 
-Write-Host "Zed profile: $profile"
+Write-Host "Zed profile: $zedProfile"
 Write-Host "Go demo: $demo"
 if ($PrepareOnly) {
     return
@@ -118,8 +142,7 @@ if ($PrepareOnly) {
 
 $zed = Get-Command zed.exe -CommandType Application | Select-Object -First 1
 Write-Host 'Open main.go from the demo project, then run Go to Definition on Hello.'
-& $zed.Source --user-data-dir $profile -n $demo
+& $zed.Source --user-data-dir $zedProfile -n $demo
 if ($LASTEXITCODE -ne 0) {
     throw "Zed exited with code $LASTEXITCODE."
 }
-

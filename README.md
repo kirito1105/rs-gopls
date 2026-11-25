@@ -59,7 +59,7 @@ cargo build -p rs-gopls-zed --release --locked --target wasm32-wasip2
 .\tools\test_zed.ps1
 ```
 
-Use `-PrepareOnly` to stage the extension, native server and example without opening a window. To use your own Go project, open its folder in the same test profile. In a different Zed profile with the extension installed, explicitly opt in to `rs-gopls` in that profile's user settings:
+Use `-PrepareOnly` to stage a new server build in the isolated profile without opening a window. The launcher stages each build under a versioned filename so Zed can switch while an older binary is running. To use your own Go project, open its folder in the same test profile. In a different Zed profile with the extension installed, explicitly opt in to `rs-gopls` in that profile's user settings:
 
 ```json
 {
