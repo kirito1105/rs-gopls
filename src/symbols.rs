@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use std::ops;
 use std::sync::Arc;
 
 use lsp_types::Range;
 use tree_sitter::{Node, Tree};
+
+use crate::scope::{initializer_at, lexical_binding};
 
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
@@ -15,6 +18,7 @@ pub(crate) enum TypeRefKind {
     Named(NamedType),
     Container(Box<Container<TypeRef>>),
     Inline(Arc<InlineType>),
+    Function(FunctionResults),
 }
 
 #[derive(Clone, Debug)]
@@ -64,9 +68,15 @@ impl Symbol {
 #[derive(Clone, Debug)]
 pub(crate) enum SymbolKind {
     Value(Option<TypeRef>),
+    InferredValue {
+        initializer: ops::Range<usize>,
+        result_index: usize,
+    },
     Type,
-    Function(Vec<Option<TypeRef>>),
+    Function(FunctionResults),
 }
+
+pub(crate) type FunctionResults = Arc<[Option<TypeRef>]>;
 
 #[derive(Clone, Default)]
 pub(crate) struct TypeDetails {
@@ -142,37 +152,29 @@ impl Indexer<'_> {
 
     fn value_declaration(&mut self, declaration: Node<'_>) {
         let mut cursor = declaration.walk();
-        let names: Vec<_> = declaration
+        let names = declaration
             .children_by_field_name("name", &mut cursor)
-            .filter(|node| node.kind() == "identifier")
-            .collect();
+            .filter(|node| node.kind() == "identifier");
         let ty = declaration.child_by_field_name("type");
         let explicit_type = ty.and_then(|node| type_ref(node, self.text, self.range));
-        let values: Vec<_> = if ty.is_none() {
-            declaration
-                .child_by_field_name("value")
-                .map(|value| {
-                    value
-                        .named_children(&mut value.walk())
-                        .filter(|node| !node.is_extra())
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let paired_values = names.len() == values.len();
-        for (index, name) in names.into_iter().enumerate() {
-            let ty = if paired_values {
-                composite_value_type(values[index], self.text, self.range)
+        let values = declaration.child_by_field_name("value");
+        let variable = declaration.kind() == "var_spec";
+        for (index, name) in names.enumerate() {
+            let kind = if variable
+                && ty.is_none()
+                && let (Some(initializer), result_index) = initializer_at(values, index)
+            {
+                match composite_value_type(initializer, self.text, self.range) {
+                    Some(ty) if result_index == 0 => SymbolKind::Value(Some(ty)),
+                    _ => SymbolKind::InferredValue {
+                        initializer: initializer.byte_range(),
+                        result_index,
+                    },
+                }
             } else {
-                explicit_type.clone()
+                SymbolKind::Value(explicit_type.clone())
             };
-            self.insert_declaration(
-                name,
-                SymbolKind::Value(ty),
-                declaration.kind() == "var_spec",
-            );
+            self.insert_declaration(name, kind, variable);
         }
     }
 
@@ -321,6 +323,9 @@ pub(crate) fn type_ref(
         })),
         "struct_type" | "interface_type" => {
             TypeRefKind::Inline(Arc::new(inline_type(node, text, range)))
+        }
+        "function_type" | "func_literal" => {
+            TypeRefKind::Function(function_results(node, text, range))
         }
         _ => TypeRefKind::Named(named_type(node, text, range)?),
     };
@@ -525,12 +530,27 @@ fn function_results(
     function: Node<'_>,
     text: &str,
     range: &dyn Fn(Node<'_>) -> Range,
-) -> Vec<Option<TypeRef>> {
+) -> FunctionResults {
     let Some(result) = function.child_by_field_name("result") else {
-        return Vec::new();
+        return Arc::from([]);
+    };
+    let mut enclosing = function.parent();
+    let mut local = false;
+    while let Some(owner) = enclosing {
+        if owner.kind() == "block" {
+            local = true;
+            break;
+        }
+        enclosing = owner.parent();
+    }
+    let parse = |node| {
+        if local && has_shadowed_result_type(node, text) {
+            return None;
+        }
+        type_ref(node, text, range)
     };
     if result.kind() != "parameter_list" {
-        return vec![type_ref(result, text, range)];
+        return Arc::from([parse(result)]);
     }
     let mut results = Vec::new();
     let mut cursor = result.walk();
@@ -538,9 +558,7 @@ fn function_results(
         .named_children(&mut cursor)
         .filter(|node| node.kind() == "parameter_declaration")
     {
-        let ty = parameter
-            .child_by_field_name("type")
-            .and_then(|node| type_ref(node, text, range));
+        let ty = parameter.child_by_field_name("type").and_then(parse);
         let mut name_cursor = parameter.walk();
         let count = parameter
             .children_by_field_name("name", &mut name_cursor)
@@ -549,7 +567,25 @@ fn function_results(
             .max(1);
         results.extend(std::iter::repeat_n(ty, count));
     }
-    results
+    results.into()
+}
+
+// Package-indexed result types cannot stand in for similarly named local declarations.
+fn has_shadowed_result_type(ty: Node<'_>, text: &str) -> bool {
+    match ty.kind() {
+        "qualified_type" => false,
+        "type_identifier" => {
+            lexical_binding(ty, node_text(ty, text), text).is_some_and(|binding| {
+                binding
+                    .name
+                    .parent()
+                    .is_some_and(|owner| owner.kind() != "type_parameter_declaration")
+            })
+        }
+        _ => ty
+            .named_children(&mut ty.walk())
+            .any(|child| has_shadowed_result_type(child, text)),
+    }
 }
 
 fn node_text<'text>(node: Node<'_>, text: &'text str) -> &'text str {

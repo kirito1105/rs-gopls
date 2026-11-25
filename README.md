@@ -23,7 +23,7 @@ Launch the resulting executable as a stdio language server with a Go module, a g
 
 ## Definition coverage
 
-Definition lookup covers imports, lexical and package names, and common field and method selections. The resolver follows named types, explicit generic arguments, aliases, promoted members, and function and method results. It uses the Go toolchain for active source files and package identities.
+Definition lookup covers imports, lexical and package names, and common field and method selections. The resolver follows named and anonymous types, explicit arguments on generic types, aliases, promoted members, container elements, and callable results. It covers range and select bindings, local callbacks, method values and expressions, and package variables initialized by calls. It uses the Go toolchain for active source files and package identities.
 
 The server supports Go Modules, go.work, GOPATH, and test package variants. On clients that support dynamic file-watch registration, it refreshes indexes after changes to Go files and module/workspace files. Open editor buffers take precedence over disk content. Go package metadata follows the on-disk workspace.
 

@@ -11,7 +11,8 @@ use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::scope::lexical_binding;
 use crate::symbols::{
-    self, Container, FileSymbols, InlineType, Symbol, SymbolKind, TypeDetails, TypeRef, TypeRefKind,
+    self, Container, FileSymbols, FunctionResults, InlineType, Symbol, SymbolKind, TypeDetails,
+    TypeRef, TypeRefKind,
 };
 use crate::workspace::{Package, Workspace, path_key};
 
@@ -62,7 +63,7 @@ impl Engine {
     pub fn open(&mut self, path: PathBuf, text: String) -> Result<()> {
         if path.extension().is_some_and(|extension| extension == "go") {
             let key = path_key(&path);
-            let source = Source::parse(&mut self.parser, text, None)?;
+            let source = Source::parse(&mut self.parser, path, text, None)?;
             self.disk_index.remove(&key);
             self.documents.insert(key, source);
         }
@@ -166,29 +167,17 @@ impl Engine {
 
         match reference {
             ReferenceQuery::Name(name) => {
-                let mut resolver = Resolver {
-                    workspace,
-                    indexes,
-                    source_path: path,
-                };
+                let mut resolver = Resolver { workspace, indexes };
                 resolver.name_location(from, source, name, &self.root)
             }
             ReferenceQuery::Member { receiver, name } => {
-                let mut resolver = Resolver {
-                    workspace,
-                    indexes,
-                    source_path: path,
-                };
+                let mut resolver = Resolver { workspace, indexes };
                 let member =
                     resolver.selector(from, source, receiver, node_text(name, &source.text), 0)?;
                 Ok(member.map(ResolvedSymbol::location))
             }
             ReferenceQuery::LiteralKey { value, name } => {
-                let mut resolver = Resolver {
-                    workspace,
-                    indexes,
-                    source_path: path,
-                };
+                let mut resolver = Resolver { workspace, indexes };
                 let Some(ty) = resolver.literal_type(from, source, value, 0)? else {
                     return Ok(None);
                 };
@@ -283,6 +272,11 @@ enum TypeKind<'w> {
         arguments: Vec<Option<TypeIdentity<'w>>>,
     },
     Container(Box<Container<TypeIdentity<'w>>>),
+    Function {
+        file: PathBuf,
+        results: FunctionResults,
+        substitutions: Substitutions<'w>,
+    },
     Inline {
         file: PathBuf,
         shape: Arc<InlineType>,
@@ -327,7 +321,7 @@ impl<'w> TypeIdentity<'w> {
             TypeKind::Inline { file, shape, .. } => {
                 Some(TypeKey::Inline(file.clone(), shape.origin.start))
             }
-            TypeKind::Container(_) => None,
+            TypeKind::Container(_) | TypeKind::Function { .. } => None,
         }
     }
 
@@ -356,7 +350,6 @@ type Substitutions<'w> = Vec<(String, Option<TypeIdentity<'w>>)>;
 struct Resolver<'w, 'idx> {
     workspace: &'w Workspace,
     indexes: IndexReader<'idx>,
-    source_path: &'idx Path,
 }
 
 impl<'w> Resolver<'w, '_> {
@@ -369,13 +362,10 @@ impl<'w> Resolver<'w, '_> {
     ) -> Result<Option<(PathBuf, Range)>> {
         let identifier = node_text(name, &source.text);
         if let Some(binding) = lexical_binding(name, identifier, &source.text) {
-            return Ok(Some((
-                self.source_path.to_owned(),
-                source.range(binding.name),
-            )));
+            return Ok(Some((source.path.clone(), source.range(binding.name))));
         }
         if let Some((import, _)) = source.imported_package(self.workspace, from, identifier) {
-            return Ok(Some((self.source_path.to_owned(), import.binding)));
+            return Ok(Some((source.path.clone(), import.binding)));
         }
         if let Some(location) = self.indexes.find(from, |index| {
             index
@@ -598,7 +588,7 @@ impl<'w> Resolver<'w, '_> {
                     receiver: None,
                 }))
             }
-            TypeKind::Container(_) => Ok(None),
+            TypeKind::Container(_) | TypeKind::Function { .. } => Ok(None),
         }
     }
 
@@ -625,7 +615,7 @@ impl<'w> Resolver<'w, '_> {
                 },
                 substitutions.clone(),
             ))),
-            TypeKind::Container(_) => Ok(None),
+            TypeKind::Container(_) | TypeKind::Function { .. } => Ok(None),
         }
     }
 
@@ -645,14 +635,25 @@ impl<'w> Resolver<'w, '_> {
 
     fn container(
         &mut self,
-        mut ty: TypeIdentity<'w>,
+        ty: TypeIdentity<'w>,
     ) -> Result<Option<(Container<TypeIdentity<'w>>, u8)>> {
         if ty.type_expression {
             return Ok(None);
         }
+        Ok(match self.underlying_type(ty)? {
+            Some(TypeIdentity {
+                kind: TypeKind::Container(container),
+                pointers,
+                ..
+            }) => Some((*container, pointers)),
+            _ => None,
+        })
+    }
+
+    fn underlying_type(&mut self, mut ty: TypeIdentity<'w>) -> Result<Option<TypeIdentity<'w>>> {
         for _ in 0..MAX_TYPE_DEPTH {
-            if let TypeKind::Container(container) = ty.kind {
-                return Ok(Some((*container, ty.pointers)));
+            if !matches!(ty.kind, TypeKind::Named { .. }) {
+                return Ok(Some(ty));
             }
             let Some((file, details, substitutions)) = self.type_context(&ty)? else {
                 return Ok(None);
@@ -759,15 +760,17 @@ impl<'w> Resolver<'w, '_> {
                         None
                     };
                     return Ok(result.map(|mut ty| {
-                        ty.addressable = addressable;
+                        ty.type_expression = binding.name.parent().is_some_and(is_type_declaration);
+                        ty.addressable = addressable && !ty.type_expression;
                         ty
                     }));
                 }
                 let Some(symbol) = self.find_symbol(from, name, None)? else {
                     return Ok(None);
                 };
-                self.symbol_type(&symbol, name)
+                self.symbol_type(source, &symbol, name, depth + 1)
             }
+            "func_literal" => Ok(self.source_type(from, source, expression)),
             "composite_literal" | "type_conversion_expression" | "type_assertion_expression" => {
                 Ok(expression
                     .child_by_field_name("type")
@@ -861,7 +864,7 @@ impl<'w> Resolver<'w, '_> {
                 let Some(symbol) = self.selector(from, source, receiver, name, depth + 1)? else {
                     return Ok(None);
                 };
-                self.symbol_type(&symbol, name)
+                self.symbol_type(source, &symbol, name, depth + 1)
             }
             _ => Ok(None),
         }
@@ -878,55 +881,55 @@ impl<'w> Resolver<'w, '_> {
         let Some(function) = call.child_by_field_name("function") else {
             return Ok(None);
         };
-        let (name, target) = match function.kind() {
-            "identifier" => {
-                let name = node_text(function, &source.text);
-                if lexical_binding(function, name, &source.text).is_some() {
-                    return Ok(None);
-                }
-                let target = self.find_symbol(from, name, None)?;
-                if target.is_none() && name == "new" && result_index == 0 {
-                    let argument = call
-                        .child_by_field_name("arguments")
-                        .and_then(|args| args.named_child(0));
-                    let Some(mut ty) =
-                        argument.and_then(|node| self.source_type(from, source, node))
-                    else {
-                        return Ok(None);
-                    };
-                    ty.pointers = ty.pointers.saturating_add(1);
-                    return Ok(Some(ty));
-                }
-                (name, target)
-            }
-            "selector_expression" => {
-                let Some(receiver) = function.child_by_field_name("operand") else {
-                    return Ok(None);
-                };
-                let Some(name) = function.child_by_field_name("field") else {
-                    return Ok(None);
-                };
-                let name = node_text(name, &source.text);
-                (
-                    name,
-                    self.selector(from, source, receiver, name, depth + 1)?,
-                )
-            }
-            _ => return Ok(None),
-        };
-        let Some(target) = target else {
+        if result_index == 0
+            && function.kind() == "identifier"
+            && node_text(function, &source.text) == "new"
+            && lexical_binding(function, "new", &source.text).is_none()
+            && self.find_symbol(from, "new", None)?.is_none()
+        {
+            let argument = call
+                .child_by_field_name("arguments")
+                .and_then(|args| args.named_child(0));
+            return Ok(argument.and_then(|node| {
+                let mut ty = self.source_type(from, source, node)?;
+                ty.pointers = ty.pointers.checked_add(1)?;
+                Some(ty)
+            }));
+        }
+        let Some(mut ty) = self.infer_type(from, source, function, depth, 0)? else {
             return Ok(None);
         };
-        match &target.symbol.kind {
-            SymbolKind::Function(results) => match results.get(result_index) {
-                Some(Some(reference)) => self.type_from_symbol(&target, reference.clone(), false),
-                _ => Ok(None),
-            },
-            SymbolKind::Type if result_index == 0 => {
-                Ok(Some(TypeIdentity::named(target.package, name)))
-            }
-            _ => Ok(None),
+        if ty.type_expression {
+            ty.type_expression = false;
+            ty.addressable = false;
+            return Ok((result_index == 0).then_some(ty));
         }
+        let Some(TypeIdentity {
+            package,
+            pointers: 0,
+            kind:
+                TypeKind::Function {
+                    file,
+                    results,
+                    substitutions,
+                },
+            ..
+        }) = self.underlying_type(ty)?
+        else {
+            return Ok(None);
+        };
+        let Some(Some(reference)) = results.get(result_index) else {
+            return Ok(None);
+        };
+        let imports = &self.indexes.file_index(&file)?.imports;
+        Ok(materialize_type(
+            self.workspace,
+            package,
+            &file,
+            imports,
+            reference.clone(),
+            &substitutions,
+        ))
     }
 
     fn source_type(
@@ -935,17 +938,26 @@ impl<'w> Resolver<'w, '_> {
         source: &Source,
         ty: Node<'_>,
     ) -> Option<TypeIdentity<'w>> {
-        let reference = symbols::type_ref(ty, &source.text, &|node| source.range(node))?;
+        let parse = |node| symbols::type_ref(node, &source.text, &|node| source.range(node));
+        let mut reference = parse(ty)?;
         if let TypeRefKind::Named(named) = &reference.kind
             && named.qualifier.is_none()
-            && lexical_binding(ty, &named.name, &source.text).is_some()
+            && let Some(binding) = lexical_binding(ty, &named.name, &source.text)
         {
-            return None;
+            if !binding.name.parent().is_some_and(is_type_declaration) {
+                return None;
+            }
+            let mut underlying = parse(binding.explicit_type?)?;
+            if !matches!(underlying.kind, TypeRefKind::Function(_)) {
+                return None;
+            }
+            underlying.pointers = underlying.pointers.checked_add(reference.pointers)?;
+            reference = underlying;
         }
         materialize_type(
             self.workspace,
             from,
-            self.source_path,
+            &source.path,
             &source.imports,
             reference,
             &[],
@@ -954,8 +966,10 @@ impl<'w> Resolver<'w, '_> {
 
     fn symbol_type(
         &mut self,
+        source: &Source,
         resolved: &ResolvedSymbol<'w>,
         name: &str,
+        depth: usize,
     ) -> Result<Option<TypeIdentity<'w>>> {
         match &resolved.symbol.kind {
             SymbolKind::Value(Some(reference)) => {
@@ -966,6 +980,44 @@ impl<'w> Resolver<'w, '_> {
                         .is_none_or(|ty| ty.addressable || ty.pointers > 0);
                 self.type_from_symbol(resolved, reference.clone(), addressable)
             }
+            SymbolKind::InferredValue {
+                initializer,
+                result_index,
+            } => {
+                let documents = self.indexes.documents;
+                let disk_source;
+                let source = if source.path == resolved.file {
+                    source
+                } else if let Some(document) = documents.get(&path_key(&resolved.file)) {
+                    document
+                } else {
+                    disk_source = read_source(self.indexes.parser, &resolved.file)?;
+                    &disk_source
+                };
+                let Some(expression) = source
+                    .tree
+                    .root_node()
+                    .named_descendant_for_byte_range(initializer.start, initializer.end)
+                    .filter(|node| node.byte_range() == *initializer)
+                else {
+                    return Ok(None);
+                };
+                let mut ty =
+                    self.infer_type(resolved.package, source, expression, depth, *result_index)?;
+                if let Some(ty) = &mut ty {
+                    ty.addressable = true;
+                    ty.type_expression = false;
+                }
+                Ok(ty)
+            }
+            SymbolKind::Function(results) => self.type_from_symbol(
+                resolved,
+                TypeRef {
+                    pointers: 0,
+                    kind: TypeRefKind::Function(results.clone()),
+                },
+                false,
+            ),
             SymbolKind::Type => {
                 let mut ty = TypeIdentity::named(resolved.package, name);
                 ty.type_expression = true;
@@ -1086,6 +1138,14 @@ fn materialize_type<'w>(
             };
             (from, TypeKind::Container(Box::new(container)))
         }
+        TypeRefKind::Function(results) => (
+            from,
+            TypeKind::Function {
+                file: file.to_owned(),
+                results,
+                substitutions: substitutions.to_vec(),
+            },
+        ),
         TypeRefKind::Inline(shape) => (
             from,
             TypeKind::Inline {
@@ -1100,7 +1160,7 @@ fn materialize_type<'w>(
 
 fn read_source(parser: &mut Parser, path: &Path) -> Result<Source> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    Source::parse(parser, text, None)
+    Source::parse(parser, path.to_owned(), text, None)
 }
 
 #[derive(Clone)]
@@ -1111,6 +1171,7 @@ struct Import {
 }
 
 struct Source {
+    path: PathBuf,
     text: String,
     lines: LineIndex,
     tree: Tree,
@@ -1119,13 +1180,19 @@ struct Source {
 }
 
 impl Source {
-    fn parse(parser: &mut Parser, text: String, previous: Option<&Tree>) -> Result<Self> {
+    fn parse(
+        parser: &mut Parser,
+        path: PathBuf,
+        text: String,
+        previous: Option<&Tree>,
+    ) -> Result<Self> {
         let lines = LineIndex::new(&text);
-        Self::parse_with_lines(parser, text, lines, previous)
+        Self::parse_with_lines(parser, path, text, lines, previous)
     }
 
     fn parse_with_lines(
         parser: &mut Parser,
+        path: PathBuf,
         text: String,
         lines: LineIndex,
         previous: Option<&Tree>,
@@ -1133,6 +1200,7 @@ impl Source {
         let tree = parser.parse(&text, previous).context("parsing Go source")?;
         let imports = imports(tree.root_node(), &text, &lines);
         Ok(Self {
+            path,
             text,
             lines,
             tree,
@@ -1187,7 +1255,7 @@ impl Source {
             text.replace_range(start..end, &change.text);
         }
 
-        *self = Self::parse_with_lines(parser, text, lines, Some(&tree))?;
+        *self = Self::parse_with_lines(parser, self.path.clone(), text, lines, Some(&tree))?;
         Ok(())
     }
 
@@ -1358,6 +1426,10 @@ fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
     result
 }
 
+fn is_type_declaration(node: Node<'_>) -> bool {
+    matches!(node.kind(), "type_spec" | "type_alias")
+}
+
 fn is_declaration_name(node: Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return false;
@@ -1519,6 +1591,7 @@ mod tests {
         let mut engine = Engine::new(PathBuf::new());
         let source = Source::parse(
             &mut engine.parser,
+            PathBuf::new(),
             "package test\nvar (First, Second = 1, 2)\nconst (Third, fourth = 3, 4)\ntype (Fifth int)\nfunc Sixth() {}\n".into(),
             None,
         )
@@ -1541,7 +1614,7 @@ mod tests {
             "func c() { alias := T{}; alias.Foo() }\n",
             "func d() { if alias := T{}; true { alias.Foo() }; alias.Foo() }\n",
         );
-        let source = Source::parse(&mut engine.parser, text.into(), None).unwrap();
+        let source = Source::parse(&mut engine.parser, PathBuf::new(), text.into(), None).unwrap();
         let queries: Vec<_> = text
             .match_indices("Foo")
             .map(|(offset, _)| {

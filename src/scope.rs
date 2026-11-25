@@ -210,7 +210,7 @@ fn declaration<'tree>(node: Node<'tree>, name: &str, text: &str) -> Option<Bindi
     }
 }
 
-fn initializer_at(list: Option<Node<'_>>, index: usize) -> (Option<Node<'_>>, usize) {
+pub(crate) fn initializer_at(list: Option<Node<'_>>, index: usize) -> (Option<Node<'_>>, usize) {
     let Some(list) = list else {
         return (None, 0);
     };

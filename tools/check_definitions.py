@@ -100,6 +100,71 @@ func checkShadow() {
     _ = [[literal-shadow-use:true]]
 }
 """,
+    "callables.go": """package main
+
+type FirstResult struct { [[first-result-field:First]] string }
+type SecondResult struct { [[second-result-field:Second]] string }
+type Callback func() FirstResult
+type AliasCallback = Callback
+type CallbackReceiver struct{}
+
+func (CallbackReceiver) Build() FirstResult { return FirstResult{} }
+func (*CallbackReceiver) BuildPointer() FirstResult { return FirstResult{} }
+func makeFactory() func() FirstResult { return func() FirstResult { return FirstResult{} } }
+
+func callables(r CallbackReceiver, callback Callback, alias AliasCallback) {
+    [[callback-binding:local]] := func() (FirstResult, SecondResult) { return FirstResult{}, SecondResult{} }
+    first, second := [[callback-binding-use:local]]()
+    _ = first.[[local-callback-first:First]]
+    _ = second.[[local-callback-second:Second]]
+    _ = callback().[[typed-callback:First]]
+    _ = alias().[[alias-callback:First]]
+    type LocalCallback func() FirstResult
+    var typedLocal LocalCallback
+    _ = typedLocal().[[local-type-callback:First]]
+    var anonymous struct{ Run func() FirstResult }
+    _ = anonymous.Run().[[callback-field:First]]
+
+    bound := r.Build
+    _ = bound().[[method-value-result:First]]
+    call := CallbackReceiver.Build
+    _ = call(r).[[method-expression-result:First]]
+    boundPointer := r.BuildPointer
+    _ = boundPointer().[[pointer-method-value-result:First]]
+    callPointer := (*CallbackReceiver).BuildPointer
+    _ = callPointer(&r).[[pointer-method-expression-result:First]]
+
+    _ = makeFactory()().[[higher-order-result:First]]
+    _ = (func() FirstResult { return FirstResult{} })().[[literal-call-result:First]]
+    _ = firstFromFactory.[[cross-file-var-first:Text]]
+    _ = secondFromFactory.[[cross-file-var-second:Message]]
+    _ = packageClosure().[[cross-file-closure:Text]]
+    _ = packageFactory()().[[cross-file-higher-order:Text]]
+    _ = packageInlineCallback().[[cross-file-inline-callback:Count]]
+
+    {
+        type FirstResult struct { Other int }
+        specific := func() FirstResult { return FirstResult{} }
+        _ = specific().[[shadowed-result-type:First]]
+    }
+
+    { local := 7; _ = local().[[non-function-shadow:First]] }
+    _ = (&callback)().[[pointer-callback-no-call:First]]
+    _ = cycleA().[[initializer-cycle:First]]
+}
+""",
+    "callable_vars.go": """package main
+
+import provider "example.test/definition/service"
+
+var firstFromFactory, secondFromFactory = provider.NewRecords()
+var packageClosure = func() provider.Record { return provider.Record{} }
+var packageFactory = func() func() provider.Record { return packageClosure }
+var packageInlineCallback = func() struct { [[inline-callback-field:Count]] int } { panic("unused") }
+
+var cycleA = cycleB
+var cycleB = cycleA
+""",
     "containers.go": """package main
 import helper "example.test/definition/service"
 
@@ -201,6 +266,8 @@ func [[create:Create]]() *Service { return &Service{} }
 func Pair() (*Service, error) { return Create(), nil }
 
 type Record struct{ [[cross-file-inline-final:Text]] string }
+type Message struct{ [[cross-file-second-result:Message]] string }
+func NewRecords() (Record, Message) { return Record{}, Message{} }
 func Inline() struct{ [[cross-file-inline-field:Entry]] Record } { panic("placeholder") }
 """,
     "dotuse/dotuse.go": """package dotuse
@@ -282,6 +349,28 @@ FIXTURE_CASES = (
     (4, "literal-map-key-use", "literal-map-key-const"),
     (4, "elided-map-field", "container-field"),
     (4, "elided-map-key-field", "container-field"),
+    (5, "callback-binding-use", "callback-binding"),
+    (5, "local-callback-first", "first-result-field"),
+    (5, "local-callback-second", "second-result-field"),
+    (5, "typed-callback", "first-result-field"),
+    (5, "alias-callback", "first-result-field"),
+    (5, "local-type-callback", "first-result-field"),
+    (5, "callback-field", "first-result-field"),
+    (5, "method-value-result", "first-result-field"),
+    (5, "method-expression-result", "first-result-field"),
+    (5, "pointer-method-value-result", "first-result-field"),
+    (5, "pointer-method-expression-result", "first-result-field"),
+    (5, "higher-order-result", "first-result-field"),
+    (5, "literal-call-result", "first-result-field"),
+    (5, "cross-file-var-first", "cross-file-inline-final"),
+    (5, "cross-file-var-second", "cross-file-second-result"),
+    (5, "cross-file-closure", "cross-file-inline-final"),
+    (5, "cross-file-higher-order", "cross-file-inline-final"),
+    (5, "cross-file-inline-callback", "inline-callback-field"),
+    (5, "shadowed-result-type", None),
+    (5, "non-function-shadow", None),
+    (5, "pointer-callback-no-call", None),
+    (5, "initializer-cycle", None),
 )
 BUILTIN_CASES = (
     ("builtin-int", "type [[int]] int"),
@@ -343,7 +432,7 @@ def check_location(client, source, target):
     raise RuntimeError(f"expected {target.path} at {target.selection()}, received {response!r}")
 
 
-def exercise(command, root, cases, timeout, overlay=None):
+def exercise(command, root, cases, timeout, overlays=()):
     client = LspClient([command], root, timeout)
     failures = []
     try:
@@ -360,8 +449,7 @@ def exercise(command, root, cases, timeout, overlay=None):
         for label, source, target in cases:
             check(label, source, target)
 
-        if overlay:
-            source, target = overlay
+        for source, target in overlays:
             prefix = "// unsaved buffer line\n"
             if all(origin.path != target.path for _, origin, _ in cases):
                 client.open_document(target.path, target.text)
@@ -375,7 +463,7 @@ def exercise(command, root, cases, timeout, overlay=None):
     finally:
         client.close()
 
-    count = len(cases) + (2 if overlay else 0)
+    count = len(cases) + 2 * len(overlays)
     for failure in failures:
         print(f"FAIL {failure}", file=sys.stderr)
     print(f"{root}: {count - len(failures)}/{count} definitions matched")
@@ -447,7 +535,7 @@ def workspace_cases(root, stage):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
-    parser.add_argument("--stage", type=int, choices=(1, 2, 3, 4), default=1)
+    parser.add_argument("--stage", type=int, choices=(1, 2, 3, 4, 5), default=1)
     parser.add_argument("--workspace", type=Path, help="localchat/server root for additional real-world checks")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()
@@ -465,10 +553,10 @@ def main():
             ]
             if args.stage >= 3:
                 cases.extend(builtin_cases(root, sites))
-            success = exercise(
-                args.candidate, root, cases, args.timeout,
-                overlay=(sites["private-use"], sites["private-function"]),
-            )
+            overlays = [(sites["private-use"], sites["private-function"])]
+            if args.stage >= 5:
+                overlays.append((sites["cross-file-closure"], sites["cross-file-inline-final"]))
+            success = exercise(args.candidate, root, cases, args.timeout, overlays)
         if args.workspace:
             workspace = args.workspace.resolve()
             success = exercise(
