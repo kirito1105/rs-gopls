@@ -199,6 +199,49 @@ fn type_case_binding<'tree>(
     Some(binding(name, explicit_type, initializer, 0))
 }
 
+pub(crate) fn reference_binding<'tree>(node: Node<'tree>, text: &str) -> Option<Node<'tree>> {
+    let spelling = text.get(node.byte_range())?;
+    if spelling == "_" {
+        return None;
+    }
+    let previous = lexical_binding(node, spelling, text).map(|binding| binding.name);
+    if declaration_binding(node, text).is_none() {
+        return previous;
+    }
+    let parent = node.parent()?;
+    if parent.kind() == "expression_list"
+        && let Some(statement) = parent
+            .parent()
+            .filter(|node| node.kind() == "short_var_declaration")
+        && let Some(block) = statement
+            .parent()
+            .filter(|node| node.kind() == "statement_list")
+        && let Some(previous) = previous
+        && same_short_declaration_scope(previous, block)
+    {
+        return Some(previous);
+    }
+    Some(node)
+}
+
+fn same_short_declaration_scope(previous: Node<'_>, block: Node<'_>) -> bool {
+    let Some(body) = block.parent() else {
+        return false;
+    };
+    let mut cursor = previous.parent();
+    while let Some(node) = cursor {
+        match node.kind() {
+            "statement_list" => return node == block,
+            "function_declaration" | "method_declaration" | "func_literal" => {
+                return node.child_by_field_name("body") == Some(body);
+            }
+            "source_file" => return false,
+            _ => cursor = node.parent(),
+        }
+    }
+    false
+}
+
 pub(crate) fn declaration_binding<'tree>(name: Node<'tree>, text: &str) -> Option<Binding<'tree>> {
     let parent = name.parent()?;
     let owner = if parent.kind() == "expression_list" {

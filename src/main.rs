@@ -17,18 +17,18 @@ use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams, InitializeParams,
     InitializeResult, Location, NumberOrString, OneOf, Position, PositionEncodingKind, Range,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, Uri,
+    ReferenceParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
-    request::{GotoDefinition, GotoTypeDefinition, Initialize, Request as _, Shutdown},
+    request::{GotoDefinition, GotoTypeDefinition, Initialize, References, Request as _, Shutdown},
 };
 use serde_json::Value;
 use url::Url;
 
-use semantic::{DefinitionKind, DefinitionProgress, Engine};
+use semantic::{DefinitionKind, Engine, QueryProgress};
 use workspace::{Workspace, WorkspaceLoad, path_key};
 
 enum State {
@@ -37,9 +37,14 @@ enum State {
     Shutdown,
 }
 
-struct DefinitionRequest {
+enum NavigationKind {
+    Definition(DefinitionKind),
+    References { include_declaration: bool },
+}
+
+struct NavigationRequest {
     id: RequestId,
-    kind: DefinitionKind,
+    kind: NavigationKind,
     path: PathBuf,
     position: Position,
 }
@@ -52,7 +57,7 @@ struct WorkspaceResult {
 struct Running {
     engine: Engine,
     watch_files: bool,
-    pending: Vec<DefinitionRequest>,
+    pending: Vec<NavigationRequest>,
     loading: Option<WorkspaceLoad>,
     requested: Option<WorkspaceLoad>,
 }
@@ -91,7 +96,7 @@ impl Running {
             Ok(workspace) => {
                 if self.engine.install_workspace(update.load, workspace) {
                     for request in std::mem::take(&mut self.pending) {
-                        self.resolve_definition(connection, request)?;
+                        self.resolve_navigation(connection, request)?;
                     }
                 }
             }
@@ -116,21 +121,30 @@ impl Running {
         Ok(())
     }
 
-    fn resolve_definition(
+    fn resolve_navigation(
         &mut self,
         connection: &Connection,
-        request: DefinitionRequest,
+        request: NavigationRequest,
     ) -> Result<()> {
-        let progress = self
-            .engine
-            .definition(&request.path, request.position, request.kind);
+        let progress = match request.kind {
+            NavigationKind::Definition(kind) => self
+                .engine
+                .definition(&request.path, request.position, kind)
+                .map(|progress| progress.map(serialize_location)),
+            NavigationKind::References {
+                include_declaration,
+            } => self
+                .engine
+                .references(&request.path, request.position, include_declaration)
+                .map(|progress| progress.map(serialize_locations)),
+        };
         let result = match progress {
-            Ok(DefinitionProgress::Pending(load)) => {
+            Ok(QueryProgress::Pending(load)) => {
                 self.pending.push(request);
                 self.request_workspace(load);
                 return Ok(());
             }
-            Ok(DefinitionProgress::Ready(location)) => serialize_location(location),
+            Ok(QueryProgress::Ready(result)) => result,
             Err(error) => Err((ErrorCode::InternalError, format!("{error:#}"))),
         };
         send_response(connection, request.id, result)
@@ -139,7 +153,7 @@ impl Running {
     fn cancel_definitions(
         &mut self,
         connection: &Connection,
-        matches: impl FnMut(&mut DefinitionRequest) -> bool,
+        matches: impl FnMut(&mut NavigationRequest) -> bool,
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
@@ -260,11 +274,11 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                     } else {
                         DefinitionKind::Type
                     };
-                    return running.resolve_definition(
+                    return running.resolve_navigation(
                         connection,
-                        DefinitionRequest {
+                        NavigationRequest {
                             id,
-                            kind,
+                            kind: NavigationKind::Definition(kind),
                             path,
                             position,
                         },
@@ -273,6 +287,22 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
             }
         }
+        (State::Running(running), References::METHOD) => match reference_position(params) {
+            Ok((path, position, include_declaration)) => {
+                return running.resolve_navigation(
+                    connection,
+                    NavigationRequest {
+                        id,
+                        kind: NavigationKind::References {
+                            include_declaration,
+                        },
+                        path,
+                        position,
+                    },
+                );
+            }
+            Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
+        },
         (State::Running(..), _) => Err((
             ErrorCode::MethodNotFound,
             format!("unsupported request: {method}"),
@@ -319,6 +349,7 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
         )),
         definition_provider: Some(OneOf::Left(true)),
         type_definition_provider: Some(true.into()),
+        references_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
     let result = serde_json::to_value(InitializeResult {
@@ -352,6 +383,27 @@ fn definition_position(params: Value) -> Result<(PathBuf, Position)> {
     let params: GotoDefinitionParams = serde_json::from_value(params)?;
     let document = params.text_document_position_params;
     Ok((file_path(&document.text_document.uri)?, document.position))
+}
+
+fn reference_position(params: Value) -> Result<(PathBuf, Position, bool)> {
+    let params: ReferenceParams = serde_json::from_value(params)?;
+    let document = params.text_document_position;
+    Ok((
+        file_path(&document.text_document.uri)?,
+        document.position,
+        params.context.include_declaration,
+    ))
+}
+
+fn serialize_locations(locations: Vec<(PathBuf, Range)>) -> RequestResult {
+    let result = (|| {
+        let locations = locations
+            .into_iter()
+            .map(|(path, range)| Ok(Location::new(path_uri(&path)?, range)))
+            .collect::<Result<Vec<_>>>()?;
+        Ok::<_, anyhow::Error>(serde_json::to_value(locations)?)
+    })();
+    result.map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
 }
 
 fn serialize_location(location: Option<(PathBuf, Range)>) -> RequestResult {

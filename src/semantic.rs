@@ -10,7 +10,9 @@ use anyhow::{Context, Result, bail};
 use lsp_types::{FileChangeType, Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
-use crate::scope::{declaration_binding, lexical_binding, receiver_type_parameters};
+use crate::scope::{
+    declaration_binding, lexical_binding, receiver_type_parameters, reference_binding,
+};
 use crate::symbols::{
     self, Container, FileSymbols, FunctionSignature, GenericParameter, InlineType, Symbol,
     SymbolKind, TypeDetails, TypeRef, TypeRefKind,
@@ -66,10 +68,22 @@ pub enum DefinitionKind {
     Type,
 }
 
-pub enum DefinitionProgress {
-    Ready(Option<(PathBuf, Range)>),
+pub enum QueryProgress<T> {
+    Ready(T),
     Pending(WorkspaceLoad),
 }
+
+impl<T> QueryProgress<T> {
+    pub fn map<U>(self, convert: impl FnOnce(T) -> U) -> QueryProgress<U> {
+        match self {
+            Self::Ready(value) => QueryProgress::Ready(convert(value)),
+            Self::Pending(load) => QueryProgress::Pending(load),
+        }
+    }
+}
+
+type DefinitionProgress = QueryProgress<Option<(PathBuf, Range)>>;
+type ReferencesProgress = QueryProgress<Vec<(PathBuf, Range)>>;
 
 #[derive(Default)]
 enum GraphChanges {
@@ -232,6 +246,38 @@ impl Engine {
         self.invalidate(affected);
     }
 
+    pub fn references(
+        &mut self,
+        path: &Path,
+        position: Position,
+        include_declaration: bool,
+    ) -> Result<ReferencesProgress> {
+        let disk_source;
+        let source = if let Some(source) = self.documents.get(&path_key(path)) {
+            source
+        } else if path.extension().is_some_and(|extension| extension == "go") {
+            disk_source = read_source(&mut self.parser, path)?;
+            &disk_source
+        } else {
+            return Ok(QueryProgress::Ready(Vec::new()));
+        };
+        let mut locations = Vec::new();
+        if let Some(ReferenceQuery::Name(name)) = source.reference_at(position)
+            && let Some(declaration) = reference_binding(name, &source.text)
+            && let Some(scope) = local_reference_scope(declaration)
+        {
+            source.for_each_name(scope, node_text(declaration, &source.text), |candidate| {
+                if (include_declaration || candidate != declaration)
+                    && matches!(source.reference_from_leaf(candidate, candidate.start_byte()), Some(ReferenceQuery::Name(node)) if node == candidate)
+                    && reference_binding(candidate, &source.text) == Some(declaration)
+                {
+                    locations.push((source.path.clone(), source.range(candidate)));
+                }
+            });
+        }
+        Ok(QueryProgress::Ready(locations))
+    }
+
     pub fn definition(
         &mut self,
         path: &Path,
@@ -357,6 +403,21 @@ impl Engine {
         }?;
         Ok(DefinitionProgress::Ready(location))
     }
+}
+
+fn local_reference_scope(declaration: Node<'_>) -> Option<Node<'_>> {
+    let type_parameter = declaration
+        .parent()
+        .is_some_and(|node| node.kind() == "type_parameter_declaration");
+    let mut cursor = declaration.parent();
+    while let Some(node) = cursor {
+        match node.kind() {
+            "function_declaration" | "method_declaration" | "func_literal" => return Some(node),
+            "type_spec" | "type_alias" if type_parameter => return Some(node),
+            _ => cursor = node.parent(),
+        }
+    }
+    None
 }
 
 fn draft_package<'w>(workspace: &'w Workspace, source: &Source) -> Option<&'w Package> {
@@ -2439,6 +2500,41 @@ impl Source {
         let offset = self.lines.offset(&self.text, position)?;
         let root = self.tree.root_node();
         let leaf = root.named_descendant_for_byte_range(offset, offset)?;
+        self.reference_from_leaf(leaf, offset)
+    }
+
+    fn for_each_name<'tree>(
+        &self,
+        root: Node<'tree>,
+        spelling: &str,
+        mut visit: impl FnMut(Node<'tree>),
+    ) {
+        let mut cursor = root.walk();
+        loop {
+            let node = cursor.node();
+            if matches!(
+                node.kind(),
+                "identifier" | "type_identifier" | "field_identifier" | "package_identifier"
+            ) && node_text(node, &self.text) == spelling
+            {
+                visit(node);
+            }
+            if cursor.goto_first_child() {
+                continue;
+            }
+            while !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    return;
+                }
+            }
+        }
+    }
+
+    fn reference_from_leaf<'tree>(
+        &self,
+        leaf: Node<'tree>,
+        offset: usize,
+    ) -> Option<ReferenceQuery<'tree>> {
         let mut current = Some(leaf);
         while let Some(node) = current {
             let fields = match node.kind() {
