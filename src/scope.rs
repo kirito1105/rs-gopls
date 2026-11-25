@@ -79,11 +79,11 @@ fn preceding_binding<'tree>(child: Node<'tree>, name: &str, text: &str) -> Optio
     let mut binding = None;
     while let Some(node) = previous {
         if let Some(found) = declaration(node, name, text) {
-            if !found
+            if found
                 .name
                 .parent()
                 .and_then(|list| list.parent())
-                .is_some_and(|node| node.kind() == "short_var_declaration")
+                .is_none_or(|node| node.kind() != "short_var_declaration")
             {
                 return Some(found);
             }

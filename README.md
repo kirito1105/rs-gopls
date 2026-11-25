@@ -3,7 +3,7 @@
 Go language server prototype in Rust. It follows the GoLand Go plugin's separation between syntax, declaration indexes, and reference resolution.
 
 - `src/workspace.rs` loads the package graph and active source files through `go list`, using the Go SDK and build environment on PATH.
-- `src/semantic.rs` parses Go into a Tree-sitter syntax tree, extracts lightweight per-file declaration indexes, and resolves package-qualified references using import aliases, package names and local scopes. Open files use editor content. Ranged edits update the existing syntax tree and line index.
+- `src/semantic.rs` parses Go into a Tree-sitter syntax tree, extracts lightweight per-file declaration indexes, and binds local and package names and resolves fields, methods, and call-result selectors. Open files use editor content. Ranged edits update the existing syntax tree and line index.
 - `src/main.rs` serves the resolver as `textDocument/definition` over stdio LSP with UTF-16 positions.
 
 ## Build and verify
@@ -19,11 +19,24 @@ $server = Join-Path $target 'release\rs-gopls.exe'
 python .\tools\compare_definitions.py $server --baseline --iterations 60
 ```
 
-Launch the resulting executable as a stdio language server with a Go module as its LSP workspace root. The benchmark's optional `--baseline` uses `gopls` from PATH. It checks exact definition locations, including after unsaved edits to the caller and dependency, before reporting latency. Add --stdlib to test unsaved caller edits that resolve into the installed Go SDK net/http package. Both workloads use a small generated caller. The harness asks gopls to run diagnostics on save to reduce unrelated work during measured edits. Treat startup as a single sample with shared system and Go caches.
+Launch the resulting executable as a stdio language server with a Go module, a go.work directory, or a GOPATH project as its LSP workspace root. The benchmark's optional `--baseline` uses `gopls` from PATH. It checks exact definition locations, including after unsaved edits to the caller and dependency, before reporting latency. Add --stdlib to test unsaved caller edits that resolve into the installed Go SDK net/http package. Both workloads use a small generated caller. The harness asks gopls to run diagnostics on save to reduce unrelated work during measured edits. Treat startup as a single sample with shared system and Go caches.
 
-## Prototype scope
+## Definition coverage
 
-Definition lookup covers exported package-level functions, variables, constants and types in a single Go module and its loaded dependencies. The package graph comes from disk on the first applicable request. Restart the server after adding or removing files or changing build configuration or module dependencies. Project-wide file watching, test variants, type-based member resolution, completion and diagnostics are future work.
+Definition lookup covers imports, lexical and package names, and common field and method selections. The resolver follows named types, explicit generic arguments, aliases, promoted members, and function and method results. It uses the Go toolchain for active source files and package identities.
+
+The server supports Go Modules, go.work, GOPATH, and test package variants. On clients that support dynamic file-watch registration, it refreshes indexes after changes to Go files and module/workspace files. Open editor buffers take precedence over disk content. Go package metadata follows the on-disk workspace.
+
+Type analysis covers the tested syntax-driven cases. Implicit generic type inference, structural and function-valued types, and all GoLand-specific navigation behavior remain outside the verified coverage.
+
+Run the semantic and workspace acceptance checks with the release executable:
+
+~~~powershell
+python -B .\tools\check_definitions.py $server --stage 3
+python -B .\tools\check_workspace_updates.py $server
+~~~
+
+Use the optional workspace argument on the first command to check the matching localchat/server source revision. See [the definition roadmap](docs/definition-plan.md) for scope and checks.
 
 ## Test in Zed on Windows
 
@@ -57,4 +70,3 @@ Use `-PrepareOnly` to stage the extension, native server and example without ope
 ```
 
 For a legacy GOPATH project, also set `lsp.rs-gopls.binary.env.GO111MODULE` to `"off"` and set `lsp.rs-gopls.binary.env.GOPATH` if needed. Zed can use `lsp.rs-gopls.binary.path` when you want to point the extension at a different local build.
-

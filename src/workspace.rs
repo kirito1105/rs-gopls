@@ -7,32 +7,45 @@ use std::thread;
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde::Deserialize;
 
+use crate::workspace_roots::list_roots;
+
 pub struct Package {
     pub name: String,
     pub files: Vec<PathBuf>,
     import_map: HashMap<String, String>,
+    test_variant: bool,
 }
 
 pub struct Workspace {
     packages: BTreeMap<String, Package>,
     file_packages: HashMap<PathBuf, String>,
+    includes_tests: bool,
 }
 
 impl Workspace {
-    pub fn load(root: &Path) -> Result<Self> {
+    pub fn load(root: &Path, include_tests: bool) -> Result<Self> {
         ensure!(
             root.is_dir(),
             "Go workspace root is not a directory: {}",
             root.display()
         );
+        let roots = list_roots(root)?;
+        let patterns = roots.iter().map(|directory| {
+            if directory == root {
+                "./...".to_owned()
+            } else {
+                directory.join("...").to_string_lossy().replace('\\', "/")
+            }
+        });
         let mut child = Command::new("go")
             .args([
                 "list",
                 "-e",
-                "-json=Dir,ImportPath,Name,GoFiles,CgoFiles,ImportMap,Error",
+                "-json=Dir,ImportPath,Name,GoFiles,CgoFiles,ImportMap,Error,ForTest",
                 "-deps",
-                "./...",
             ])
+            .args(include_tests.then_some("-test"))
+            .args(patterns)
             .current_dir(root)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -72,7 +85,11 @@ impl Workspace {
         }
 
         let mut file_packages = HashMap::new();
-        for (id, package) in &packages {
+        // Ordinary files belong to their normal package, even when the Go
+        // command also reports an in-package test compilation of those files.
+        let ordinary = packages.iter().filter(|(_, package)| !package.test_variant);
+        let testing = packages.iter().filter(|(_, package)| package.test_variant);
+        for (id, package) in ordinary.chain(testing) {
             for file in &package.files {
                 file_packages
                     .entry(path_key(file))
@@ -82,7 +99,12 @@ impl Workspace {
         Ok(Self {
             packages,
             file_packages,
+            includes_tests: include_tests,
         })
+    }
+
+    pub fn includes_tests(&self) -> bool {
+        self.includes_tests
     }
 
     pub fn package_of_file(&self, path: &Path) -> Option<&Package> {
@@ -108,6 +130,7 @@ impl Workspace {
 struct ListedPackage {
     dir: PathBuf,
     import_path: String,
+    for_test: String,
     name: String,
     go_files: Vec<PathBuf>,
     cgo_files: Vec<PathBuf>,
@@ -155,6 +178,7 @@ fn read_packages(reader: impl Read) -> Result<(BTreeMap<String, Package>, Option
                 name: package.name,
                 files,
                 import_map: package.import_map,
+                test_variant: !package.for_test.is_empty(),
             });
     }
     Ok((packages, first_error))

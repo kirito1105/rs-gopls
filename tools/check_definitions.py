@@ -74,6 +74,9 @@ func check([[parameter:argument]] string) {
     alias.[[alias-method:Run]]()
     generic := helper.Box[string]{}
     _ = generic.[[generic-field:Value]]
+    typed := helper.Box[*helper.Service]{}
+    typed.Value.[[generic-field-method:Run]]()
+    _ = (*helper.Service).[[pointer-method-expression:Run]]
 }
 
 func main() {}
@@ -115,6 +118,8 @@ FIXTURE_CASES = (
     (3, "interface-method", "interface-declaration"),
     (3, "alias-method", "run"),
     (3, "generic-field", "generic-declaration"),
+    (3, "generic-field-method", "run"),
+    (3, "pointer-method-expression", "run"),
 )
 
 

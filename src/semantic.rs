@@ -1,10 +1,11 @@
 use std::cell::OnceCell;
 use std::collections::{HashMap, hash_map::Entry};
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use lsp_types::{Position, Range, TextDocumentContentChangeEvent};
+use lsp_types::{FileChangeType, Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::scope::lexical_binding;
@@ -14,6 +15,7 @@ use crate::workspace::{Package, Workspace, path_key};
 struct FileIndex {
     symbols: FileSymbols,
     imports: Vec<Import>,
+    package_signature: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -36,6 +38,7 @@ pub struct Engine {
     parser: Parser,
     documents: HashMap<PathBuf, Source>,
     disk_index: HashMap<PathBuf, FileIndex>,
+    include_tests: bool,
 }
 
 impl Engine {
@@ -50,6 +53,7 @@ impl Engine {
             parser,
             documents: HashMap::new(),
             disk_index: HashMap::new(),
+            include_tests: false,
         }
     }
 
@@ -76,6 +80,36 @@ impl Engine {
         let key = path_key(path);
         self.documents.remove(&key);
         self.disk_index.remove(&key);
+    }
+
+    pub fn file_changed(&mut self, path: &Path, change: FileChangeType) {
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| matches!(name, "go.mod" | "go.sum" | "go.work" | "go.work.sum"))
+        {
+            self.workspace = None;
+            return;
+        }
+        if path.extension().is_none_or(|extension| extension != "go") {
+            return;
+        }
+
+        let key = path_key(path);
+        let previous = self.disk_index.remove(&key);
+        if change == FileChangeType::CHANGED
+            && let Some(previous) = previous
+            && let Ok(disk) = read_source(&mut self.parser, path)
+        {
+            let updated = disk.collect_declarations();
+            if previous.package_signature == updated.package_signature {
+                self.disk_index.insert(key, updated);
+                return;
+            }
+        }
+        // A new, removed, or structurally changed source can change the set
+        // of Go files selected by the current build or add an import.
+        self.workspace = None;
     }
 
     pub fn definition(
@@ -107,8 +141,16 @@ impl Engine {
                 return Ok(Some((path.to_owned(), source.range(declaration))));
             }
         }
-        if self.workspace.is_none() {
-            self.workspace = Some(Workspace::load(&self.root)?);
+        self.include_tests |= path
+            .file_name()
+            .and_then(|filename| filename.to_str())
+            .is_some_and(|filename| filename.ends_with("_test.go"));
+        if self
+            .workspace
+            .as_ref()
+            .is_none_or(|workspace| self.include_tests && !workspace.includes_tests())
+        {
+            self.workspace = Some(Workspace::load(&self.root, self.include_tests)?);
         }
         let workspace = self.workspace.as_ref().expect("workspace is loaded");
         let Some(from) = workspace.package_of_file(path) else {
@@ -461,7 +503,7 @@ impl<'w> Resolver<'w, '_> {
                 let Some(mut ty) = self.infer_type(from, source, operand, depth + 1, 0)? else {
                     return Ok(None);
                 };
-                if operator.kind() == "&" {
+                if operator.kind() == "&" || ty.type_expression {
                     ty.pointers = ty.pointers.saturating_add(1);
                     ty.addressable = false;
                 } else if ty.pointers > 0 {
@@ -857,10 +899,32 @@ impl Source {
             .get_or_init(|| self.collect_declarations())
     }
 
+    fn package_signature(&self) -> u64 {
+        let root = self.tree.root_node();
+        let mut cursor = root.walk();
+        let mut signature = DefaultHasher::new();
+        for node in root.named_children(&mut cursor) {
+            match node.kind() {
+                "package_clause" | "import_declaration" => {
+                    node_text(node, &self.text).hash(&mut signature)
+                }
+                "comment" => {
+                    let comment = node_text(node, &self.text);
+                    if comment.starts_with("//go:build") || comment.starts_with("// +build") {
+                        comment.hash(&mut signature);
+                    }
+                }
+                _ => break,
+            }
+        }
+        signature.finish()
+    }
+
     fn collect_declarations(&self) -> FileIndex {
         FileIndex {
             symbols: symbols::collect(&self.tree, &self.text, |name| self.range(name)),
             imports: self.imports.clone(),
+            package_signature: self.package_signature(),
         }
     }
 }

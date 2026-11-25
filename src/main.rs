@@ -2,6 +2,7 @@ mod scope;
 mod semantic;
 mod symbols;
 mod workspace;
+mod workspace_roots;
 
 use std::{
     env,
@@ -11,12 +12,13 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, Response};
 use lsp_types::{
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    GotoDefinitionParams, InitializeParams, InitializeResult, Location, OneOf,
-    PositionEncodingKind, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    DidChangeTextDocumentParams, DidChangeWatchedFilesParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, GotoDefinitionParams, InitializeParams, InitializeResult, Location,
+    OneOf, PositionEncodingKind, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
     TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
     notification::{
-        DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Exit, Notification as _,
+        DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument, DidOpenTextDocument,
+        Exit, Initialized, Notification as _,
     },
     request::{GotoDefinition, Initialize, Request as _, Shutdown},
 };
@@ -27,7 +29,7 @@ use semantic::Engine;
 
 enum State {
     Starting,
-    Running(Box<Engine>),
+    Running(Box<Engine>, bool),
     Shutdown,
 }
 
@@ -60,9 +62,11 @@ fn serve(connection: &Connection) -> Result<()> {
                 break;
             }
             Message::Notification(notification) => {
-                if let State::Running(engine) = &mut state {
+                if let State::Running(engine, watch_files) = &mut state {
                     let Notification { method, params } = notification;
-                    if let Err(error) = handle_notification(engine, &method, params) {
+                    if method == Initialized::METHOD && std::mem::take(watch_files) {
+                        register_file_watches(connection)?;
+                    } else if let Err(error) = handle_notification(engine, &method, params) {
                         eprintln!("rs-gopls: {method}: {error:#}");
                     }
                 }
@@ -77,8 +81,8 @@ fn handle_request(state: &mut State, request: Request) -> Response {
     let Request { id, method, params } = request;
     let result: RequestResult = match (state, method.as_str()) {
         (state @ State::Starting, Initialize::METHOD) => initialize(params)
-            .map(|(engine, capabilities)| {
-                *state = State::Running(Box::new(engine));
+            .map(|(engine, capabilities, watch_files)| {
+                *state = State::Running(Box::new(engine), watch_files);
                 capabilities
             })
             .map_err(|error| (ErrorCode::InvalidParams, format!("{error:#}"))),
@@ -90,16 +94,16 @@ fn handle_request(state: &mut State, request: Request) -> Response {
             ErrorCode::InvalidRequest,
             "server has already shut down".into(),
         )),
-        (State::Running(_), Initialize::METHOD) => Err((
+        (State::Running(..), Initialize::METHOD) => Err((
             ErrorCode::InvalidRequest,
             "server is already initialized".into(),
         )),
-        (state @ State::Running(_), Shutdown::METHOD) => {
+        (state @ State::Running(..), Shutdown::METHOD) => {
             *state = State::Shutdown;
             Ok(Value::Null)
         }
-        (State::Running(engine), GotoDefinition::METHOD) => definition(engine, params),
-        (State::Running(_), _) => Err((
+        (State::Running(engine, _), GotoDefinition::METHOD) => definition(engine, params),
+        (State::Running(..), _) => Err((
             ErrorCode::MethodNotFound,
             format!("unsupported request: {method}"),
         )),
@@ -111,9 +115,15 @@ fn handle_request(state: &mut State, request: Request) -> Response {
     }
 }
 
-fn initialize(params: Value) -> Result<(Engine, Value)> {
+fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
     let params = serde_json::from_value::<InitializeParams>(params)
         .context("invalid initialize parameters")?;
+    let watch_files = params
+        .capabilities
+        .workspace
+        .as_ref()
+        .and_then(|workspace| workspace.did_change_watched_files.as_ref())
+        .is_some_and(|watches| watches.dynamic_registration == Some(true));
     let root = workspace_root(params)?;
     ensure!(
         root.is_dir(),
@@ -140,7 +150,7 @@ fn initialize(params: Value) -> Result<(Engine, Value)> {
             version: Some(env!("CARGO_PKG_VERSION").into()),
         }),
     })?;
-    Ok((Engine::new(root), result))
+    Ok((Engine::new(root), result, watch_files))
 }
 
 #[allow(deprecated)]
@@ -178,8 +188,45 @@ fn definition(engine: &mut Engine, params: Value) -> RequestResult {
     location.map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
 }
 
+fn register_file_watches(connection: &Connection) -> Result<()> {
+    let watchers: Vec<_> = [
+        "**/*.go",
+        "**/go.mod",
+        "**/go.sum",
+        "**/go.work",
+        "**/go.work.sum",
+    ]
+    .into_iter()
+    .map(|pattern| serde_json::json!({ "globPattern": pattern }))
+    .collect();
+    let request = Request::new(
+        "rs-gopls/watch-go-files".to_owned().into(),
+        "client/registerCapability".to_owned(),
+        serde_json::json!({
+            "registrations": [{
+                "id": "rs-gopls/watch-go-files",
+                "method": DidChangeWatchedFiles::METHOD,
+                "registerOptions": { "watchers": watchers }
+            }]
+        }),
+    );
+    connection
+        .sender
+        .send(request.into())
+        .context("registering Go file watches")
+}
+
 fn handle_notification(engine: &mut Engine, method: &str, params: Value) -> Result<()> {
     match method {
+        DidChangeWatchedFiles::METHOD => {
+            let params: DidChangeWatchedFilesParams = serde_json::from_value(params)?;
+            for change in params.changes {
+                if let Ok(path) = file_path(&change.uri) {
+                    engine.file_changed(&path, change.typ);
+                }
+            }
+            Ok(())
+        }
         DidOpenTextDocument::METHOD => {
             let params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
             let document = params.text_document;
