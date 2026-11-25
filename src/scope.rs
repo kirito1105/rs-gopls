@@ -246,7 +246,12 @@ fn identifier_in_list<'tree>(
     list.named_children(&mut cursor)
         .filter(|node| !node.is_extra())
         .enumerate()
-        .find(|(_, node)| node.kind() == "identifier" && text.get(node.byte_range()) == Some(name))
+        .find(|(_, node)| {
+            matches!(
+                node.kind(),
+                "identifier" | "nil" | "true" | "false" | "iota"
+            ) && text.get(node.byte_range()) == Some(name)
+        })
 }
 
 fn has_short_operator(node: Node<'_>) -> bool {

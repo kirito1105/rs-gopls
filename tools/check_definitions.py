@@ -4,6 +4,7 @@
 import argparse
 from dataclasses import dataclass
 import math
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -36,6 +37,7 @@ FIXTURE = {
     "main.go": """package main
 
 import helper [[import:"example.test/definition/service"]]
+import [[default-import:"fmt"]]
 
 type API struct {
     [[service-field:Service]] *helper.Service
@@ -53,6 +55,7 @@ func check([[parameter:argument]] string) {
     [[private-use:registerRoutes]]()
     var _ *[[private-type-use:context]]
     helper.[[imported-function:Create]]()
+    [[default-import-use:fmt]].Println()
 
     api := &API{}
     api.[[method-use:initialize]]()
@@ -80,6 +83,22 @@ func check([[parameter:argument]] string) {
 }
 
 func main() {}
+
+var [[package-shadow:float32]] = 1
+var _ = [[package-shadow-use:float32]]
+var _ [[builtin-int:int]]
+var _ = [[builtin-len:len]]([]int{})
+var _ = [[builtin-true:true]]
+var _ = [[builtin-false:false]]
+var _ *int = [[builtin-nil:nil]]
+const _ = [[builtin-iota:iota]]
+
+func checkShadow() {
+    [[local-shadow:len]] := 1
+    _ = [[local-shadow-use:len]]
+    [[literal-shadow:true]] := 1
+    _ = [[literal-shadow-use:true]]
+}
 """,
     "helpers.go": """package main
 
@@ -88,7 +107,7 @@ func [[private-function:registerRoutes]]() {}
 """,
     "service/service.go": """package [[service-package:service]]
 
-type Service struct{}
+type [[service-type:Service]] struct{}
 type Alias = Service
 type Embedded struct{ *Service }
 type Runner interface{ [[interface-declaration:Run]]() }
@@ -99,6 +118,21 @@ func (s *Service) Next() *Service { return s }
 func [[create:Create]]() *Service { return &Service{} }
 func Pair() (*Service, error) { return Create(), nil }
 """,
+    "dotuse/dotuse.go": """package dotuse
+import . "example.test/definition/service"
+var _ = [[dot-function:Create]]()
+var _ *[[dot-type:Service]]
+""",
+    "collision/collision.go": """package collision
+func Create() {}
+""",
+    "ambiguous/ambiguous.go": """package ambiguous
+import (
+    . "example.test/definition/service"
+    . "example.test/definition/collision"
+)
+var _ = [[dot-ambiguous:Create]]
+""",
 }
 FIXTURE_CASES = (
     (1, "parameter-use", "parameter"),
@@ -107,6 +141,7 @@ FIXTURE_CASES = (
     (1, "private-type-use", "private-type"),
     (1, "import", "service-package"),
     (1, "imported-function", "create"),
+    (1, "default-import-use", "default-import"),
     (2, "method-use", "initialize"),
     (2, "field-use", "service-field"),
     (2, "field-method", "run"),
@@ -120,6 +155,20 @@ FIXTURE_CASES = (
     (3, "generic-field", "generic-declaration"),
     (3, "generic-field-method", "run"),
     (3, "pointer-method-expression", "run"),
+    (3, "local-shadow-use", "local-shadow"),
+    (3, "literal-shadow-use", "literal-shadow"),
+    (3, "package-shadow-use", "package-shadow"),
+    (3, "dot-function", "create"),
+    (3, "dot-type", "service-type"),
+    (3, "dot-ambiguous", None),
+)
+BUILTIN_CASES = (
+    ("builtin-int", "type [[int]] int"),
+    ("builtin-len", "func [[len]]("),
+    ("builtin-true", "[[true]] = 0 == 0"),
+    ("builtin-false", "[[false]] = 0 != 0"),
+    ("builtin-nil", "var [[nil]] Type"),
+    ("builtin-iota", "const [[iota]] = 0"),
 )
 
 
@@ -156,6 +205,10 @@ def check_location(client, source, target):
         position=source.cursor(),
     )
     locations = response if isinstance(response, list) else [response] if response else []
+    if target is None:
+        if not locations:
+            return
+        raise RuntimeError(f"expected no unambiguous definition, received {response!r}")
     if len(locations) == 1:
         result = locations[0]
         uri = result.get("targetUri", result.get("uri"))
@@ -241,6 +294,15 @@ def locate(path, template):
     return Site(path, text, *match.span(1))
 
 
+def builtin_cases(root, sites):
+    goroot = subprocess.check_output(
+        ["go", "env", "GOROOT"], cwd=root, encoding="utf-8",
+        env={**os.environ, "GOWORK": "off", "GOPROXY": "off"},
+    ).strip()
+    builtin = (Path(goroot) / "src" / "builtin" / "builtin.go").resolve()
+    return [(source, sites[source], locate(builtin, target)) for source, target in BUILTIN_CASES]
+
+
 def workspace_cases(root, stage):
     return [
         (label, locate(root / API, source), locate(root / target_path, target))
@@ -264,10 +326,12 @@ def main():
             root = Path(directory).resolve()
             sites = write_fixture(root)
             cases = [
-                (source, sites[source], sites[target])
+                (source, sites[source], sites[target] if target else None)
                 for stage, source, target in FIXTURE_CASES
                 if stage <= args.stage
             ]
+            if args.stage == 3:
+                cases.extend(builtin_cases(root, sites))
             success = exercise(
                 args.candidate, root, cases, args.timeout,
                 overlay=(sites["private-use"], sites["private-function"]),

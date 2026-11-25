@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ pub struct Workspace {
     packages: BTreeMap<String, Package>,
     file_packages: HashMap<PathBuf, String>,
     includes_tests: bool,
+    builtin_source: OnceCell<Result<PathBuf, String>>,
 }
 
 impl Workspace {
@@ -100,7 +102,16 @@ impl Workspace {
             packages,
             file_packages,
             includes_tests: include_tests,
+            builtin_source: OnceCell::new(),
         })
+    }
+
+    pub(crate) fn builtin_source(&self, root: &Path) -> Result<&Path> {
+        self.builtin_source
+            .get_or_init(|| find_builtin_source(root).map_err(|error| format!("{error:#}")))
+            .as_ref()
+            .map(PathBuf::as_path)
+            .map_err(|error| anyhow!("{error}"))
     }
 
     pub fn includes_tests(&self) -> bool {
@@ -123,6 +134,29 @@ impl Workspace {
                 .unwrap_or(import_path),
         )
     }
+}
+
+fn find_builtin_source(root: &Path) -> Result<PathBuf> {
+    let output = Command::new("go")
+        .args(["env", "GOROOT"])
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("starting go env GOROOT in {}", root.display()))?;
+    ensure!(
+        output.status.success(),
+        "go env GOROOT failed in {} ({}): {}",
+        root.display(),
+        output.status,
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    let goroot = std::str::from_utf8(&output.stdout).context("decoding go env GOROOT")?;
+    let goroot = Path::new(goroot.trim_end_matches(['\r', '\n']));
+    ensure!(
+        goroot.is_absolute(),
+        "go env GOROOT did not return an absolute path"
+    );
+    Ok(goroot.join("src").join("builtin").join("builtin.go"))
 }
 
 #[derive(Default, Deserialize)]

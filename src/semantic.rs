@@ -165,20 +165,26 @@ impl Engine {
         match reference {
             ReferenceQuery::Name(name) => {
                 let identifier = node_text(name, &source.text);
-                if let Some((import, package)) =
-                    source.imported_package(workspace, from, identifier)
-                {
-                    if let Some(binding) = import.binding {
-                        return Ok(Some((path.to_owned(), binding)));
-                    }
-                    return indexes.find(package, |index| index.symbols.package_range);
+                if let Some((import, _)) = source.imported_package(workspace, from, identifier) {
+                    return Ok(Some((path.to_owned(), import.binding)));
                 }
-                indexes.find(from, |index| {
+                if let Some(location) = indexes.find(from, |index| {
                     index
                         .symbols
                         .declaration(identifier)
                         .map(|symbol| symbol.range)
-                })
+                })? {
+                    return Ok(Some(location));
+                }
+                if is_exported(identifier) {
+                    return indexes.find_dot_import(workspace, from, &source.imports, identifier);
+                }
+                if is_predeclared(identifier) {
+                    let file = workspace.builtin_source(&self.root)?;
+                    let definition = indexes.file_index(file)?.symbols.declaration(identifier);
+                    return Ok(definition.map(|symbol| (file.to_owned(), symbol.range)));
+                }
+                Ok(None)
             }
             ReferenceQuery::Member { receiver, name } => {
                 let mut resolver = Resolver { workspace, indexes };
@@ -241,6 +247,32 @@ impl IndexReader<'_> {
             }
         }
         Ok(None)
+    }
+
+    fn find_dot_import(
+        &mut self,
+        workspace: &Workspace,
+        from: &Package,
+        imports: &[Import],
+        name: &str,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        let mut found = None;
+        for import in imports
+            .iter()
+            .filter(|import| import.alias.as_deref() == Some("."))
+        {
+            if let Some(package) = workspace.resolve_import(from, &import.path)
+                && let Some(location) = self.find(package, |index| {
+                    index.symbols.declaration(name).map(|symbol| symbol.range)
+                })?
+            {
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some(location);
+            }
+        }
+        Ok(found)
     }
 }
 
@@ -737,7 +769,7 @@ fn read_source(parser: &mut Parser, path: &Path) -> Result<Source> {
 struct Import {
     alias: Option<String>,
     path: String,
-    binding: Option<Range>,
+    binding: Range,
 }
 
 struct Source {
@@ -875,7 +907,9 @@ impl Source {
             }
             return None;
         }
-        (named || is_declaration_name(leaf)).then_some(ReferenceQuery::Name(leaf))
+        let predeclared_literal = matches!(leaf.kind(), "nil" | "true" | "false" | "iota");
+        (named || predeclared_literal || is_declaration_name(leaf))
+            .then_some(ReferenceQuery::Name(leaf))
     }
 
     fn imported_package<'a>(
@@ -964,15 +998,14 @@ fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
                     return;
                 };
                 let alias = node.child_by_field_name("name");
-                let binding = alias.map(|node| {
-                    Range::new(
-                        lines.position(text, node.start_byte()),
-                        lines.position(text, node.end_byte()),
-                    )
-                });
+                let name = alias.unwrap_or(path);
+                let binding = Range::new(
+                    lines.position(text, name.start_byte()),
+                    lines.position(text, name.end_byte()),
+                );
                 let alias = alias.map(|node| node_text(node, text).to_owned());
                 if let Some(path) = import_path(node_text(path, text))
-                    && !matches!(alias.as_deref(), Some("_" | "."))
+                    && alias.as_deref() != Some("_")
                 {
                     result.push(Import {
                         alias,
@@ -1017,6 +1050,56 @@ fn is_declaration_name(node: Node<'_>) -> bool {
     parent
         .children_by_field_name("name", &mut cursor)
         .any(|name| name == node)
+}
+
+fn is_predeclared(name: &str) -> bool {
+    matches!(
+        name,
+        "any"
+            | "bool"
+            | "byte"
+            | "comparable"
+            | "complex64"
+            | "complex128"
+            | "error"
+            | "float32"
+            | "float64"
+            | "int"
+            | "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "rune"
+            | "string"
+            | "uint"
+            | "uint8"
+            | "uint16"
+            | "uint32"
+            | "uint64"
+            | "uintptr"
+            | "true"
+            | "false"
+            | "iota"
+            | "nil"
+            | "append"
+            | "cap"
+            | "clear"
+            | "close"
+            | "complex"
+            | "copy"
+            | "delete"
+            | "imag"
+            | "len"
+            | "make"
+            | "max"
+            | "min"
+            | "new"
+            | "panic"
+            | "print"
+            | "println"
+            | "real"
+            | "recover"
+    )
 }
 
 fn is_exported(symbol: &str) -> bool {
