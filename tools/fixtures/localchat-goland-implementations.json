@@ -1,0 +1,286 @@
+{
+  "goland_build": "GO-263.7307.354",
+  "workspace_revision": "532228d3d36bd9f0fffb4bda35c180485b2eadd6",
+  "cases": [
+    {
+      "id": "store-type",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 12, "character": 6, "token": "Store"},
+      "implementations": [
+        {"path": "internal/api/bot_posts_test.go", "range": {"start": {"line": 206, "character": 5}, "end": {"line": 206, "character": 22}}, "token": "botPostsTestStore"},
+        {"path": "internal/api/bot_users_test.go", "range": {"start": {"line": 86, "character": 5}, "end": {"line": 86, "character": 22}}, "token": "botUsersTestStore"},
+        {"path": "internal/api/bot_websocket_test.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 17}}, "token": "botTestStore"},
+        {"path": "internal/api/docmost_test.go", "range": {"start": {"line": 14, "character": 5}, "end": {"line": 14, "character": 21}}, "token": "docmostTestStore"},
+        {"path": "internal/api/post_action_test.go", "range": {"start": {"line": 63, "character": 5}, "end": {"line": 63, "character": 24}}, "token": "postActionTestStore"},
+        {"path": "internal/api/svn_feature_tag_test.go", "range": {"start": {"line": 39, "character": 5}, "end": {"line": 39, "character": 20}}, "token": "svnTagTestStore"},
+        {"path": "internal/app/post_test.go", "range": {"start": {"line": 616, "character": 5}, "end": {"line": 616, "character": 18}}, "token": "postTestStore"},
+        {"path": "internal/app/team_git_aliases_test.go", "range": {"start": {"line": 92, "character": 5}, "end": {"line": 92, "character": 18}}, "token": "gitAliasStore"},
+        {"path": "internal/app/user_avatar_test.go", "range": {"start": {"line": 148, "character": 5}, "end": {"line": 148, "character": 20}}, "token": "avatarTestStore"},
+        {"path": "internal/store/sqlitestore/bot_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 19}}, "token": "SqliteBotStore"},
+        {"path": "internal/store/sqlitestore/channel_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 23}}, "token": "SqliteChannelStore"},
+        {"path": "internal/store/sqlitestore/code_review_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 26}}, "token": "SqliteCodeReviewStore"},
+        {"path": "internal/store/sqlitestore/document_store.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 24}}, "token": "sqliteDocumentStore"},
+        {"path": "internal/store/sqlitestore/favorite_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 24}}, "token": "SqliteFavoriteStore"},
+        {"path": "internal/store/sqlitestore/file_info_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 24}}, "token": "SqliteFileInfoStore"},
+        {"path": "internal/store/sqlitestore/post_search_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 26}}, "token": "SqlitePostSearchStore"},
+        {"path": "internal/store/sqlitestore/post_store.go", "range": {"start": {"line": 13, "character": 5}, "end": {"line": 13, "character": 20}}, "token": "SqlitePostStore"},
+        {"path": "internal/store/sqlitestore/reaction_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 24}}, "token": "SqliteReactionStore"},
+        {"path": "internal/store/sqlitestore/session_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 23}}, "token": "SqliteSessionStore"},
+        {"path": "internal/store/sqlitestore/shared_resource_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 30}}, "token": "sqliteSharedResourceStore"},
+        {"path": "internal/store/sqlitestore/sticker_store.go", "range": {"start": {"line": 8, "character": 5}, "end": {"line": 8, "character": 23}}, "token": "SqliteStickerStore"},
+        {"path": "internal/store/sqlitestore/store.go", "range": {"start": {"line": 16, "character": 5}, "end": {"line": 16, "character": 16}}, "token": "SqliteStore"},
+        {"path": "internal/store/sqlitestore/svn_feature_tag_store.go", "range": {"start": {"line": 15, "character": 5}, "end": {"line": 15, "character": 29}}, "token": "sqliteSVNFeatureTagStore"},
+        {"path": "internal/store/sqlitestore/team_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 20}}, "token": "SqliteTeamStore"},
+        {"path": "internal/store/sqlitestore/user_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 20}}, "token": "SqliteUserStore"},
+        {"path": "internal/store/sqlstore/bot_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 16}}, "token": "SqlBotStore"},
+        {"path": "internal/store/sqlstore/channel_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 20}}, "token": "SqlChannelStore"},
+        {"path": "internal/store/sqlstore/code_review_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 23}}, "token": "SqlCodeReviewStore"},
+        {"path": "internal/store/sqlstore/document_store.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 21}}, "token": "sqlDocumentStore"},
+        {"path": "internal/store/sqlstore/file_info_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 21}}, "token": "SqlFileInfoStore"},
+        {"path": "internal/store/sqlstore/post_search_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 23}}, "token": "SqlPostSearchStore"},
+        {"path": "internal/store/sqlstore/post_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 17}}, "token": "SqlPostStore"},
+        {"path": "internal/store/sqlstore/session_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 20}}, "token": "SqlSessionStore"},
+        {"path": "internal/store/sqlstore/shared_resource_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 27}}, "token": "sqlSharedResourceStore"},
+        {"path": "internal/store/sqlstore/sticker_store.go", "range": {"start": {"line": 8, "character": 5}, "end": {"line": 8, "character": 20}}, "token": "SqlStickerStore"},
+        {"path": "internal/store/sqlstore/store.go", "range": {"start": {"line": 16, "character": 5}, "end": {"line": 16, "character": 13}}, "token": "SqlStore"},
+        {"path": "internal/store/sqlstore/svn_feature_tag_store.go", "range": {"start": {"line": 15, "character": 5}, "end": {"line": 15, "character": 26}}, "token": "sqlSVNFeatureTagStore"},
+        {"path": "internal/store/sqlstore/team_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 17}}, "token": "SqlTeamStore"},
+        {"path": "internal/store/sqlstore/user_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 17}}, "token": "SqlUserStore"}
+      ],
+      "super": []
+    },
+    {
+      "id": "store-session",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 18, "character": 2, "token": "Session"},
+      "implementations": [
+        {"path": "internal/api/bot_websocket_test.go", "range": {"start": {"line": 51, "character": 23}, "end": {"line": 51, "character": 30}}, "token": "Session"},
+        {"path": "internal/api/post_action_test.go", "range": {"start": {"line": 73, "character": 30}, "end": {"line": 73, "character": 37}}, "token": "Session"},
+        {"path": "internal/api/svn_feature_tag_test.go", "range": {"start": {"line": 50, "character": 26}, "end": {"line": 50, "character": 33}}, "token": "Session"},
+        {"path": "internal/app/post_test.go", "range": {"start": {"line": 629, "character": 24}, "end": {"line": 629, "character": 31}}, "token": "Session"},
+        {"path": "internal/app/team_git_aliases_test.go", "range": {"start": {"line": 102, "character": 24}, "end": {"line": 102, "character": 31}}, "token": "Session"},
+        {"path": "internal/app/user_avatar_test.go", "range": {"start": {"line": 157, "character": 26}, "end": {"line": 157, "character": 33}}, "token": "Session"},
+        {"path": "internal/store/sqlitestore/store.go", "range": {"start": {"line": 91, "character": 23}, "end": {"line": 91, "character": 30}}, "token": "Session"},
+        {"path": "internal/store/sqlstore/store.go", "range": {"start": {"line": 91, "character": 20}, "end": {"line": 91, "character": 27}}, "token": "Session"}
+      ],
+      "super": []
+    },
+    {
+      "id": "store-session-return",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 18, "character": 12, "token": "SessionStore"},
+      "implementations": [
+        {"path": "internal/api/post_action_test.go", "range": {"start": {"line": 54, "character": 5}, "end": {"line": 54, "character": 23}}, "token": "memorySessionStore"},
+        {"path": "internal/api/svn_feature_tag_test.go", "range": {"start": {"line": 296, "character": 5}, "end": {"line": 296, "character": 21}}, "token": "stubSessionStore"},
+        {"path": "internal/store/sqlitestore/session_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 23}}, "token": "SqliteSessionStore"},
+        {"path": "internal/store/sqlstore/session_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 20}}, "token": "SqlSessionStore"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 122, "character": 5}, "end": {"line": 122, "character": 17}}, "token": "SessionStore"}
+      ],
+      "super": []
+    },
+    {
+      "id": "user-store-type",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 31, "character": 6, "token": "UserStore"},
+      "implementations": [
+        {"path": "internal/api/bot_users_test.go", "range": {"start": {"line": 20, "character": 5}, "end": {"line": 20, "character": 20}}, "token": "memoryUserStore"},
+        {"path": "internal/api/docmost_test.go", "range": {"start": {"line": 21, "character": 5}, "end": {"line": 21, "character": 21}}, "token": "docmostTestUsers"},
+        {"path": "internal/api/post_action_test.go", "range": {"start": {"line": 33, "character": 5}, "end": {"line": 33, "character": 20}}, "token": "actionUserStore"},
+        {"path": "internal/api/svn_feature_tag_admin_test.go", "range": {"start": {"line": 123, "character": 5}, "end": {"line": 123, "character": 29}}, "token": "svnRegistrationUserStore"},
+        {"path": "internal/api/svn_feature_tag_test.go", "range": {"start": {"line": 309, "character": 5}, "end": {"line": 309, "character": 18}}, "token": "stubUserStore"},
+        {"path": "internal/app/post_test.go", "range": {"start": {"line": 1000, "character": 5}, "end": {"line": 1000, "character": 24}}, "token": "postMemoryUserStore"},
+        {"path": "internal/app/team_git_aliases_test.go", "range": {"start": {"line": 168, "character": 5}, "end": {"line": 168, "character": 22}}, "token": "gitAliasUserStore"},
+        {"path": "internal/app/user_avatar_test.go", "range": {"start": {"line": 171, "character": 5}, "end": {"line": 171, "character": 20}}, "token": "memoryUserStore"},
+        {"path": "internal/store/sqlitestore/user_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 20}}, "token": "SqliteUserStore"},
+        {"path": "internal/store/sqlstore/user_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 17}}, "token": "SqlUserStore"}
+      ],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"}
+      ]
+    },
+    {
+      "id": "user-store-get-all",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 37, "character": 2, "token": "GetAll"},
+      "implementations": [
+        {"path": "internal/api/bot_users_test.go", "range": {"start": {"line": 67, "character": 26}, "end": {"line": 67, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/app/post_test.go", "range": {"start": {"line": 1241, "character": 30}, "end": {"line": 1241, "character": 36}}, "token": "GetAll"},
+        {"path": "internal/app/team_git_aliases_test.go", "range": {"start": {"line": 184, "character": 28}, "end": {"line": 184, "character": 34}}, "token": "GetAll"},
+        {"path": "internal/app/user_avatar_test.go", "range": {"start": {"line": 211, "character": 26}, "end": {"line": 211, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/store/sqlitestore/user_store.go", "range": {"start": {"line": 90, "character": 26}, "end": {"line": 90, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/store/sqlstore/user_store.go", "range": {"start": {"line": 90, "character": 23}, "end": {"line": 90, "character": 29}}, "token": "GetAll"}
+      ],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"}
+      ]
+    },
+    {
+      "id": "team-store-get-all",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 50, "character": 2, "token": "GetAll"},
+      "implementations": [
+        {"path": "internal/app/team_git_aliases_test.go", "range": {"start": {"line": 124, "character": 28}, "end": {"line": 124, "character": 34}}, "token": "GetAll"},
+        {"path": "internal/store/sqlitestore/team_store.go", "range": {"start": {"line": 74, "character": 26}, "end": {"line": 74, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/store/sqlstore/team_store.go", "range": {"start": {"line": 74, "character": 23}, "end": {"line": 74, "character": 29}}, "token": "GetAll"}
+      ],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"}
+      ]
+    },
+    {
+      "id": "session-store-type",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 122, "character": 6, "token": "SessionStore"},
+      "implementations": [
+        {"path": "internal/api/post_action_test.go", "range": {"start": {"line": 54, "character": 5}, "end": {"line": 54, "character": 23}}, "token": "memorySessionStore"},
+        {"path": "internal/api/svn_feature_tag_test.go", "range": {"start": {"line": 296, "character": 5}, "end": {"line": 296, "character": 21}}, "token": "stubSessionStore"},
+        {"path": "internal/store/sqlitestore/session_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 23}}, "token": "SqliteSessionStore"},
+        {"path": "internal/store/sqlstore/session_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 20}}, "token": "SqlSessionStore"}
+      ],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"}
+      ]
+    },
+    {
+      "id": "file-backend-type",
+      "action": "implementation",
+      "query": {"path": "internal/filestore/filestore.go", "line": 10, "character": 6, "token": "FileBackend"},
+      "implementations": [
+        {"path": "internal/filestore/local.go", "range": {"start": {"line": 9, "character": 5}, "end": {"line": 9, "character": 21}}, "token": "LocalFileBackend"}
+      ],
+      "super": []
+    },
+    {
+      "id": "post-search-store-type",
+      "action": "implementation",
+      "query": {"path": "internal/store/post_search.go", "line": 17, "character": 6, "token": "PostSearchStore"},
+      "implementations": [
+        {"path": "internal/app/post_search_test.go", "range": {"start": {"line": 10, "character": 5}, "end": {"line": 10, "character": 21}}, "token": "searchPostsStore"},
+        {"path": "internal/store/sqlitestore/post_search_store.go", "range": {"start": {"line": 11, "character": 5}, "end": {"line": 11, "character": 26}}, "token": "SqlitePostSearchStore"},
+        {"path": "internal/store/sqlstore/post_search_store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 23}}, "token": "SqlPostSearchStore"}
+      ],
+      "super": []
+    },
+    {
+      "id": "user-store-get-all-call",
+      "action": "implementation",
+      "query": {"path": "internal/app/user.go", "line": 73, "character": 33, "token": "GetAll"},
+      "implementations": [
+        {"path": "internal/api/bot_users_test.go", "range": {"start": {"line": 67, "character": 26}, "end": {"line": 67, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/app/post_test.go", "range": {"start": {"line": 1241, "character": 30}, "end": {"line": 1241, "character": 36}}, "token": "GetAll"},
+        {"path": "internal/app/team_git_aliases_test.go", "range": {"start": {"line": 184, "character": 28}, "end": {"line": 184, "character": 34}}, "token": "GetAll"},
+        {"path": "internal/app/user_avatar_test.go", "range": {"start": {"line": 211, "character": 26}, "end": {"line": 211, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/store/sqlitestore/user_store.go", "range": {"start": {"line": 90, "character": 26}, "end": {"line": 90, "character": 32}}, "token": "GetAll"},
+        {"path": "internal/store/sqlstore/user_store.go", "range": {"start": {"line": 90, "character": 23}, "end": {"line": 90, "character": 29}}, "token": "GetAll"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 37, "character": 1}, "end": {"line": 37, "character": 7}}, "token": "GetAll"}
+      ],
+      "super": []
+    },
+    {
+      "id": "session-store-get-call",
+      "action": "implementation",
+      "query": {"path": "internal/app/session.go", "line": 5, "character": 38, "token": "Get"},
+      "implementations": [
+        {"path": "internal/api/post_action_test.go", "range": {"start": {"line": 59, "character": 29}, "end": {"line": 59, "character": 32}}, "token": "Get"},
+        {"path": "internal/api/svn_feature_tag_test.go", "range": {"start": {"line": 301, "character": 27}, "end": {"line": 301, "character": 30}}, "token": "Get"},
+        {"path": "internal/store/sqlitestore/session_store.go", "range": {"start": {"line": 39, "character": 29}, "end": {"line": 39, "character": 32}}, "token": "Get"},
+        {"path": "internal/store/sqlstore/session_store.go", "range": {"start": {"line": 39, "character": 26}, "end": {"line": 39, "character": 29}}, "token": "Get"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 124, "character": 1}, "end": {"line": 124, "character": 4}}, "token": "Get"}
+      ],
+      "super": []
+    },
+    {
+      "id": "sql-user-store-type",
+      "action": "super",
+      "query": {"path": "internal/store/sqlstore/user_store.go", "line": 11, "character": 6, "token": "SqlUserStore"},
+      "implementations": [],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 10}}, "token": "Store"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 31, "character": 5}, "end": {"line": 31, "character": 14}}, "token": "UserStore"}
+      ],
+      "exclusions": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C", "reason": "The Go 1.27.4 go list -deps -test ./... build graph has no package for this dependency testdata directory."}
+      ]
+    },
+    {
+      "id": "sql-user-store-get-all",
+      "action": "super",
+      "query": {"path": "internal/store/sqlstore/user_store.go", "line": 90, "character": 24, "token": "GetAll"},
+      "implementations": [],
+      "super": [
+        {"path": "internal/store/store.go", "range": {"start": {"line": 37, "character": 1}, "end": {"line": 37, "character": 7}}, "token": "GetAll"}
+      ]
+    },
+    {
+      "id": "sqlite-user-store-type",
+      "action": "super",
+      "query": {"path": "internal/store/sqlitestore/user_store.go", "line": 11, "character": 6, "token": "SqliteUserStore"},
+      "implementations": [],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 12, "character": 5}, "end": {"line": 12, "character": 10}}, "token": "Store"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 31, "character": 5}, "end": {"line": 31, "character": 14}}, "token": "UserStore"}
+      ],
+      "exclusions": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C", "reason": "The Go 1.27.4 go list -deps -test ./... build graph has no package for this dependency testdata directory."}
+      ]
+    },
+    {
+      "id": "sqlite-user-store-get-all",
+      "action": "super",
+      "query": {"path": "internal/store/sqlitestore/user_store.go", "line": 90, "character": 27, "token": "GetAll"},
+      "implementations": [],
+      "super": [
+        {"path": "internal/store/store.go", "range": {"start": {"line": 37, "character": 1}, "end": {"line": 37, "character": 7}}, "token": "GetAll"}
+      ]
+    },
+    {
+      "id": "sql-store-session",
+      "action": "super",
+      "query": {"path": "internal/store/sqlstore/store.go", "line": 91, "character": 21, "token": "Session"},
+      "implementations": [],
+      "super": [
+        {"path": "internal/store/store.go", "range": {"start": {"line": 18, "character": 1}, "end": {"line": 18, "character": 8}}, "token": "Session"}
+      ]
+    },
+    {
+      "id": "sqlite-store-session",
+      "action": "super",
+      "query": {"path": "internal/store/sqlitestore/store.go", "line": 91, "character": 24, "token": "Session"},
+      "implementations": [],
+      "super": [
+        {"path": "internal/store/store.go", "range": {"start": {"line": 18, "character": 1}, "end": {"line": 18, "character": 8}}, "token": "Session"}
+      ]
+    },
+    {
+      "id": "memory-user-store-type",
+      "action": "super",
+      "query": {"path": "internal/api/bot_users_test.go", "line": 20, "character": 6, "token": "memoryUserStore"},
+      "implementations": [],
+      "super": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C"},
+        {"path": "internal/store/store.go", "range": {"start": {"line": 31, "character": 5}, "end": {"line": 31, "character": 14}}, "token": "UserStore"}
+      ],
+      "exclusions": [
+        {"path": "GOMODCACHE:golang.org/x/tools@v0.43.0/go/analysis/passes/httpresponse/testdata/src/typeparams/typeparams.go", "range": {"start": {"line": 42, "character": 5}, "end": {"line": 42, "character": 6}}, "token": "C", "reason": "The Go 1.27.4 go list -deps -test ./... build graph has no package for this dependency testdata directory."}
+      ]
+    },
+    {
+      "id": "memory-user-store-get-all",
+      "action": "super",
+      "query": {"path": "internal/api/bot_users_test.go", "line": 67, "character": 27, "token": "GetAll"},
+      "implementations": [],
+      "super": [
+        {"path": "internal/store/store.go", "range": {"start": {"line": 37, "character": 1}, "end": {"line": 37, "character": 7}}, "token": "GetAll"}
+      ]
+    },
+    {
+      "id": "package-declaration",
+      "action": "implementation",
+      "query": {"path": "internal/store/store.go", "line": 0, "character": 9, "token": "store"},
+      "implementations": [],
+      "super": []
+    }
+  ]
+}
