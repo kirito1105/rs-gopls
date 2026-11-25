@@ -39,9 +39,9 @@ Get-Content -LiteralPath (Join-Path $directory 'reference-locations.tsv') -Encod
 
 输出首行为 GoLand 构建号。每个结果由类别、查询 ID、文件、起始行列、结束行列和源码记号组成。
 
-## 检查与性能对照
+## 检查源码引用
 
-用同一个 Go 1.27.4 工具链运行候选版和 gopls。检查器分别比较 `includeDeclaration=false` 的源码用法与 `includeDeclaration=true` 的源码用法加声明，并报告多余、缺失、重复结果。
+用 GoLand 基线所用的 Go 1.27.4 工具链运行候选版。检查器分别比较 `includeDeclaration=false` 的源码用法与 `includeDeclaration=true` 的源码用法加声明，并报告多余、缺失、重复结果。
 
 ~~~powershell
 $sdk = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.27.4.windows-amd64'
@@ -50,6 +50,13 @@ $env:GOTOOLCHAIN = 'local'
 $workspace = 'E:\Code\localchat\server'
 $server = '.\target\release\rs-gopls.exe'
 python -B .\tools\check_goland_references.py $server --workspace $workspace
+~~~
+
+### 历史性能对照
+
+以下命令用于复现第三阶段的引用性能记录。新的性能测量直接使用 GoLand 的实际查询。[导航性能对照](PLANS.md#导航性能对照)
+
+~~~powershell
 python -B .\tools\compare_workspace_references.py $server --workspace $workspace --sessions 5 --iterations 80 --json .\target\references-performance.json
 ~~~
 

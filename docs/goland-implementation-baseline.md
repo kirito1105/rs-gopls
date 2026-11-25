@@ -70,7 +70,27 @@ python -B .\tools\check_workspace_updates.py $server
 
 15 组工作区回归通过，包含签名编辑、关闭后恢复、未保存新实现、磁盘构建条件变化、待加载取消和分批搜索取消。已有 124 个合成声明位置、16 个项目锚点、21 个 GoLand 声明对照、58 个 GoLand 类型定义对照及 34 组引用结果通过。[第三阶段验收记录](plans/2026-11-25-go-navigation-phase-three.md)
 
+## 与 GoLand 直接对照
+
+2026-11-26 在同一 Windows 主机、同一 `localchat/server` 修订和 Go 1.27.4 下，测量 GoLand `GO-263.7307.354` 与 rs-gopls `76aa881`。GoLand 使用已打开并完成索引的项目，每个用例预热 5 次后采样 30 次。计时从解析光标位置开始，到 **Go to Implementation** 或 **Go to Super** 得到完整源码目标为止。rs-gopls 使用已预热的索引，计时覆盖 LSP 请求往返。重复同一光标位置每例采样 150 次，另在同一标识符内换光标位置采集未命中结果缓存的新查询。
+
+| 查询 | 目标数 GoLand / rs-gopls | GoLand 已索引 P50 / P95 | rs-gopls 新光标 P50 / P95 | rs-gopls 同光标 P50 / P95 |
+| --- | ---: | ---: | ---: | ---: |
+| `Store` 接口查实现 | 39 / 39 | 162.94 / 192.88 ms | 27.69 / 29.00 ms | 0.336 / 0.537 ms |
+| `SqlUserStore.GetAll` 方法反查 | 1 / 1 | 6.83 / 7.95 ms | 13.44 / 15.21 ms | 0.109 / 0.200 ms |
+| `SqlStore` 类型反查 | 1 / 1 | 16.08 / 23.13 ms | 132.19 / 152.94 ms | 0.161 / 0.279 ms |
+| `LocalFileBackend` 类型反查 | 1 / 1 | 4.13 / 5.32 ms | 108.90 / 123.88 ms | 0.123 / 0.214 ms |
+| `SqlUserStore` 类型反查 | 3 / 2 | 30.69 / 40.04 ms | 116.02 / 131.07 ms | 0.125 / 0.231 ms |
+| `SqliteUserStore` 类型反查 | 3 / 2 | 30.29 / 39.73 ms | 120.52 / 147.86 ms | 0.120 / 0.213 ms |
+| `memoryUserStore` 类型反查 | 2 / 1 | 11.23 / 12.83 ms | 113.28 / 127.95 ms | 0.112 / 0.212 ms |
+
+前四项的完整目标集合与范围一致。后三项 GoLand 各返回一个活动包图之外的依赖 `testdata` 目标，表中记录各自耗时供诊断。这个实验的计时边界是索引完成后的后台查询，启动和界面耗时属于独立场景。后续测量按 [导航性能对照](PLANS.md#导航性能对照) 执行。
+
+原始结果位于 Cargo 产物目录的 `goland-implementation-timing-76aa881.tsv`、`goland-implementation-timing-76aa881.json` 和 `rs-gopls-goland-warm-76aa881.json`。
+
 ## 性能对照
+
+本节及后续首响优化章节保留第四阶段此前与 gopls 的历史测量和复现命令。新的性能验收使用上方 [GoLand 直接对照](#与-goland-直接对照) 的口径。
 
 同一 Windows 主机使用 Go 1.27.4、相同的 `localchat/server` 修订、Go 与系统缓存、打开文件和请求顺序。gopls v0.24.0 使用 `Save` 诊断配置，两套服务交替运行，各测 5 个独立会话。每个会话记录首次正确的 `Store` 查询，打开并预热共同样本后记录 80 次暖态查询，再记录 80 次未保存的顶层注释插入或删除及查询。每次都比较完整目标范围。
 

@@ -16,10 +16,14 @@ cargo test -p rs-gopls --locked
 cargo build -p rs-gopls --release --locked
 $target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
 $server = Join-Path $target 'release\rs-gopls.exe'
-python .\tools\compare_definitions.py $server --baseline --iterations 60
+python -B .\tools\compare_definitions.py $server --iterations 60
 ```
 
-Launch the resulting executable as a stdio language server with a Go module, a go.work directory, or a GOPATH project as its LSP workspace root. The benchmark's optional `--baseline` uses `gopls` from PATH. It checks exact definition locations, including after unsaved edits to the caller and dependency, before reporting latency. Add --stdlib to test unsaved caller edits that resolve into the installed Go SDK net/http package. Both workloads use a small generated caller. The harness asks gopls to run diagnostics on save to reduce unrelated work during measured edits. Treat startup as a single sample with shared system and Go caches.
+Launch the resulting executable as a stdio language server with a Go module, a go.work directory, or a GOPATH project as its LSP workspace root. The command above is a local latency check that verifies exact definition locations after unsaved edits. Add `--stdlib` to test a generated caller that resolves into the installed Go SDK's `net/http` package.
+
+## Navigation performance
+
+Use actual GoLand navigation queries as the performance reference. Fix the project revision, Go SDK, search scope, and query positions. Compare complete matching result sets and report startup, new queries on ready indexes, repeated queries, and edits as separate workloads. [Measurement protocol](docs/PLANS.md#导航性能对照) · [GoLand implementation timings](docs/goland-implementation-baseline.md#与-goland-直接对照)
 
 ## Definition coverage
 

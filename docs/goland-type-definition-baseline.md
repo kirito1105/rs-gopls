@@ -22,9 +22,9 @@
 
 SDK 的目标在 Go 的不同版本上可能移动。严格比较已固定的 SDK 范围时使用 Go 1.27.4，并令客户端和语言服务器通过同一 `PATH` 选择它。普通项目仍可使用自己的工具链。
 
-## 检查与对照
+## 检查类型定义
 
-在本机选择与 GoLand 基线相同的 Go 1.27.4 工具链，再运行类型定义检查或性能对照。保留 `--allow-differences` 仅用于记录对照服务的差异。候选发布版用默认严格模式验收。
+在本机选择与 GoLand 基线相同的 Go 1.27.4 工具链，再用默认严格模式检查候选发布版。
 
 ~~~powershell
 $sdk = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.27.4.windows-amd64'
@@ -33,6 +33,13 @@ $env:GOTOOLCHAIN = 'local'
 $workspace = 'E:\Code\localchat\server'
 $server = '.\target\release\rs-gopls.exe'
 python -B .\tools\check_goland_definitions.py $server --workspace $workspace --method typeDefinition
+~~~
+
+### 历史性能对照
+
+以下命令用于复现类型定义交付时的性能记录。新的性能测量直接使用 GoLand 的实际查询。[导航性能对照](PLANS.md#导航性能对照)
+
+~~~powershell
 python -B .\tools\compare_workspace_definitions.py $server --workspace $workspace --method typeDefinition --dependency-iterations 20 --json .\target\type-definition-performance.json
 ~~~
 

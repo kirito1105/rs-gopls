@@ -12,7 +12,7 @@
 
 在 Zed 中从 Go 接口类型或接口方法跳到实现，从具体类型或方法反查其满足的接口与对应方法。支持从声明和用法位置发起请求，通过 `textDocument/implementation` 返回实际声明位置。查询目标、搜索范围和落点以 GoLand 2026.3 在 `E:\Code\localchat\server` 的实测为准。接口到实现使用 **Go to Implementation**，具体实现反查接口时对照 **Go to Super**，并在同一光标位置记录 **Go to Implementation** 的行为。
 
-延续第三阶段的真实项目基线、未保存缓冲区优先策略和相同条件下的 gopls 性能对照。先采集 GoLand 基线，再实现并在 Zed 验收。[项目愿景](../vision.md) · [第三阶段验收记录](2026-11-25-go-navigation-phase-three.md)
+延续第三阶段的真实项目基线和未保存缓冲区优先策略。先采集 GoLand 基线，再实现并在 Zed 验收。后续性能测量直接对照 GoLand 的实际导航查询。[项目愿景](../vision.md) · [第三阶段验收记录](2026-11-25-go-navigation-phase-three.md)
 
 ## 验收标准
 
@@ -21,7 +21,8 @@
 - [x] 补充夹具验证值与指针接收者、嵌入接口与提升方法、同名异签名、跨包私有方法、别名、泛型及空接口和约束接口。按 GoLand 实测确认各场景中出现的候选和落点。
 - [x] 未保存的接口或实现改动能即时改变结果，关闭覆盖缓冲区后恢复磁盘结果。工作区包图更新后，搜索使用当前构建条件与测试包视图。长查询可取消。
 - [ ] Zed 的隔离配置加载发布版 `rs-gopls`。在 `localchat/server` 实际调用实现跳转，核对单目标落点、多目标选择列表、空结果和实现反查接口。现场抽查声明跳转、类型定义跳转和查找引用。
-- [x] 第三阶段记录的声明、类型定义、引用及工作区回归全部通过。同轮对比 gopls，记录共同正确样本的首次正确响应、暖态和编辑后 P50/P95、进程树峰值工作集，以及结果差异和错误。
+- [x] 第三阶段记录的声明、类型定义、引用及工作区回归全部通过。阶段发布时的首次正确响应、暖态和编辑后 P50/P95、工作集及差异已归档。[历史性能记录](../goland-implementation-baseline.md#性能对照)
+- [x] 在相同项目及 Go SDK 下，直接测量已索引的 GoLand 与候选版。记录完整目标一致的四个查询，以及三项搜索范围差异。[GoLand 直接对照](../goland-implementation-baseline.md#与-goland-直接对照)
 
 ## 实现依据
 
@@ -41,7 +42,7 @@ Rust 方案复用 [`src/main.rs`](../../src/main.rs) 的 LSP 分派和分批取�
 1. 确认后记录确认结果并将状态改为「进行中」。在 GoLand 打开固定修订的 `localchat/server`，等索引完成后采集双向跳转。优先选用 `internal/store` 的 `Store`、`UserStore`、`UserStore.GetAll` 和 `internal/store/sqlstore` 的对应实现，在 `internal/api` 和 `internal/app` 补充调用处和测试实现。交叉核对 IDE 中的实际动作与采集输出。提交可重放的采集入口、真实项目和补充夹具，以及 `docs/goland-implementation-baseline.md` 中的实测记录。
 2. 接入 `textDocument/implementation` 和能力声明，按 GoLand 基线实现接口类型、接口方法到实现的查询。用严格的 stdio 检查器验证目标集合与范围，运行受影响的回归后提交。
 3. 实现具体类型和方法到接口的查询，按基线补齐嵌入、提升、别名、泛型及作用域边界。验证缓冲区覆盖、包图变更和取消，并运行前三项导航回归后提交。
-4. 构建发布版，完成同条件 gopls 对比及 Zed 实际跳转验收，记录版本、提交号、二进制摘要、功能结果和性能数据。验证通过后提交验收记录及最终计划状态。
+4. 构建发布版，记录与 GoLand 的同场景性能对照及 Zed 实际跳转结果，附上版本、提交号、二进制摘要、功能结果和性能数据。验证通过后提交验收记录及最终计划状态。
 
 每个验证通过的步骤各提交一次本地 Git，同步勾选本计划的验收项并补记实际结果。目标、范围或验收条件有实质变化时，更新本计划并重新确认。
 
@@ -49,7 +50,7 @@ Rust 方案复用 [`src/main.rs`](../../src/main.rs) 的 LSP 分派和分批取�
 
 - **GoLand 基线**　沿用第三阶段 `localchat/server` 修订 `532228d3d36bd9f0fffb4bda35c180485b2eadd6` 和 Go 1.27.4，采集时复核并记录实际环境。每个查询记录动作、查询路径、零起点 UTF-16 光标、目标路径和标识符范围。依赖和 SDK 路径按 `GOMODCACHE` 与 `GOROOT` 归一化。记录 UI 中的多候选和空结果，补充可重放的语义边界夹具。
 - **构建与回归**　Rust 改动先运行 `cargo check -p rs-gopls --locked`，再按需运行 `cargo test -p rs-gopls --locked`。发布验收运行 `cargo build -p rs-gopls --release --locked`，通过 `cargo metadata` 读取配置的产物目录。严格运行新增实现跳转对照，并复用 `tools/check_definitions.py --stage 6`、`tools/check_goland_definitions.py`、`tools/check_goland_references.py` 和 `tools/check_workspace_updates.py` 的现有参数与语料。核对第三阶段的 21 个 GoLand 声明位置、124 个合成声明位置、16 个项目锚点、58 个类型定义位置、34 组引用结果及 12 组工作区回归。[类型定义验收](../goland-type-definition-baseline.md#类型定义发布验收) · [引用验收](../goland-references-baseline.md#引用发布验收)
-- **性能对照**　在同一 Windows 主机固定项目快照、Go SDK、构建环境、打开文件、请求序列、编辑内容和缓存条件。记录 gopls 版本，优先沿用第三阶段的 v0.24.0 及 `Save` 诊断配置。轮换两套服务的运行顺序，每套至少 5 个独立进程会话。每个会话以有确定非空目标的共同用例记录首次正确响应，再对结果一致的共同样本测量暖态和编辑后 P50/P95、进程树峰值工作集，并记录样本数。记录其他样本的结果差异或错误。沿用第三阶段的性能目标，主要共同路径的 P95 较 gopls 低至少 20%。旧功能与第三阶段发布版 `be7641d` 同轮对照，建议各路径暖态 P95 的回退上限为 10% 与 1 ms 中较大者。
+- **性能对照**　直接测量 GoLand 的 **Go to Implementation** 和 **Go to Super**，与发布版 `textDocument/implementation` 的对应查询比较。固定项目修订、Go SDK、搜索范围和计时边界。按缓存状态分场景记录 P50/P95，目标集合有差异的样本单列。已有导航的性能回归可用上一阶段 rs-gopls 发布版复测。[导航性能对照](../PLANS.md#导航性能对照)
 - **Zed 实测**　先运行 `tools/test_zed.ps1 -PrepareOnly` 准备发布二进制，再用输出的隔离配置打开 `localchat/server`，确认 Go 文件使用 `rs-gopls`。在已采集的光标位置触发跳转，核对编辑器落点或多目标列表。记录 Zed 版本、已加载的发布二进制摘要、LSP 能力、查询位置和可见结果。沿用仓库约定的工具链、profile、features 和 target。
 
 ## 首次响应优化
@@ -61,7 +62,7 @@ Rust 方案复用 [`src/main.rs`](../../src/main.rs) 的 LSP 分派和分批取�
 
 2026-11-26 用户确认继续优化具体类型反查。使用具体类型自身和提升的方法筛选可能的接口声明，保留别名、嵌入及未保存缓冲区涉及的候选。按接口的必需方法建立包内索引，精确结果由完整方法集匹配确认。
 
-- [x] 用 `SqlUserStore` 及另一具体类型做同条件五轮首查对照，精确命中互有不同必需方法的接口，记录优化前后及与 gopls 的 P50/P95。
+- [x] 用 `SqlUserStore` 等具体类型做同条件五轮首查对照，精确命中互有不同必需方法的接口，记录优化前后的 P50/P95。[历史首查对照](../goland-implementation-baseline.md#具体类型反查首查优化)
 - [x] 原有 49 项 GoLand 对照与导航回归通过。补充验证跨包的接口别名、提升后的方法及未保存接口造成的候选集合变化。
 
 ## 完成记录
@@ -77,3 +78,4 @@ Rust 方案复用 [`src/main.rs`](../../src/main.rs) 的 LSP 分派和分批取�
 - 2026-11-26 「受阻」只涉及 Zed 现场动作。恢复条件为 Windows UI 自动化可连接该窗口，或取得隔离配置下的现场落点、候选列表、空结果及已有导航抽查结果。
 - 2026-11-26 首次候选筛选验证通过。`Store` 新旧版同轮 P50 从 3.66 秒降到 0.77 秒，具体方法反查从 3.60 秒降到 0.85 秒，具体类型反查为 3.54 秒。49 个 GoLand 对照、16 项工作区回归、声明跳转、类型定义和引用回归全部通过。[同轮首查与暖态结果](../goland-implementation-baseline.md#首次响应优化)
 - 2026-11-26 具体类型反查索引验收通过。`SqlUserStore` 同轮首查 P50 从 3.74 秒降到 1.30 秒，`SqliteUserStore` 和 `memoryUserStore` 分别下降至 1.31 和 1.36 秒。45 次具体类型首查均精确匹配，49 项 GoLand 对照和 17 项工作区回归通过。[具体类型首查验收](../goland-implementation-baseline.md#具体类型反查首查优化)
+- 2026-11-26 用户指定以后直接与 GoLand 对比性能。已记录 GoLand `GO-263.7307.354` 与 rs-gopls `76aa881` 在已索引项目中的查询耗时，分别列出 rs-gopls 的新光标查询和同光标结果缓存命中。[GoLand 直接对照](../goland-implementation-baseline.md#与-goland-直接对照)

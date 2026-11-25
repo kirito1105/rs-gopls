@@ -37,17 +37,19 @@ Get-Content -LiteralPath (Join-Path $directory 'ctrl-b.tsv') -Encoding utf8
 
 ## 对照当前语言服务器
 
-复用已构建的 rs-gopls 可执行文件，或用 `gopls` 作为第一个参数。GoLand 源码位置按目标 URI 和完整标识符范围比较。
+用已构建的 rs-gopls 可执行文件检查 GoLand 源码落点，按目标 URI 和完整标识符范围比较。
 
 ~~~powershell
-python -B .\tools\check_goland_definitions.py .\target\release\rs-gopls.exe --workspace 'E:\Code\localchat\server' --allow-differences
+python -B .\tools\check_goland_definitions.py .\target\release\rs-gopls.exe --workspace 'E:\Code\localchat\server'
 ~~~
 
 `--json` 输出每个查询的 GoLand 期望、实际候选及分类。默认严格模式用退出码报告缺失或不同目标。基线 rs-gopls `675640b` 的 19 个文件位置中，15 个一致、3 个为空、1 个不同。gopls v0.24.0 有 18 个一致、1 个不同。两个服务器对 GoLand 包级导航用例均返回当前文件的导入位置。
 
-## 比较 gopls 的性能
+## 历史性能对照
 
-使用同一工作区和 Go 工具链，比对候选版、上一阶段版与 gopls。默认每个服务运行 5 个独立进程，每轮测 80 次调用方范围编辑及 80 轮依赖文件覆盖与恢复。每次计时都核对 GoLand 的实际定义范围。报告区分首次查询、暖态编辑与依赖覆盖/恢复，并记录超时、错误和 Windows 进程工作集。进程树工作集为周期采样峰值，新进程共享系统和 Go 缓存。
+以下命令用于复现当时的候选版、上一阶段版与 gopls 测量。新的性能测量直接使用 GoLand 的实际查询。[导航性能对照](PLANS.md#导航性能对照)
+
+历史实验使用同一工作区和 Go 工具链。默认每个服务运行 5 个独立进程，每轮测 80 次调用方范围编辑及 80 轮依赖文件覆盖与恢复。每次计时都核对 GoLand 的实际定义范围。报告区分首次查询、暖态编辑与依赖覆盖/恢复，并记录超时、错误和 Windows 进程工作集。进程树工作集为周期采样峰值，新进程共享系统和 Go 缓存。
 
 ~~~powershell
 python -B .\tools\compare_workspace_definitions.py .\target\release\rs-gopls.exe `
