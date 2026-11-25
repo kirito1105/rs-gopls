@@ -37,3 +37,11 @@ python -B .\tools\compare_workspace_definitions.py $server --workspace $workspac
 ~~~
 
 固定 SDK 后，gopls v0.24.0 的 34 个对照结果中，24 个与 GoLand 落点一致，5 个目标有差异，5 个请求返回错误。共同性能样本使用 8 个已经核对范围的局部、接口、成员及跨包位置。
+
+## 补充类型案例
+
+[补充 Go 模块](../tools/fixtures/type-navigation)的 24 个位置通过同一 GoLand 构建中的只读内存 Go 文件采集。它确认了别名和命名容器仍跳到各自的类型声明，`[]Value` 落在 `Value`，而 `[]*Value` 落在切片的 `[`。泛型字段名本身跳到声明里的类型参数，由该字段推断出的变量跳到实例化类型。还覆盖函数类型、局部类型及内置标量推断。打开补充模块后也可通过相同的 IDE 动作重放这些位置。
+
+~~~powershell
+python -B .\tools\check_goland_definitions.py .\target\release\rs-gopls.exe --workspace .\tools\fixtures\type-navigation --fixture .\tools\fixtures\type-navigation\goland-types.tsv --method typeDefinition
+~~~
