@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use lsp_types::{FileChangeType, Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
-use crate::scope::{lexical_binding, receiver_type_parameters};
+use crate::scope::{declaration_binding, lexical_binding, receiver_type_parameters};
 use crate::symbols::{
     self, Container, FileSymbols, FunctionSignature, GenericParameter, InlineType, Symbol,
     SymbolKind, TypeDetails, TypeRef, TypeRefKind,
@@ -58,6 +58,12 @@ enum ReferenceQuery<'tree> {
         value: Node<'tree>,
         name: Node<'tree>,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DefinitionKind {
+    Declaration,
+    Type,
 }
 
 pub enum DefinitionProgress {
@@ -226,7 +232,12 @@ impl Engine {
         self.invalidate(affected);
     }
 
-    pub fn definition(&mut self, path: &Path, position: Position) -> Result<DefinitionProgress> {
+    pub fn definition(
+        &mut self,
+        path: &Path,
+        position: Position,
+        kind: DefinitionKind,
+    ) -> Result<DefinitionProgress> {
         let disk_source;
         let source = if let Some(source) = self.documents.get(&path_key(path)) {
             source
@@ -240,7 +251,9 @@ impl Engine {
         let Some(reference) = source.reference_at(position) else {
             return Ok(DefinitionProgress::Ready(None));
         };
-        if let ReferenceQuery::Name(name) = reference {
+        if kind == DefinitionKind::Declaration
+            && let ReferenceQuery::Name(name) = reference
+        {
             let declaration = if is_declaration_name(name) {
                 Some(name)
             } else {
@@ -309,6 +322,12 @@ impl Engine {
             drafts,
         };
 
+        if kind == DefinitionKind::Type {
+            let mut resolver = Resolver { workspace, indexes };
+            return resolver
+                .type_definition(from, source, reference, &self.root)
+                .map(DefinitionProgress::Ready);
+        }
         let location = match reference {
             ReferenceQuery::Name(name) => {
                 let mut resolver = Resolver { workspace, indexes };
@@ -502,7 +521,7 @@ enum TypeKind<'w> {
         name: String,
         arguments: Vec<Option<TypeIdentity<'w>>>,
     },
-    Container(Box<Container<TypeIdentity<'w>>>),
+    Container(Box<Container<TypeIdentity<'w>>>, Option<(PathBuf, Range)>),
     Function {
         file: PathBuf,
         signature: Arc<FunctionSignature>,
@@ -553,7 +572,7 @@ impl<'w> TypeIdentity<'w> {
             TypeKind::Inline { file, shape, .. } => {
                 Some(TypeKey::Inline(file.clone(), shape.origin.start))
             }
-            TypeKind::Container(_) | TypeKind::Function { .. } | TypeKind::Parameter(_) => None,
+            TypeKind::Container(..) | TypeKind::Function { .. } | TypeKind::Parameter(_) => None,
         }
     }
 
@@ -585,6 +604,227 @@ struct Resolver<'w, 'idx> {
 }
 
 impl<'w> Resolver<'w, '_> {
+    fn type_definition(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        reference: ReferenceQuery<'_>,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        let ty = match reference {
+            ReferenceQuery::Name(name) => return self.name_type_location(from, source, name, root),
+            ReferenceQuery::Member { receiver, name } => {
+                let spelling = node_text(name, &source.text);
+                let Some(symbol) = self.selector(from, source, receiver, spelling, 0)? else {
+                    return Ok(None);
+                };
+                if let Some(location) = self.field_type_parameter(&symbol)? {
+                    return Ok(Some(location));
+                }
+                self.symbol_type(source, &symbol, spelling, 0)?
+            }
+            ReferenceQuery::LiteralKey { value, name } => {
+                let Some(owner) = self.literal_type(from, source, value, 0)? else {
+                    return Ok(None);
+                };
+                if self.container(owner.clone())?.is_some() {
+                    self.infer_type(from, source, name, 0, 0)?
+                } else {
+                    let spelling = node_text(name, &source.text);
+                    let Some(symbol) = self.member(from, &owner, spelling, false)? else {
+                        return Ok(None);
+                    };
+                    self.symbol_type(source, &symbol, spelling, 0)?
+                }
+            }
+        };
+        match ty {
+            Some(ty) => self.type_location(ty, root),
+            None => Ok(None),
+        }
+    }
+
+    fn field_type_parameter(
+        &mut self,
+        field: &ResolvedSymbol<'w>,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        let SymbolKind::Value(Some(TypeRef {
+            kind: TypeRefKind::Named(named),
+            ..
+        })) = &field.symbol.kind
+        else {
+            return Ok(None);
+        };
+        let Some(receiver) = &field.receiver else {
+            return Ok(None);
+        };
+        let TypeKind::Named { name, .. } = &receiver.kind else {
+            return Ok(None);
+        };
+        if named.qualifier.is_some() || !named.arguments.is_empty() {
+            return Ok(None);
+        }
+        let Some((file, details)) = self.type_info(receiver.package, name)? else {
+            return Ok(None);
+        };
+        Ok(details
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == named.name)
+            .map(|parameter| (file, parameter.name_range)))
+    }
+
+    fn name_type_location(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        name: Node<'_>,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        let owner = name.parent();
+        if name.kind() == "package_identifier"
+            || owner.is_some_and(|node| node.kind() == "import_spec")
+        {
+            return Ok(None);
+        }
+        let spelling = node_text(name, &source.text);
+        let location = |node| Some((source.path.clone(), source.range(node)));
+        let binding = declaration_binding(name, &source.text)
+            .or_else(|| lexical_binding(name, spelling, &source.text));
+        let ty = if let Some(binding) = binding {
+            if binding.name.parent().is_some_and(is_lexical_type_owner) {
+                return Ok(location(binding.name));
+            }
+            if let Some(explicit) = binding.explicit_type {
+                if let Some(local) = lexical_type_declaration(source, explicit) {
+                    return Ok(location(local));
+                }
+                self.source_type(from, source, explicit)
+            } else if let Some(initializer) = binding.initializer {
+                if binding.result_index == 0
+                    && let Some(local) = lexical_expression_type(source, initializer)
+                {
+                    return Ok(location(local));
+                }
+                let ty = self.infer_type(from, source, initializer, 0, binding.result_index)?;
+                if ty.is_none()
+                    && binding.result_index == 0
+                    && let Some(builtin) = untyped_default(initializer)
+                {
+                    return self.builtin_type_location(builtin, root);
+                }
+                ty
+            } else {
+                None
+            }
+        } else if let Some(owner) = owner.filter(|node| {
+            matches!(
+                node.kind(),
+                "function_declaration" | "method_declaration" | "method_elem"
+            ) && node.child_by_field_name("name") == Some(name)
+        }) {
+            self.source_type(from, source, owner)
+        } else if source
+            .imported_package(self.workspace, from, spelling)
+            .is_some()
+        {
+            None
+        } else {
+            self.infer_type(from, source, name, 0, 0)?.or_else(|| {
+                (name.kind() == "type_identifier")
+                    .then(|| self.source_type(from, source, name))
+                    .flatten()
+            })
+        };
+        match ty {
+            Some(ty) => self.type_location(ty, root),
+            None => Ok(None),
+        }
+    }
+
+    fn builtin_type_location(
+        &mut self,
+        name: &str,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        let file = self.workspace.builtin_source(root)?;
+        let found = self.indexes.file_index(file)?.symbols.declaration(name);
+        Ok(found.map(|symbol| (file.to_owned(), symbol.range)))
+    }
+
+    fn type_location(
+        &mut self,
+        mut ty: TypeIdentity<'w>,
+        root: &Path,
+    ) -> Result<Option<(PathBuf, Range)>> {
+        for _ in 0..MAX_TYPE_DEPTH {
+            match ty.kind {
+                TypeKind::Named { name, .. } => {
+                    if let Some(symbol) = self.find_symbol(ty.package, &name, None)? {
+                        return Ok(matches!(symbol.symbol.kind, SymbolKind::Type)
+                            .then(|| symbol.location()));
+                    }
+                    if !is_predeclared_type(&name) {
+                        return Ok(None);
+                    }
+                    return self.builtin_type_location(&name, root);
+                }
+                TypeKind::Container(container, location) => {
+                    // GoLand follows the direct type reference in []T or [N]T.
+                    // A nested type expression retains the array/slice syntax as the target.
+                    if let Container::Array { element, .. } | Container::Slice(element) = *container
+                        && element.pointers == 0
+                        && matches!(element.kind, TypeKind::Named { .. })
+                        && let Some(target) = self.type_location(element, root)?
+                    {
+                        return Ok(Some(target));
+                    }
+                    return Ok(location);
+                }
+                TypeKind::Inline { file, shape, .. } => return Ok(Some((file, shape.origin))),
+                TypeKind::Function {
+                    file,
+                    signature,
+                    substitutions,
+                } => {
+                    if let Some(range) = signature.function_type.or_else(|| {
+                        (signature.results.len() > 1)
+                            .then_some(signature.result_tuple)
+                            .flatten()
+                    }) {
+                        return Ok(Some((file, range)));
+                    }
+                    let [Some(result)] = signature.results.as_ref() else {
+                        return Ok(None);
+                    };
+                    if let TypeRefKind::Named(named) = &result.kind
+                        && named.qualifier.is_none()
+                        && let Some(parameter) = signature
+                            .type_parameters
+                            .iter()
+                            .find(|parameter| parameter.name == named.name)
+                    {
+                        return Ok(Some((file, parameter.name_range)));
+                    }
+                    let imports = &self.indexes.file_index(&file)?.imports;
+                    let Some(result) = materialize_type(
+                        self.workspace,
+                        ty.package,
+                        &file,
+                        imports,
+                        result.clone(),
+                        &substitutions,
+                    ) else {
+                        return Ok(None);
+                    };
+                    ty = result;
+                }
+                TypeKind::Parameter(_) => return Ok(None),
+            }
+        }
+        Ok(None)
+    }
+
     fn name_location(
         &mut self,
         from: &'w Package,
@@ -820,7 +1060,9 @@ impl<'w> Resolver<'w, '_> {
                     receiver: None,
                 }))
             }
-            TypeKind::Container(_) | TypeKind::Function { .. } | TypeKind::Parameter(_) => Ok(None),
+            TypeKind::Container(..) | TypeKind::Function { .. } | TypeKind::Parameter(_) => {
+                Ok(None)
+            }
         }
     }
 
@@ -853,7 +1095,9 @@ impl<'w> Resolver<'w, '_> {
                 },
                 substitutions.clone(),
             ))),
-            TypeKind::Container(_) | TypeKind::Function { .. } | TypeKind::Parameter(_) => Ok(None),
+            TypeKind::Container(..) | TypeKind::Function { .. } | TypeKind::Parameter(_) => {
+                Ok(None)
+            }
         }
     }
 
@@ -880,7 +1124,7 @@ impl<'w> Resolver<'w, '_> {
         }
         Ok(match self.underlying_type(ty)? {
             Some(TypeIdentity {
-                kind: TypeKind::Container(container),
+                kind: TypeKind::Container(container, _),
                 pointers,
                 ..
             }) => Some((*container, pointers)),
@@ -1044,7 +1288,7 @@ impl<'w> Resolver<'w, '_> {
                     {
                         Some(TypeIdentity::new(
                             ty.package,
-                            TypeKind::Container(Box::new(Container::Slice(element))),
+                            TypeKind::Container(Box::new(Container::Slice(element)), None),
                             0,
                         ))
                     }
@@ -1137,20 +1381,37 @@ impl<'w> Resolver<'w, '_> {
         let Some(function) = call.child_by_field_name("function") else {
             return Ok(None);
         };
+        let spelling = node_text(function, &source.text);
         if result_index == 0
             && function.kind() == "identifier"
-            && node_text(function, &source.text) == "new"
-            && lexical_binding(function, "new", &source.text).is_none()
-            && self.find_symbol(from, "new", None)?.is_none()
+            && matches!(spelling, "new" | "make")
+            && lexical_binding(function, spelling, &source.text).is_none()
+            && self.find_symbol(from, spelling, None)?.is_none()
         {
-            let argument = call
+            let Some(argument) = call
                 .child_by_field_name("arguments")
-                .and_then(|args| args.named_child(0));
-            return Ok(argument.and_then(|node| {
-                let mut ty = self.source_type(from, source, node)?;
-                ty.pointers = ty.pointers.checked_add(1)?;
-                Some(ty)
-            }));
+                .and_then(|args| args.named_child(0))
+                .and_then(|node| self.source_type(from, source, node))
+            else {
+                return Ok(None);
+            };
+            if spelling == "new" {
+                return Ok(argument
+                    .pointers
+                    .checked_add(1)
+                    .map(|pointers| TypeIdentity {
+                        pointers,
+                        ..argument
+                    }));
+            }
+            return Ok(matches!(
+                self.container(argument.clone())?,
+                Some((
+                    Container::Slice(_) | Container::Map { .. } | Container::Channel { .. },
+                    0
+                ))
+            )
+            .then_some(argument));
         }
         let Some(mut ty) = self.infer_type(from, source, function, depth, 0)? else {
             return Ok(None);
@@ -1606,7 +1867,7 @@ impl<'w> Resolver<'w, '_> {
         let Some(actual) = self.resolve_alias(actual)? else {
             return Ok(false);
         };
-        let actual = if loose && matches!(&expected.kind, TypeKind::Container(_)) {
+        let actual = if loose && matches!(&expected.kind, TypeKind::Container(..)) {
             self.underlying_type(actual)?
         } else {
             Some(actual)
@@ -1645,36 +1906,39 @@ impl<'w> Resolver<'w, '_> {
                 }
                 Ok(true)
             }
-            (TypeKind::Container(left), TypeKind::Container(right)) => match (*left, *right) {
-                (Container::Slice(left), Container::Slice(right)) => {
-                    self.unify_types(left, right, bindings, false)
+            (TypeKind::Container(left, _), TypeKind::Container(right, _)) => {
+                match (*left, *right) {
+                    (Container::Slice(left), Container::Slice(right)) => {
+                        self.unify_types(left, right, bindings, false)
+                    }
+                    (
+                        Container::Array {
+                            element: left,
+                            length: Some(n),
+                        },
+                        Container::Array {
+                            element: right,
+                            length: Some(m),
+                        },
+                    ) if n == m => self.unify_types(left, right, bindings, false),
+                    (
+                        Container::Map { key: lk, value: lv },
+                        Container::Map { key: rk, value: rv },
+                    ) => Ok(self.unify_types(lk, rk, bindings, false)?
+                        && self.unify_types(lv, rv, bindings, false)?),
+                    (
+                        Container::Channel {
+                            element: left,
+                            receive: a,
+                        },
+                        Container::Channel {
+                            element: right,
+                            receive: b,
+                        },
+                    ) if a == b => self.unify_types(left, right, bindings, false),
+                    _ => Ok(false),
                 }
-                (
-                    Container::Array {
-                        element: left,
-                        length: Some(n),
-                    },
-                    Container::Array {
-                        element: right,
-                        length: Some(m),
-                    },
-                ) if n == m => self.unify_types(left, right, bindings, false),
-                (Container::Map { key: lk, value: lv }, Container::Map { key: rk, value: rv }) => {
-                    Ok(self.unify_types(lk, rk, bindings, false)?
-                        && self.unify_types(lv, rv, bindings, false)?)
-                }
-                (
-                    Container::Channel {
-                        element: left,
-                        receive: a,
-                    },
-                    Container::Channel {
-                        element: right,
-                        receive: b,
-                    },
-                ) if a == b => self.unify_types(left, right, bindings, false),
-                _ => Ok(false),
-            },
+            }
             (
                 TypeKind::Inline {
                     file: a,
@@ -2029,7 +2293,7 @@ fn materialize_type<'w>(
                 },
             )
         }
-        TypeRefKind::Container(container) => {
+        TypeRefKind::Container(container, origin) => {
             let container = match *container {
                 Container::Slice(element) => Container::Slice(resolve(element)?),
                 Container::Array { element, length } => Container::Array {
@@ -2045,7 +2309,10 @@ fn materialize_type<'w>(
                     receive,
                 },
             };
-            (from, TypeKind::Container(Box::new(container)))
+            (
+                from,
+                TypeKind::Container(Box::new(container), Some((file.to_owned(), origin))),
+            )
         }
         TypeRefKind::Function(signature) => (
             from,
@@ -2333,6 +2600,65 @@ fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
         collect(node, text, lines, &mut result);
     }
     result
+}
+
+fn lexical_expression_type<'tree>(
+    source: &Source,
+    mut expression: Node<'tree>,
+) -> Option<Node<'tree>> {
+    for _ in 0..MAX_TYPE_DEPTH {
+        expression = match expression.kind() {
+            "composite_literal" | "type_assertion_expression" | "type_conversion_expression" => {
+                return lexical_type_declaration(source, expression.child_by_field_name("type")?);
+            }
+            "parenthesized_expression" => expression.named_child(0)?,
+            "unary_expression"
+                if expression
+                    .child_by_field_name("operator")
+                    .is_some_and(|operator| matches!(operator.kind(), "&" | "*")) =>
+            {
+                expression.child_by_field_name("operand")?
+            }
+            "identifier" => {
+                let binding = lexical_binding(
+                    expression,
+                    node_text(expression, &source.text),
+                    &source.text,
+                )?;
+                if let Some(explicit) = binding.explicit_type {
+                    return lexical_type_declaration(source, explicit);
+                }
+                if binding.result_index != 0 {
+                    return None;
+                }
+                binding.initializer?
+            }
+            _ => return None,
+        };
+    }
+    None
+}
+
+fn lexical_type_declaration<'tree>(source: &Source, mut node: Node<'tree>) -> Option<Node<'tree>> {
+    loop {
+        node = match node.kind() {
+            "pointer_type" | "parenthesized_type" => node.named_child(0)?,
+            "generic_type" => node.child_by_field_name("type")?,
+            "type_identifier" => {
+                let binding = lexical_binding(node, node_text(node, &source.text), &source.text)?;
+                return binding
+                    .name
+                    .parent()
+                    .filter(|owner| is_lexical_type_owner(*owner))
+                    .map(|_| binding.name);
+            }
+            _ => return None,
+        };
+    }
+}
+
+fn is_lexical_type_owner(node: Node<'_>) -> bool {
+    is_type_declaration(node) || matches!(node.kind(), "type_parameter_declaration" | "type_elem")
 }
 
 fn is_type_declaration(node: Node<'_>) -> bool {

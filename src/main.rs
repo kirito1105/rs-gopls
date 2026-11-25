@@ -23,12 +23,12 @@ use lsp_types::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
-    request::{GotoDefinition, Initialize, Request as _, Shutdown},
+    request::{GotoDefinition, GotoTypeDefinition, Initialize, Request as _, Shutdown},
 };
 use serde_json::Value;
 use url::Url;
 
-use semantic::{DefinitionProgress, Engine};
+use semantic::{DefinitionKind, DefinitionProgress, Engine};
 use workspace::{Workspace, WorkspaceLoad, path_key};
 
 enum State {
@@ -39,6 +39,7 @@ enum State {
 
 struct DefinitionRequest {
     id: RequestId,
+    kind: DefinitionKind,
     path: PathBuf,
     position: Position,
 }
@@ -120,7 +121,9 @@ impl Running {
         connection: &Connection,
         request: DefinitionRequest,
     ) -> Result<()> {
-        let progress = self.engine.definition(&request.path, request.position);
+        let progress = self
+            .engine
+            .definition(&request.path, request.position, request.kind);
         let result = match progress {
             Ok(DefinitionProgress::Pending(load)) => {
                 self.pending.push(request);
@@ -249,13 +252,27 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
             *state = State::Shutdown;
             Ok(Value::Null)
         }
-        (State::Running(running), GotoDefinition::METHOD) => match definition_position(params) {
-            Ok((path, position)) => {
-                return running
-                    .resolve_definition(connection, DefinitionRequest { id, path, position });
+        (State::Running(running), GotoDefinition::METHOD | GotoTypeDefinition::METHOD) => {
+            match definition_position(params) {
+                Ok((path, position)) => {
+                    let kind = if method == GotoDefinition::METHOD {
+                        DefinitionKind::Declaration
+                    } else {
+                        DefinitionKind::Type
+                    };
+                    return running.resolve_definition(
+                        connection,
+                        DefinitionRequest {
+                            id,
+                            kind,
+                            path,
+                            position,
+                        },
+                    );
+                }
+                Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
             }
-            Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
-        },
+        }
         (State::Running(..), _) => Err((
             ErrorCode::MethodNotFound,
             format!("unsupported request: {method}"),
@@ -301,6 +318,7 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
             },
         )),
         definition_provider: Some(OneOf::Left(true)),
+        type_definition_provider: Some(true.into()),
         ..Default::default()
     };
     let result = serde_json::to_value(InitializeResult {

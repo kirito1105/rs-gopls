@@ -16,7 +16,7 @@ pub(crate) struct TypeRef {
 #[derive(Clone, Debug)]
 pub(crate) enum TypeRefKind {
     Named(NamedType),
-    Container(Box<Container<TypeRef>>),
+    Container(Box<Container<TypeRef>>, Range),
     Inline(Arc<InlineType>),
     Function(Arc<FunctionSignature>),
 }
@@ -78,6 +78,8 @@ pub(crate) enum SymbolKind {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FunctionSignature {
+    pub(crate) function_type: Option<Range>,
+    pub(crate) result_tuple: Option<Range>,
     pub(crate) results: Arc<[Option<TypeRef>]>,
     pub(crate) parameters: Vec<Option<TypeRef>>,
     pub(crate) type_parameters: Vec<GenericParameter>,
@@ -86,6 +88,7 @@ pub(crate) struct FunctionSignature {
 #[derive(Clone, Debug)]
 pub(crate) struct GenericParameter {
     pub(crate) name: String,
+    pub(crate) name_range: Range,
     pub(crate) constraint: TypeConstraint,
 }
 
@@ -320,6 +323,10 @@ pub(crate) fn type_ref(
 ) -> Option<TypeRef> {
     let node = unparenthesized_type(node)?;
     let parse = |field| type_ref(node.child_by_field_name(field)?, text, range);
+    let container = |container| {
+        let token = node.child(0)?;
+        Some(TypeRefKind::Container(Box::new(container), range(token)))
+    };
     let kind = match node.kind() {
         "pointer_type" | "unary_expression"
             if node.kind() == "pointer_type"
@@ -331,33 +338,33 @@ pub(crate) fn type_ref(
             inner.pointers = inner.pointers.checked_add(1)?;
             return Some(inner);
         }
-        "slice_type" => TypeRefKind::Container(Box::new(Container::Slice(parse("element")?))),
-        "array_type" | "implicit_length_array_type" => {
-            TypeRefKind::Container(Box::new(Container::Array {
-                element: parse("element")?,
-                length: node
-                    .child_by_field_name("length")
-                    .map(|length| node_text(length, text).to_owned()),
-            }))
-        }
-        "map_type" => TypeRefKind::Container(Box::new(Container::Map {
+        "slice_type" => container(Container::Slice(parse("element")?))?,
+        "array_type" | "implicit_length_array_type" => container(Container::Array {
+            element: parse("element")?,
+            length: node
+                .child_by_field_name("length")
+                .map(|length| node_text(length, text).to_owned()),
+        })?,
+        "map_type" => container(Container::Map {
             key: parse("key")?,
             value: parse("value")?,
-        })),
-        "channel_type" => TypeRefKind::Container(Box::new(Container::Channel {
+        })?,
+        "channel_type" => container(Container::Channel {
             element: parse("value")?,
             receive: node
                 .children(&mut node.walk())
                 .filter(|child| !child.is_extra())
                 .nth(1)
                 .is_some_and(|second| second.kind() != "<-"),
-        })),
+        })?,
         "struct_type" | "interface_type" => {
             TypeRefKind::Inline(Arc::new(inline_type(node, text, range)))
         }
-        "function_type" | "func_literal" => {
-            TypeRefKind::Function(function_signature(node, text, range))
-        }
+        "function_type"
+        | "func_literal"
+        | "function_declaration"
+        | "method_declaration"
+        | "method_elem" => TypeRefKind::Function(function_signature(node, text, range)),
         _ => TypeRefKind::Named(named_type(node, text, range)?),
     };
     Some(TypeRef { pointers: 0, kind })
@@ -388,7 +395,7 @@ fn named_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) -> 
 
 fn inline_type(node: Node<'_>, text: &str, range: &dyn Fn(Node<'_>) -> Range) -> InlineType {
     let mut inline = InlineType {
-        origin: range(node),
+        origin: range(node.child(0).unwrap_or(node)),
         interface: node.kind() == "interface_type",
         ..InlineType::default()
     };
@@ -529,6 +536,7 @@ fn type_parameters(
                 .filter(|node| node.kind() == "identifier");
             parameters.extend(names.map(|name| GenericParameter {
                 name: node_text(name, text).to_owned(),
+                name_range: range(name),
                 constraint: constraint.clone(),
             }));
         }
@@ -631,7 +639,20 @@ fn function_signature(
             .map(|list| parameter_types(list, |node| type_ref(node, text, range)))
             .unwrap_or_default()
     };
+    let function_type = function
+        .child(0)
+        .filter(|node| {
+            matches!(function.kind(), "function_type" | "func_literal") && node.kind() == "func"
+        })
+        .map(range);
+    let result_tuple = function
+        .child_by_field_name("result")
+        .filter(|node| node.kind() == "parameter_list")
+        .and_then(|node| node.child(0))
+        .map(range);
     Arc::new(FunctionSignature {
+        function_type,
+        result_tuple,
         results: function_results(function, text, range),
         parameters,
         type_parameters,

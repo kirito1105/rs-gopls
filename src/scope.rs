@@ -199,6 +199,23 @@ fn type_case_binding<'tree>(
     Some(binding(name, explicit_type, initializer, 0))
 }
 
+pub(crate) fn declaration_binding<'tree>(name: Node<'tree>, text: &str) -> Option<Binding<'tree>> {
+    let parent = name.parent()?;
+    let owner = if parent.kind() == "expression_list" {
+        parent.parent()?
+    } else {
+        parent
+    };
+    let spelling = text.get(name.byte_range())?;
+    let binding = match owner.kind() {
+        "range_clause" | "receive_statement" if has_short_operator(owner) => {
+            left_binding(owner, spelling, text)
+        }
+        _ => declaration(owner, spelling, text),
+    }?;
+    (binding.name == name).then_some(binding)
+}
+
 fn declaration<'tree>(node: Node<'tree>, name: &str, text: &str) -> Option<Binding<'tree>> {
     let mut cursor = node.walk();
     match node.kind() {
@@ -224,7 +241,8 @@ fn declaration<'tree>(node: Node<'tree>, name: &str, text: &str) -> Option<Bindi
         | "const_spec"
         | "parameter_declaration"
         | "variadic_parameter_declaration"
-        | "type_parameter_declaration" => {
+        | "type_parameter_declaration"
+        | "field_declaration" => {
             let (index, name) = node
                 .children_by_field_name("name", &mut cursor)
                 .filter(Node::is_named)

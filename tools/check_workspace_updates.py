@@ -189,11 +189,15 @@ def check_gopath(executable_path, root, timeout):
         package / "caller.go",
         'package legacy\nimport "example.test/legacy/dep"\nfunc call() { dep.Run() }\n',
     )
-    declaration = write(package / "dep" / "dep.go", "package dep\n\nfunc Run() {}\n")
+    declaration = write(
+        package / "dep" / "dep.go",
+        "package dep\n\ntype Result struct{}\nfunc Run() *Result { return nil }\n",
+    )
     reference = site(caller, "dep.[[Run]]()")
     with session(executable_path, package, timeout, GO111MODULE="off", GOPATH=str(root)) as client:
         client.open_document(caller, reference.text)
         check_location(client, reference, site(declaration, "func [[Run]]()"))
+        check_type_location(client, reference, site(declaration, "type [[Result]] struct{}"))
 
 
 
@@ -255,7 +259,20 @@ def wait_for_response(client, request_id, timeout=None):
 def expect_target(response, target):
     if "error" in response:
         raise RuntimeError(f"expected definition in {target.path}, received {response['error']}")
-    locations = normalize_locations(response["result"])
+    expect_location(response["result"], target)
+
+
+def check_type_location(client, reference, target):
+    result = client.request(
+        "textDocument/typeDefinition",
+        textDocument={"uri": reference.path.as_uri()},
+        position=reference.cursor(),
+    )
+    expect_location(result, target)
+
+
+def expect_location(result, target):
+    locations = normalize_locations(result)
     if (
         len(locations) != 1
         or Path(locations[0]["path"]) != target.path
@@ -539,6 +556,50 @@ def check_overlay_disk_restore(executable_path, root, timeout):
         client.close_document(target_path)
         check_location(client, reference, site(target_path, "func [[Run]]()"))
 
+
+def check_type_overlay(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/typeoverlay\n\ngo 1.22\n")
+    caller = write(
+        root / "caller.go",
+        'package overlay\nimport "example.test/typeoverlay/dep"\n'
+        "func call() {\n"
+        "    value := dep.New()\n"
+        "    /* \U0001f9ea */ _ = value\n"
+        "    {\n"
+        "        var value dep.Shadow\n"
+        "        _ = value\n"
+        "    }\n"
+        "}\n",
+    )
+    write(root / "dep" / "factory.go", "package dep\n\nfunc New() *Item { return nil }\n")
+    types = write(root / "dep" / "types.go", "package dep\n\ntype Item struct{}\ntype Shadow struct{}\n")
+    inferred = site(caller, "*/ _ = [[value]]")
+    shadowed = site(caller, "\n        _ = [[value]]")
+    inferred_binding = site(caller, "[[value]] := dep.New()")
+    shadowed_binding = site(caller, "var [[value]] dep.Shadow")
+    item = site(types, "type [[Item]] struct{}")
+    shadow = site(types, "type [[Shadow]] struct{}")
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(caller, inferred.text)
+        check_location(client, inferred, inferred_binding)
+        check_location(client, shadowed, shadowed_binding)
+        check_type_location(client, inferred, item)
+        check_type_location(client, shadowed, shadow)
+
+        client.open_document(types, item.text)
+        prefix = "// moved in the open buffer\n"
+        start = {"line": 0, "character": 0}
+        client.change_document_range(types, 2, start, start, prefix)
+        edited = prefix + item.text
+        check_type_location(client, inferred, site(types, "type [[Item]] struct{}", edited))
+        check_type_location(client, shadowed, site(types, "type [[Shadow]] struct{}", edited))
+
+        client.close_document(types)
+        check_type_location(client, inferred, item)
+        check_type_location(client, shadowed, shadow)
+
+
 CASES = {
     "mutations": check_mutations,
     "go-work": check_go_work,
@@ -547,6 +608,7 @@ CASES = {
     "async-refresh": check_async_refresh,
     "overlay-new-file": check_overlay_new_file,
     "overlay-disk-restore": check_overlay_disk_restore,
+    "type-overlay": check_type_overlay,
 }
 
 

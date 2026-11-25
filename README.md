@@ -38,6 +38,10 @@ python -B .\tools\check_workspace_updates.py $server
 
 Use the optional workspace argument on the first command to check the matching localchat/server source revision. See the [first-stage definition roadmap](docs/definition-plan.md), [second-stage plan](docs/definition-next-phase.md), and [third-stage navigation plan](docs/navigation-phase-three.md). The [GoLand navigation baseline](docs/goland-definition-baseline.md) records real-project targets.
 
+## Type definition
+
+The same Rust resolver handles `textDocument/typeDefinition`. It follows the type of a name, field, or inferred value to its Go declaration. The GoLand baseline records exact targets for named and anonymous types, aliases, function results, and common generic cases. [Type definition checks and performance comparison](docs/goland-type-definition-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.
