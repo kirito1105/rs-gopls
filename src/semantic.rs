@@ -1,13 +1,14 @@
 use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque, hash_map::Entry};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use lsp_types::{FileChangeType, Position, Range, TextDocumentContentChangeEvent};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
@@ -82,6 +83,28 @@ pub enum DefinitionKind {
 pub enum QueryProgress<T> {
     Ready(T),
     Pending(WorkspaceLoad),
+    Searching(ReferenceSearch),
+}
+
+pub struct ReferenceSearch {
+    spelling: String,
+    target_path: PathBuf,
+    target_range: Range,
+    include_declaration: bool,
+    files: VecDeque<ReferenceCandidate>,
+    matches: Vec<(PathBuf, Range)>,
+}
+
+struct ReferenceCandidate {
+    key: PathBuf,
+    path: PathBuf,
+    package_id: String,
+}
+
+impl ReferenceSearch {
+    pub fn into_matches(self) -> Vec<(PathBuf, Range)> {
+        self.matches
+    }
 }
 
 impl<T> QueryProgress<T> {
@@ -89,6 +112,7 @@ impl<T> QueryProgress<T> {
         match self {
             Self::Ready(value) => QueryProgress::Ready(convert(value)),
             Self::Pending(load) => QueryProgress::Pending(load),
+            Self::Searching(search) => QueryProgress::Searching(search),
         }
     }
 }
@@ -310,9 +334,46 @@ impl Engine {
             drafts,
         };
         let mut resolver = Resolver { workspace, indexes };
-        resolver
-            .package_references(from, source, reference, &self.root, include_declaration)
-            .map(QueryProgress::Ready)
+        let Some(search) =
+            resolver.reference_search(from, source, reference, &self.root, include_declaration)?
+        else {
+            return Ok(QueryProgress::Ready(locations));
+        };
+        Ok(if search.files.is_empty() {
+            QueryProgress::Ready(search.into_matches())
+        } else {
+            QueryProgress::Searching(search)
+        })
+    }
+
+    pub fn advance_reference_search(&mut self, search: &mut ReferenceSearch) -> Result<bool> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .context("reference search needs a workspace")?;
+        ensure!(
+            matches!(self.graph_changes, GraphChanges::Clean),
+            "workspace changed during reference search"
+        );
+        let indexes = IndexReader {
+            parser: &mut self.parser,
+            documents: &self.documents,
+            disk_index: &mut self.disk_index,
+            drafts: draft_files(workspace, &self.documents, &self.new_documents),
+        };
+        let mut resolver = Resolver { workspace, indexes };
+        let started = Instant::now();
+        // Yield between files so pending editor requests and notifications can run.
+        for _ in 0..8 {
+            let Some(candidate) = search.files.pop_front() else {
+                break;
+            };
+            resolver.scan_reference_file(search, candidate, &self.root)?;
+            if started.elapsed() >= Duration::from_millis(2) {
+                break;
+            }
+        }
+        Ok(search.files.is_empty())
     }
 
     pub fn definition(
@@ -793,14 +854,14 @@ impl<'w> Resolver<'w, '_> {
         self.declaration_location(from, source, reference, root)
     }
 
-    fn package_references(
+    fn reference_search(
         &mut self,
         from: &'w Package,
         source: &Source,
         reference: ReferenceQuery<'_>,
         root: &Path,
         include_declaration: bool,
-    ) -> Result<Vec<(PathBuf, Range)>> {
+    ) -> Result<Option<ReferenceSearch>> {
         let spelling = node_text(reference.name(), &source.text);
         if spelling == "_"
             || !spelling
@@ -808,12 +869,12 @@ impl<'w> Resolver<'w, '_> {
                 .next()
                 .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
         {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         let Some((target, target_range)) =
             self.reference_location(from, source, reference, root)?
         else {
-            return Ok(Vec::new());
+            return Ok(None);
         };
         let target_key = path_key(&target);
         let Some(owner) = self.workspace.package_of_file(&target).or_else(|| {
@@ -822,7 +883,7 @@ impl<'w> Resolver<'w, '_> {
                 .get(&target_key)
                 .and_then(|source| draft_package(self.workspace, source))
         }) else {
-            return Ok(Vec::new());
+            return Ok(None);
         };
         let transitive = if is_exported(spelling) {
             self.is_member_declaration(&target, target_range)?
@@ -843,29 +904,56 @@ impl<'w> Resolver<'w, '_> {
         if include_declaration && !candidates.contains_key(&target_key) {
             matches.push((target, target_range));
         }
-        for (key, (path, package)) in candidates {
-            let Some(file) = self.indexes.reference_source(&path)? else {
+        Ok(Some(ReferenceSearch {
+            spelling: spelling.to_owned(),
+            target_path: target_key,
+            target_range,
+            include_declaration,
+            files: candidates
+                .into_iter()
+                .map(|(key, (path, package))| ReferenceCandidate {
+                    key,
+                    path,
+                    package_id: package.id.clone(),
+                })
+                .collect(),
+            matches,
+        }))
+    }
+
+    fn scan_reference_file(
+        &mut self,
+        search: &mut ReferenceSearch,
+        file: ReferenceCandidate,
+        root: &Path,
+    ) -> Result<()> {
+        let Some(package) = self.workspace.package(&file.package_id) else {
+            return Ok(());
+        };
+        let Some(source) = self.indexes.reference_source(&file.path)? else {
+            return Ok(());
+        };
+        let source = source.as_ref();
+        for &offset in source.name_offsets(&search.spelling) {
+            let Some(candidate) = source.reference_at_offset(offset) else {
                 continue;
             };
-            let file = file.as_ref();
-            for &offset in file.name_offsets(spelling) {
-                let Some(candidate) = file.reference_at_offset(offset) else {
-                    continue;
-                };
-                let range = file.range(candidate.name());
-                if !include_declaration && key == target_key && range == target_range {
-                    continue;
-                }
-                if let Some((declaration, declaration_range)) =
-                    self.reference_location(package, file, candidate, root)?
-                    && declaration_range == target_range
-                    && path_key(&declaration) == target_key
-                {
-                    matches.push((file.path.clone(), range));
-                }
+            let range = source.range(candidate.name());
+            if !search.include_declaration
+                && file.key == search.target_path
+                && range == search.target_range
+            {
+                continue;
+            }
+            if let Some((declaration, declaration_range)) =
+                self.reference_location(package, source, candidate, root)?
+                && declaration_range == search.target_range
+                && path_key(&declaration) == search.target_path
+            {
+                search.matches.push((source.path.clone(), range));
             }
         }
-        Ok(matches)
+        Ok(())
     }
 
     fn is_member_declaration(&mut self, path: &Path, range: Range) -> Result<bool> {

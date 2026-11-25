@@ -42,6 +42,10 @@ Use the optional workspace argument on the first command to check the matching l
 
 The same Rust resolver handles `textDocument/typeDefinition`. It follows the type of a name, field, or inferred value to its Go declaration. The GoLand baseline records exact targets for named and anonymous types, aliases, function results, and common generic cases. [Type definition checks and performance comparison](docs/goland-type-definition-baseline.md)
 
+## Find references
+
+The server provides \`textDocument/references\` for local, package and cross-package Go uses, including test variants and open buffers. It verifies each candidate against the selected declaration, and larger searches run in cancellable batches. [GoLand reference sets and benchmarks](docs/goland-references-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.

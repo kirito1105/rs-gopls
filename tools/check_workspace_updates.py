@@ -152,10 +152,14 @@ def check_go_work(executable_path, root, timeout):
     reference = site(caller, "lib.[[Run]]()")
     with session(executable_path, root, timeout, watch_files=True, GOWORK="") as client:
         client.open_document(caller, reference.text)
-        check_location(client, reference, site(libraries[0], "func [[Run]]()"))
+        first = site(libraries[0], "func [[Run]]()")
+        replacement = site(libraries[1], "func [[Run]]()")
+        check_location(client, reference, first)
+        check_references(client, reference, (reference, first), include_declaration=True)
         write(work_file, workspace_config("replacement"))
         notify_changes(client, (work_file, 2))
-        check_location(client, reference, site(libraries[1], "func [[Run]]()"))
+        check_location(client, reference, replacement)
+        check_references(client, reference, (reference, replacement), include_declaration=True)
 
 
 def check_test_packages(executable_path, root, timeout):
@@ -196,8 +200,10 @@ def check_gopath(executable_path, root, timeout):
     reference = site(caller, "dep.[[Run]]()")
     with session(executable_path, package, timeout, GO111MODULE="off", GOPATH=str(root)) as client:
         client.open_document(caller, reference.text)
-        check_location(client, reference, site(declaration, "func [[Run]]()"))
+        run = site(declaration, "func [[Run]]()")
+        check_location(client, reference, run)
         check_type_location(client, reference, site(declaration, "type [[Result]] struct{}"))
+        check_references(client, reference, (reference, run), include_declaration=True)
 
 
 
@@ -775,6 +781,36 @@ def check_reference_cancel(executable_path, root, timeout):
         check_references(client, shifted, (primary, shifted))
 
 
+
+def check_active_reference_cancel(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/refbusy\n\ngo 1.22\n")
+    declaration = write(root / "target.go", "package refbusy\n\nfunc Target() {}\nfunc Marker() {}\n")
+    target = site(declaration, "func [[Target]]()")
+    marker = site(declaration, "func [[Marker]]()")
+    uses = []
+    for number in range(192):
+        caller = write(
+            root / f"caller_{number:03d}.go",
+            f"package refbusy\n\nfunc use{number}() {{ Target() }}\n",
+        )
+        uses.append(site(caller, "{ [[Target]]()"))
+
+    with session(executable_path, root, timeout) as client:
+        # An exact nonlocal search first ensures the test-inclusive graph is ready.
+        check_references(client, marker, ())
+        client.send(id="active-refs", method="textDocument/references", params=reference_params(target, False))
+        client.notify("$/cancelRequest", id="active-refs")
+        expect_error(wait_for_response(client, "active-refs"), -32800)
+
+        first = uses[0]
+        edited = "// unsaved shift\n" + first.text
+        shifted = site(first.path, "{ [[Target]]()", edited)
+        client.send(id="dirty-refs", method="textDocument/references", params=reference_params(target, False))
+        client.open_document(first.path, edited)
+        expect_error(wait_for_response(client, "dirty-refs"), -32801)
+        check_references(client, target, (shifted, *uses[1:]))
+
+
 CASES = {
     "mutations": check_mutations,
     "go-work": check_go_work,
@@ -784,19 +820,17 @@ CASES = {
     "overlay-new-file": check_overlay_new_file,
     "overlay-disk-restore": check_overlay_disk_restore,
     "type-overlay": check_type_overlay,
-}
-REFERENCE_CASES = {
     "reference-locals": check_reference_locals,
     "reference-workspace": check_reference_workspace,
     "reference-cancel": check_reference_cancel,
+    "reference-active-cancel": check_active_reference_cancel,
 }
 
 
 def main():
-    cases = {**CASES, **REFERENCE_CASES}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate", type=executable)
-    parser.add_argument("--case", choices=tuple(cases), action="append", help="run only this case; may repeat")
+    parser.add_argument("--case", choices=tuple(CASES), action="append", help="run only this case; may repeat")
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
@@ -807,7 +841,7 @@ def main():
         root = Path(directory).resolve()
         for name in dict.fromkeys(args.case or CASES):
             try:
-                cases[name](args.candidate, root / name, args.timeout)
+                CASES[name](args.candidate, root / name, args.timeout)
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 print(f"FAIL {name}: {exc}", file=sys.stderr)
                 failures += 1

@@ -5,13 +5,14 @@ mod workspace;
 mod workspace_roots;
 
 use std::{
+    collections::VecDeque,
     env,
     path::{Path, PathBuf},
     thread,
 };
 
 use anyhow::{Context, Result, anyhow, ensure};
-use crossbeam_channel::{Sender, select_biased, unbounded};
+use crossbeam_channel::{Sender, bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
@@ -28,7 +29,7 @@ use lsp_types::{
 use serde_json::Value;
 use url::Url;
 
-use semantic::{DefinitionKind, Engine, QueryProgress};
+use semantic::{DefinitionKind, Engine, QueryProgress, ReferenceSearch};
 use workspace::{Workspace, WorkspaceLoad, path_key};
 
 enum State {
@@ -49,6 +50,11 @@ struct NavigationRequest {
     position: Position,
 }
 
+struct ActiveReferenceSearch {
+    id: RequestId,
+    search: ReferenceSearch,
+}
+
 struct WorkspaceResult {
     load: WorkspaceLoad,
     result: Result<Workspace>,
@@ -58,6 +64,7 @@ struct Running {
     engine: Engine,
     watch_files: bool,
     pending: Vec<NavigationRequest>,
+    reference_searches: VecDeque<ActiveReferenceSearch>,
     loading: Option<WorkspaceLoad>,
     requested: Option<WorkspaceLoad>,
 }
@@ -144,10 +151,49 @@ impl Running {
                 self.request_workspace(load);
                 return Ok(());
             }
+            Ok(QueryProgress::Searching(search)) => {
+                self.reference_searches.push_back(ActiveReferenceSearch {
+                    id: request.id,
+                    search,
+                });
+                return Ok(());
+            }
             Ok(QueryProgress::Ready(result)) => result,
             Err(error) => Err((ErrorCode::InternalError, format!("{error:#}"))),
         };
         send_response(connection, request.id, result)
+    }
+
+    fn advance_reference_search(&mut self, connection: &Connection) -> Result<()> {
+        let Some(mut active) = self.reference_searches.pop_front() else {
+            return Ok(());
+        };
+        let response = match self.engine.advance_reference_search(&mut active.search) {
+            Ok(false) => {
+                self.reference_searches.push_back(active);
+                return Ok(());
+            }
+            Ok(true) => serialize_locations(active.search.into_matches()),
+            Err(error) => Err((ErrorCode::InternalError, format!("{error:#}"))),
+        };
+        send_response(connection, active.id, response)
+    }
+
+    fn cancel_reference_searches(
+        &mut self,
+        connection: &Connection,
+        mut matches: impl FnMut(&RequestId) -> bool,
+        code: ErrorCode,
+        message: &str,
+    ) -> Result<()> {
+        for active in std::mem::take(&mut self.reference_searches) {
+            if matches(&active.id) {
+                send_response(connection, active.id, Err((code, message.to_owned())))?;
+            } else {
+                self.reference_searches.push_back(active);
+            }
+        }
+        Ok(())
     }
 
     fn cancel_definitions(
@@ -170,6 +216,12 @@ impl Running {
             |request| path_key(&request.path) == key,
             ErrorCode::ContentModified,
             "the document changed while loading Go packages",
+        )?;
+        self.cancel_reference_searches(
+            connection,
+            |_| true,
+            ErrorCode::ContentModified,
+            "the document changed during reference search",
         )
     }
 }
@@ -186,7 +238,18 @@ fn main() -> Result<()> {
 fn serve(connection: &Connection) -> Result<()> {
     let mut state = State::Starting;
     let (load_sender, load_receiver) = unbounded();
+    let (search_token, search_ready) = bounded(1);
+    let search_idle = never();
+    search_token
+        .send(())
+        .context("scheduling reference searches")?;
     loop {
+        let search_receiver = if matches!(&state, State::Running(running) if !running.reference_searches.is_empty())
+        {
+            &search_ready
+        } else {
+            &search_idle
+        };
         select_biased! {
             recv(connection.receiver) -> message => {
                 let Ok(message) = message else {
@@ -219,6 +282,13 @@ fn serve(connection: &Connection) -> Result<()> {
                     running.workspace_loaded(connection, update.context("receiving Go package metadata")?)?;
                 }
             }
+            recv(search_receiver) -> ready => {
+                ready.context("receiving reference search work")?;
+                if let State::Running(running) = &mut state {
+                    running.advance_reference_search(connection)?;
+                }
+                search_token.send(()).context("scheduling further reference searches")?;
+            }
         }
         if let State::Running(running) = &mut state {
             running.start_workspace_load(&load_sender)?;
@@ -236,6 +306,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                     engine,
                     watch_files,
                     pending: Vec::new(),
+                    reference_searches: VecDeque::new(),
                     loading: None,
                     requested: None,
                 }));
@@ -257,6 +328,12 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
         (state @ State::Running(..), Shutdown::METHOD) => {
             if let State::Running(running) = state {
                 running.cancel_definitions(
+                    connection,
+                    |_| true,
+                    ErrorCode::RequestFailed,
+                    "the server is shutting down",
+                )?;
+                running.cancel_reference_searches(
                     connection,
                     |_| true,
                     ErrorCode::RequestFailed,
@@ -464,6 +541,12 @@ fn handle_notification(
             }
             let after = running.engine.workspace_load();
             if after != before {
+                running.cancel_reference_searches(
+                    connection,
+                    |_| true,
+                    ErrorCode::ContentModified,
+                    "the workspace changed during reference search",
+                )?;
                 running.request_workspace(after);
             }
             Ok(())
@@ -497,7 +580,13 @@ fn handle_notification(
                 connection,
                 |request| request.id == id,
                 ErrorCode::RequestCanceled,
-                "the client cancelled the definition request",
+                "the client cancelled the navigation request",
+            )?;
+            running.cancel_reference_searches(
+                connection,
+                |request| request == &id,
+                ErrorCode::RequestCanceled,
+                "the client cancelled the reference search",
             )
         }
         _ => Ok(()),
