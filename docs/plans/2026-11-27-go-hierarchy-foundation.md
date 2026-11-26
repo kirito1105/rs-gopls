@@ -122,3 +122,4 @@ python -B .\tools\compare_hierarchy.py $server --workspace .\tools\fixtures\hier
 
 - 2026-11-27 完成 GoLand `GO-263.7307.354` 层级与基座相关类静态核查，确定与 Track B / Track D 的 `F → B → D` 协同架构，创建待确认计划。
 - 2026-11-27 验证 Wave 0 层级夹具与采集脚本。夹具通过 `go test ./...`，GoLand `GO-263.7307.354` 的 20 个查询各完成 30 次重复计时，结果一致。采集使用 GoLand 的 All 搜索范围，输出夹具内的相对路径。GoLand 略去递归自调用边，`Base` 的子类型结果为空。[层级夹具](../../tools/fixtures/hierarchy/) · [采集脚本](../../tools/capture_goland_hierarchy.groovy)
+- [x] 2026-11-27 验证 Wave 3 统一基准工具。GoLand `GO-263.7307.354` 和 Go `1.26.3` 的层级对照通过 20 项严格校验，其中 10 项可直接对照首查与热查耗时。rs-gopls 完成 600 次插入注释后的查询及回滚校验。三条线的 `--capture-goland` 均通过现场采集和工作集采样验证。共用辅助模块与 LSP harness 的 22 项单测通过。[共用辅助模块](../../tools/bench_common.py) · [层级校验](../../tools/check_goland_hierarchy.py) · [层级基准](../../tools/compare_hierarchy.py)
