@@ -1,1 +1,8 @@
-// Track B: real-time Go diagnostics engine and structured DiagnosticReport contract.
+#[allow(dead_code)]
+mod model;
+
+#[allow(unused_imports)]
+pub(crate) use model::{
+    DiagnosticCode, DiagnosticFixData, DiagnosticItem, DiagnosticReport, DiagnosticSeverity,
+    DiagnosticSnapshotKey, DiagnosticTag,
+};
