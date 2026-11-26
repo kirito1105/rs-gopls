@@ -14,7 +14,7 @@ import tempfile
 
 from check_goland_definitions import fixture_path, utf16_offset
 from check_goland_hover import DEFAULT_FIXTURE, DIRECTIVE
-from compare_definitions import LspClient, executable, position_at
+from lsp_harness import LspClient, PausedGoList, executable, expect_error, position_at, session, wait_for_response, write
 
 
 METHOD = "textDocument/signatureHelp"
@@ -198,14 +198,9 @@ def params(path, position):
 
 
 def check_editing(candidate, timeout):
-    from check_workspace_updates import (
-        expect_error, go_list_relay, session, wait_for_response, wait_for_snapshot, write,
-    )
-
     with tempfile.TemporaryDirectory(prefix="rs-gopls-signature-edit-") as directory:
         root = Path(directory).resolve()
-        control = root / "control"
-        env = go_list_relay(control, timeout)
+        gate = PausedGoList(root / "control", timeout)
         project = root / "project"
         write(project / "go.mod", "module example.test/signature\n\ngo 1.22\n")
         definition = (
@@ -220,16 +215,13 @@ def check_editing(candidate, timeout):
         disk = header + 'dep.Foo(1, "x") }\n'
         caller = write(project / "main.go", disk)
         query = params(caller, position_at(disk, disk.index("dep.Foo(") + len("dep.Foo(")))
-        with session(candidate, project, timeout, **env) as client:
+        with session(candidate, project, timeout, **gate.environment) as client:
             client.open_document(caller, disk)
-            write(control / "arm", "")
-            client.send(id="cancel-signature", method=METHOD, params=query)
-            try:
-                wait_for_snapshot(control, timeout)
+            with gate.pause():
+                client.send(id="cancel-signature", method=METHOD, params=query)
+                gate.wait_for_snapshot()
                 client.notify("$/cancelRequest", id="cancel-signature")
                 expect_error(wait_for_response(client, "cancel-signature"), -32800)
-            finally:
-                write(control / "release", "")
 
             def expect(parameters, active, doc_fragment=None):
                 result = client.request(METHOD, **query)

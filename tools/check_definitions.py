@@ -2,7 +2,6 @@
 """Run exact Go definition checks against a native LSP executable."""
 
 import argparse
-from dataclasses import dataclass
 import math
 import os
 from pathlib import Path
@@ -11,24 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-from compare_definitions import LspClient, executable, path_from_uri, position_at
-
-
-@dataclass(frozen=True)
-class Site:
-    path: Path
-    text: str
-    start: int
-    end: int
-
-    def cursor(self):
-        return position_at(self.text, min(self.start + 1, self.end - 1))
-
-    def selection(self):
-        return {
-            "start": position_at(self.text, self.start),
-            "end": position_at(self.text, self.end),
-        }
+from lsp_harness import LspClient, Site, executable, path_from_uri, position_at
 
 
 MARKER = re.compile(r"\[\[([a-zA-Z0-9_-]+):([^\]\r\n]+)\]\]")

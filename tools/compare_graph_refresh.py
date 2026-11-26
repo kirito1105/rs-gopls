@@ -14,9 +14,8 @@ import tempfile
 import time
 
 from check_goland_definitions import normalize_locations
-from check_workspace_updates import next_message, notify_changes, site, write
-from compare_definitions import LspClient, executable
 from compare_workspace_definitions import describe_binary
+from lsp_harness import WORKSPACE_ENVIRONMENT, LspClient, executable, initialize_session, notify_changes, site, write
 
 
 POLL_INTERVAL_SECONDS = 0.01
@@ -43,21 +42,6 @@ def setup(root):
         target = write(directory / "target.go", "package dependency\n\nfunc Run() {}\n")
         targets[version] = site(target, "func [[Run]]()")
     return site(caller, "dependency.[[Run]]()"), targets
-
-
-def await_watcher_registration(client):
-    deadline = time.monotonic() + client.timeout
-    while True:
-        message = next_message(client, deadline)
-        if "id" not in message or "method" not in message:
-            continue
-        client.reply(message)
-        if message["method"] == "client/registerCapability" and any(
-            registration["method"] == "workspace/didChangeWatchedFiles"
-            and registration.get("registerOptions", {}).get("watchers")
-            for registration in message["params"]["registrations"]
-        ):
-            return
 
 
 def matches(locations, target):
@@ -118,8 +102,7 @@ def measure(command, workspace, reference, targets, args, environment):
     go_mod = write(workspace / "go.mod", module_config("first"))
     client = LspClient([command], workspace, args.timeout, environment=environment)
     try:
-        client.initialize(watch_files=True)
-        await_watcher_registration(client)
+        initialize_session(client, watch_files=True, require_go_watches=False)
         client.open_document(reference.path, reference.text)
 
         current = "first"
@@ -166,7 +149,7 @@ def main():
         parser.error("sessions, iterations and finite timeout must be positive")
 
     commands = [("candidate", args.candidate), ("gopls", args.gopls)]
-    environment = {**os.environ, "GO111MODULE": "on", "GOWORK": "off", "GOPROXY": "off"}
+    environment = {**os.environ, **WORKSPACE_ENVIRONMENT}
     report = {
         "workload": "temporary Go module; go.mod save and watched-file event to first exact target",
         "gopls_diagnostics_trigger": "Save",
