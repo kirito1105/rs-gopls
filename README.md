@@ -54,6 +54,10 @@ The server provides `textDocument/references` for local, package and cross-packa
 
 Use Zed's **Go to Implementation** on a Go interface type or method to find implementations. From a concrete type or method, the same action finds matching interfaces or interface methods. Searches use the active build and test packages, including open buffers. [GoLand implementation sets and benchmarks](docs/goland-implementation-baseline.md)
 
+## Hover and signature help
+
+The server provides `textDocument/hover` and `textDocument/signatureHelp` (triggered on `(` and `,`). Hover renders Markdown Go signatures with inferred types, struct tags, generic parameters, package docs, and GoDoc comments (filtering compiler directives). Signature help resolves functions, methods, interface methods, generic instantiations, method expressions, function values, and builtins with expanded grouped parameters, variadic clamping, UTF-16 parameter highlight offsets, and unclosed-call editing tolerance. [GoLand hover and signature help baseline and benchmarks](docs/goland-hover-signature-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.

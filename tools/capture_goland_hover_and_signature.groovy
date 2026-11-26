@@ -314,6 +314,12 @@ try {
                 } as Computable)
             }
 
+            def firstMs = null
+            if (timingMode) {
+                def tFirst = System.nanoTime()
+                runOnce()
+                firstMs = (System.nanoTime() - tFirst) / 1_000_000.0d
+            }
             for (int w = 0; w < warmupRuns; w++) {
                 runOnce()
             }
@@ -326,6 +332,7 @@ try {
                 samplesMs << elapsedMs
             }
             if (timingMode) {
+                lastEntry.firstMs = firstMs
                 lastEntry.timingsMs = samplesMs
             }
             results << lastEntry

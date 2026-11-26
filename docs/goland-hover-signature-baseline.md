@@ -37,3 +37,46 @@ Start-Process -FilePath $goland -ArgumentList @('ideScript', ('"{0}"' -f $script
 ```
 
 设置环境变量 `RS_GOPLS_BENCHMARK=1` 可按 [导航性能对照](PLANS.md#导航性能对照) 执行 5 次预热 + 30 次计时采样。
+
+## 与 GoLand 直接对照
+
+2026-11-26 在同一 Windows 主机、固定 `localchat/server` 修订（`532228d3d36bd9f0fffb4bda35c180485b2eadd6`）与统一 Go SDK（`go1.27.4`）下，对照 GoLand `GO-263.7307.354` 与 rs-gopls 发布版（提交 `70b8f0a`，SHA-256 `6D60E9786239FCDA8FEE1424787888C8055A3211C002A5F11C58660AD82782F1`）。
+
+- **共同样本**：Hover 18 组、SignatureHelp 13 组。三项 GoLand 采集存在差异的 Hover 样本单列不计入共同耗时（`hover-pkg-qualifier` 在 GoLand 采集返回空、rs-gopls 返回 `package model`；`hover-import-path` 在 GoLand 采集落点偏向父包 `net`、rs-gopls 返回完整 `"net/http"`；`hover-embedded-field-decl` 在 GoLand 展示结构体声明、rs-gopls 展示嵌入字段声明）。
+- **计时边界与缓存状态**：GoLand 在已索引项目智能模式内计时，分别记录各查询在预热前的首次执行（`firstMs`）及 5 次预热后 30 次重复查询（不含界面弹窗绘制）；rs-gopls 计时覆盖完整 stdio JSON-RPC LSP 请求往返，每轮均校验签名、GoDoc、UTF-16 范围/参数偏移与激活参数位，启动耗时从创建进程计至首次跨包正确 Hover 响应，5 次独立会话重复查询每例 30 次，编辑后查询在打开缓冲区交替插入/删除顶层注释并校验位移后的结果。
+
+| 场景 | 样本数（GoLand / rs-gopls） | GoLand 已索引 P50 / P95（ms） | rs-gopls 发布版 P50 / P95（ms） |
+| --- | ---: | ---: | ---: |
+| Hover 索引就绪后新查询 | 18 / 85 | 84.467 / 1262.683 | 0.163 / 48.893 |
+| Hover 重复同一查询 | 540 / 2700 | 1.728 / 48.548 | 0.107 / 0.198 |
+| Hover 顶层注释编辑后 | — / 600 | — | 0.127 / 0.286 |
+| SignatureHelp 索引就绪后新查询 | 13 / 65 | 1.267 / 315.074 | 0.190 / 22.339 |
+| SignatureHelp 重复同一查询 | 390 / 1950 | 0.096 / 0.177 | 0.127 / 0.258 |
+| SignatureHelp 顶层注释编辑后 | — / 600 | — | 0.126 / 0.205 |
+| 启动到首次跨包正确 Hover | — / 5 | — | 414.502 / 427.602 |
+
+代表性单样本 P50 对照：
+
+| 样本 | GoLand 首次 / 重复（ms） | rs-gopls 新查 / 重复（ms） |
+| --- | ---: | ---: |
+| `hover-interface-decl` | 1262.68 / 5.69 | 0.286 / 0.104 |
+| `hover-func-decl-doc` | 225.44 / 32.52 | 0.140 / 0.100 |
+| `hover-cross-pkg-method-call` | 28.14 / 2.10 | 0.159 / 0.126 |
+| `hover-stdlib-func` | 91.21 / 35.60 | 15.234 / 0.116 |
+| `hover-builtin-append` | 9.91 / 1.04 | 51.912 / 0.159 |
+| `hover-local-inferred` | 11.03 / 1.73 | 0.424 / 0.116 |
+| `sig-iface-method-p1` | 0.73 / 0.11 | 0.168 / 0.125 |
+| `sig-cross-pkg-func-p2` | 0.45 / 0.06 | 0.178 / 0.118 |
+| `sig-stdlib-variadic-p1` | 0.46 / 0.09 | 0.185 / 0.120 |
+| `sig-nested-inner` | 1.53 / 0.05 | 0.151 / 0.118 |
+| `sig-builtin-append-p1` | 1.27 / 0.10 | 0.255 / 0.198 |
+
+rs-gopls 峰值工作集（5 次会话每 50 ms 采样，Win32 `GetProcessMemoryInfo` + 工具帮助快照）：主进程中位 `12.45 MiB` / 最大 `12.60 MiB`；包含子进程 `go list` 的进程树中位 `32.67 MiB` / 最大 `37.21 MiB`。`hover-builtin-append` 首次新查的 `51.912 ms` 来自每个新进程首次按需加载 `GOROOT/src/builtin/builtin.go`，后续查询降至 `0.159 ms`。原始报告位于 Cargo 产物目录的 `hover-signature-benchmark.json`。
+
+```powershell
+$target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
+$server = Join-Path $target 'release\rs-gopls.exe'
+$glBench = Join-Path $env:TEMP 'rs-gopls-goland-baseline\localchat-hover-signature-bench.json'
+python -B .\tools\compare_hover_and_signature.py $server --goland-bench $glBench --sessions 5 --iterations 30 --json (Join-Path $target 'hover-signature-benchmark.json')
+```
+

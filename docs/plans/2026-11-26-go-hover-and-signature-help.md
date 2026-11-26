@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 进行中 |
+| 状态 | 已完成 |
 | 创建日期 | 2026-11-26 |
 | 用户确认 | 2026-11-26 已确认，按默认范围与格式开始实施 |
 | 更新日期 | 2026-11-26 |
-| 完成日期 | 待填写 |
+| 完成日期 | 2026-11-26 |
 
 ## 目标与范围
 
@@ -42,7 +42,7 @@
 - [x] **Hover 能力与准确性**：LSP 初始化声明 `hoverProvider`。发布版在真实项目与补充夹具上覆盖函数、方法、接口方法、结构体、接口、类型别名、字段（含 tag 与嵌入）、包/局部变量、常量、参数/接收者、泛型、导入/包名、内置符号与空结果；签名要素、类型信息、GoDoc 注释（含指令过滤、尾注释、分组声明回退）及 UTF-16 `range` 按基线与下方完成记录中的预期通过检查。
 - [x] **SignatureHelp 能力与准确性**：LSP 初始化声明 `signatureHelpProvider`（触发字符 `(`、`,`）。发布版在真实项目与补充夹具上覆盖函数/方法/接口方法/函数值/方法表达式/泛型调用/内置函数、嵌套调用、分组参数展开、变参钳位、光标在未闭合括号与逗号后的编辑态输入，以及函数字面量/复合字面量边界不误触发；签名文本、参数列表偏移、`activeParameter` 与 GoDoc 按基线和完成记录中的预期通过检查。
 - [x] **未保存编辑与工作区一致性**：未保存缓冲区修改函数签名、变量类型或注释后，Hover 与 SignatureHelp 立即反映最新内容；关闭覆盖缓冲区后恢复磁盘结果；后台包图加载期间保持本地解析可用，包图刷新后自动更新跨包结果；不破坏现有声明、类型定义、引用、实现跳转与工作区回归。
-- [ ] **性能对照 GoLand**：按 [导航性能对照](../PLANS.md#导航性能对照) 固定主机、GoLand 构建号、项目修订、Go SDK 与样本集合，分别对比已索引暖态新查询、重复查询与编辑后查询的 P50/P95 及峰值工作集，并将结果归档到基线文档。
+- [x] **性能对照 GoLand**：按 [导航性能对照](../PLANS.md#导航性能对照) 固定主机、GoLand 构建号、项目修订、Go SDK 与样本集合，分别对比已索引暖态新查询、重复查询与编辑后查询的 P50/P95 及峰值工作集，并将结果归档到基线文档。[与 GoLand 直接对照](../goland-hover-signature-baseline.md#与-goland-直接对照)
 - [x] **既有回归全部通过**：`cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`、发布版构建以及 `check_definitions.py --stage 6`、`check_goland_definitions.py`、`check_goland_references.py`、`check_goland_implementations.py`、`check_workspace_updates.py` 在步骤 2 和步骤 3 交付时全部通过。
 
 ## 实现依据
@@ -118,3 +118,4 @@
 - `cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`（24 个测试）和 `cargo build -p rs-gopls --release --locked` 通过。发布版 [`check_goland_signature_help.py`](../../tools/check_goland_signature_help.py) 在 `localchat/server`（Go 1.25.0）通过 13/13，在补充夹具（Go 1.24.3）通过 19/19。两次均通过未闭合调用、取消、未保存编辑、Unicode 参数偏移和关闭恢复的 stdio 检查。Hover 对照仍通过 21/21 和 14/14。移除服务进程 PATH 中的 Go 后，内置签名回退也通过 stdio 验证。
 - 变参用例按 GoLand 记录的高亮区间核对 LSP 钳位后的参数索引。两条方法表达式样本按实际调用呈现 `*helper.Box[int], v int`，GoLand 采集的形参文本为 `*Box[T], int`。
 - [`check_workspace_updates.py`](../../tools/check_workspace_updates.py) 通过 20/20。新增覆盖跨包签名和 GoDoc、局部函数变量类型的未保存编辑与关闭恢复，并用暂停的 `go list` 核对本地请求可用、等待中的跨包 Hover 与 SignatureHelp 使用最新包图。Go 1.27.4 下复跑阶段 6 声明检查（124 个合成位置及 16 个真实位置）、GoLand 声明、类型定义、引用和实现对照，全部通过。
+- 2026-11-26 完成与 GoLand `GO-263.7307.354` 的直接性能对照（统一 Go `1.27.4`、`localchat/server` `532228d3d36bd9f0fffb4bda35c180485b2eadd6`、发布版 `70b8f0a` SHA-256 `6D60E9786239FCDA8FEE1424787888C8055A3211C002A5F11C58660AD82782F1`）。共同 18 组 Hover 与 13 组 SignatureHelp 中，rs-gopls 新查 P50 分别为 `0.163 ms` / `0.190 ms`（GoLand `84.467 ms` / `1.267 ms`），重复查询 P50 分别为 `0.107 ms` / `0.127 ms`（GoLand `1.728 ms` / `0.096 ms`），顶层注释编辑后 P50 分别为 `0.127 ms` / `0.126 ms`，启动至首次跨包正确 Hover P50 `414.502 ms`，主进程峰值工作集中位 `12.45 MiB`（进程树 `32.67 MiB`）。全部验收项通过，状态更新为「已完成」。[GoLand 直接性能对照](../goland-hover-signature-baseline.md#与-goland-直接对照)
