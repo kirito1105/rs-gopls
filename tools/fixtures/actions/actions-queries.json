@@ -1,0 +1,17 @@
+{
+  "build": "GO-263.7307.354",
+  "root": "actions",
+  "cases": [
+    {"id": "format-unformatted", "request": "textDocument/formatting", "path": "formatting_unformatted.go"},
+    {"id": "format-clean", "request": "textDocument/formatting", "path": "formatting_clean.go"},
+    {"id": "organize-imports", "request": "source.organizeImports", "path": "imports_messy.go"},
+    {"id": "organize-cgo-imports", "request": "source.organizeImports", "path": "imports_cgo.go"}
+  ],
+  "quickFixes": [
+    {"id": "unused-import", "path": "quickfix_cases.go", "line": 2, "character": 7, "token": "\"strings\"", "diagnosticCode": "import.unused"},
+    {"id": "missing-stdlib-import", "path": "quickfix_cases.go", "line": 5, "character": 8, "token": "fmt", "diagnosticCode": "name.unresolved", "importPath": "fmt"},
+    {"id": "missing-local-import", "path": "quickfix_cases.go", "line": 9, "character": 8, "token": "helper", "diagnosticCode": "name.unresolved", "importPath": "example.test/actions/helper"},
+    {"id": "unused-variable", "path": "quickfix_cases.go", "line": 13, "character": 1, "token": "unused", "diagnosticCode": "var.unused"},
+    {"id": "no-new-variables", "path": "quickfix_cases.go", "line": 17, "character": 7, "token": ":=", "diagnosticCode": "shortvar.no_new_vars"}
+  ]
+}
