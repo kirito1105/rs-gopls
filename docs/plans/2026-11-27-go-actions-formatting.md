@@ -113,3 +113,4 @@ python -B .\tools\check_goland_actions.py $server --workspace .\tools\fixtures\a
 
 - 2026-11-27 完成 GoLand `GO-263.7307.354` 格式化与导入优化器字节码静态核查，确定 `D → A` 导入编辑契约及与 Track B / F 的协同节奏，创建待确认计划。
 - 2026-11-27 验证 Wave 0 操作夹具与采集脚本。`go test ./helper/...` 通过。GoLand `GO-263.7307.354` 的格式化和导入整理共 4 个用例，各完成 30 次重复计时且结果一致。格式化正文与 Go SDK 的 `gofmt` 一致，导入整理保留两种导入注释与 cgo 前导注释及 `import "C"`。[操作夹具](../../tools/fixtures/actions/) · [采集脚本](../../tools/capture_goland_actions.groovy)
+- [x] 2026-11-27 验证 Wave 3 操作工具。格式化、导入整理和 QuickFix 共 9 项通过精确文本校验，导入整理的编辑范围避开 cgo 前导注释和 `import "C"`。使用 GoLand `GO-263.7307.354` 和 Go `1.26.3` 对照两项格式化的首查与热查耗时，rs-gopls 完成 270 次编辑后查询。[操作校验](../../tools/check_goland_actions.py) · [操作基准](../../tools/compare_actions.py)
