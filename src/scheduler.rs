@@ -58,7 +58,7 @@ pub(super) struct Scheduler {
 }
 
 impl Scheduler {
-    fn request_workspace(&mut self, load: WorkspaceLoad) {
+    pub(super) fn request_workspace(&mut self, load: WorkspaceLoad) {
         if self.loading != Some(load) {
             self.requested = Some(load);
         }
@@ -93,13 +93,15 @@ impl Scheduler {
         engine: &mut Engine,
         connection: &Connection,
         update: WorkspaceResult,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if self.loading == Some(update.load) {
             self.loading = None;
         }
+        let mut installed = false;
         match update.result {
             Ok(workspace) => {
                 if engine.install_workspace(update.load, workspace) {
+                    installed = true;
                     for pending in std::mem::take(&mut self.pending) {
                         let Pending {
                             id,
@@ -130,7 +132,7 @@ impl Scheduler {
         if !self.pending.is_empty() {
             self.request_workspace(engine.workspace_load());
         }
-        Ok(())
+        Ok(installed)
     }
 
     pub(super) fn submit(
@@ -1103,6 +1105,11 @@ mod tests {
                 "signatureHelpProvider": { "triggerCharacters": ["(", ","], "retriggerCharacters": [","] },
                 "documentSymbolProvider": true,
                 "workspaceSymbolProvider": true,
+                "diagnosticProvider": { "identifier": "rs-gopls", "interFileDependencies": true, "workspaceDiagnostics": false },
+                "callHierarchyProvider": true,
+                "typeHierarchyProvider": true,
+                "documentFormattingProvider": true,
+                "codeActionProvider": { "codeActionKinds": ["quickfix", "source.organizeImports"] },
                 "workspace": { "workspaceFolders": { "supported": true, "changeNotifications": true } }
             })
         );

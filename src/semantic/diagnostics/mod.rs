@@ -39,7 +39,7 @@ fn snapshot_key(
     )
 }
 
-#[allow(dead_code, reason = "entry point for document diagnostics")]
+#[cfg(test)]
 pub(crate) fn analyze_document(
     snapshot: &mut EngineSnapshot<'_>,
     document: &DocumentSnapshot<'_>,
@@ -83,7 +83,6 @@ fn analyze(
     Ok(DiagnosticReport::new(key, items, false))
 }
 
-#[allow(dead_code, reason = "entry point for cached document diagnostics")]
 pub(crate) fn get_or_compute<'c>(
     cache: &'c mut DiagnosticsCache,
     snapshot: &mut EngineSnapshot<'_>,

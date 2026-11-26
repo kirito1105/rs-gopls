@@ -4,8 +4,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
-use lsp_types::{FileChangeType, Range, TextDocumentContentChangeEvent};
+use anyhow::{Context, Result};
+use lsp_types::{
+    CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CodeActionKind,
+    CodeActionOrCommand, FileChangeType, Position, Range, TextDocumentContentChangeEvent, TextEdit,
+    TypeHierarchyItem, Uri,
+};
 use tree_sitter::{Node, Parser};
 
 use crate::symbols::{
@@ -40,7 +44,8 @@ use resolver::{
     MAX_TYPE_DEPTH, ResolvedSymbol, Resolver, Substitutions, TypeKey, TypeKind, is_exported,
     is_predeclared, is_predeclared_type, materialize_type, untyped_default,
 };
-use source::{ReferenceQuery, Source as SyntaxSource, node_text, read_source};
+use snapshot::DocumentSnapshot;
+use source::{ReferenceQuery, Source as SyntaxSource, is_test_source, node_text, read_source};
 
 #[derive(Default)]
 enum GraphChanges {
@@ -88,6 +93,7 @@ impl GraphChanges {
 
 pub struct Engine {
     state: EngineState,
+    diagnostics_cache: diagnostics::DiagnosticsCache,
     implementation_cache: implementation::ImplementationCache,
     implementation_sources: implementation::InterfaceSources,
     workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex,
@@ -127,6 +133,7 @@ impl Engine {
                 new_documents: HashSet::new(),
                 disk_index: HashMap::new(),
             },
+            diagnostics_cache: diagnostics::DiagnosticsCache::default(),
             implementation_cache: implementation::ImplementationCache::default(),
             implementation_sources: implementation::InterfaceSources::default(),
             workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex::default(),
@@ -155,6 +162,7 @@ impl Engine {
                 }
             }
             let source = SyntaxSource::parse(&mut self.state.parser, path, text, None)?;
+            self.diagnostics_cache.invalidate_document(&key);
             if new_file {
                 self.state.new_documents.insert(key.clone());
             } else {
@@ -192,6 +200,7 @@ impl Engine {
                 version,
                 (!self.implementation_cache.is_empty()).then_some(&mut observe as _),
             )?;
+            self.diagnostics_cache.invalidate_document(&key);
             self.workspace_symbol_index.document_edited(&key);
             edit.apply(&mut self.implementation_cache, &key);
         }
@@ -201,6 +210,7 @@ impl Engine {
     pub fn close(&mut self, path: &Path) {
         self.implementation_cache.clear();
         let key = path_key(path);
+        self.diagnostics_cache.invalidate_document(&key);
         self.implementation_sources.invalidate(&key);
         if self.state.documents.remove(&key).is_some() {
             self.workspace_symbol_index.document_closed(&key);
@@ -241,12 +251,21 @@ impl Engine {
             return false;
         }
         self.state.roots = roots;
+        self.diagnostics_cache.clear();
         self.invalidate(None);
         true
     }
 
     pub fn is_open(&self, path: &Path) -> bool {
         self.state.documents.contains_key(&path_key(path))
+    }
+
+    pub(crate) fn open_document_paths(&self) -> Vec<PathBuf> {
+        self.state
+            .documents
+            .values()
+            .map(|doc| doc.path.clone())
+            .collect()
     }
 
     pub fn workspace_load(&self) -> WorkspaceLoad {
@@ -263,6 +282,7 @@ impl Engine {
         self.implementation_sources.retain_workspace(&workspace);
         self.state.workspace = Some(workspace);
         self.state.graph_changes = GraphChanges::Clean;
+        self.diagnostics_cache.clear();
         self.implementation_cache.clear();
         self.workspace_symbol_index.graph_changed();
         true
@@ -275,6 +295,7 @@ impl Engine {
     }
 
     pub fn file_changed(&mut self, path: &Path, change: FileChangeType) {
+        self.diagnostics_cache.clear();
         if path
             .file_name()
             .and_then(|name| name.to_str())
@@ -314,5 +335,132 @@ impl Engine {
             .as_ref()
             .and_then(|workspace| workspace.affected_packages(path));
         self.invalidate(affected);
+    }
+}
+
+impl Engine {
+    pub(crate) fn diagnostics_for(
+        &self,
+        document: &DocumentSnapshot<'_>,
+    ) -> Option<&diagnostics::DiagnosticReport> {
+        self.diagnostics_cache.get(
+            document,
+            self.state.generation,
+            self.state
+                .workspace
+                .as_ref()
+                .is_some_and(Workspace::includes_tests),
+        )
+    }
+
+    pub(crate) fn diagnostics_report(
+        &mut self,
+        path: &Path,
+    ) -> Result<(&diagnostics::DiagnosticReport, Option<WorkspaceLoad>)> {
+        self.include_tests |= is_test_source(path);
+        let load = self.workspace_load();
+        let mut snapshot = self.state.snapshot(self.include_tests);
+        let document = snapshot.document(path)?.context("expected a Go document")?;
+        let report =
+            diagnostics::get_or_compute(&mut self.diagnostics_cache, &mut snapshot, &document)?;
+        Ok((report, report.is_partial.then_some(load)))
+    }
+
+    pub(crate) fn format_document(&mut self, path: &Path) -> Result<Option<Vec<TextEdit>>> {
+        self.snapshot()
+            .document(path)?
+            .map(|document| {
+                actions::format_document(&document, path.parent().filter(|dir| dir.is_dir()))
+            })
+            .transpose()
+    }
+
+    pub(crate) fn code_actions(
+        &mut self,
+        path: &Path,
+        uri: &Uri,
+        range: Range,
+        only: Option<&[CodeActionKind]>,
+    ) -> Result<QueryProgress<Vec<CodeActionOrCommand>>> {
+        let require_tests = is_test_source(path);
+        self.include_tests |= require_tests;
+        if let QueryProgress::Pending(load) = self.snapshot().active_graph(require_tests) {
+            return Ok(QueryProgress::Pending(load));
+        }
+        if only == Some(&[CodeActionKind::QUICKFIX])
+            && let Some(source) = self.state.documents.get(&path_key(path))
+            && let Some(report) = self.diagnostics_for(&DocumentSnapshot::borrowed(path, source))
+            && report.items_overlapping(range).next().is_none()
+        {
+            return Ok(QueryProgress::Ready(Vec::new()));
+        }
+        self.local_code_actions(path, uri, range, only)
+            .map(QueryProgress::Ready)
+    }
+
+    pub(crate) fn local_code_actions(
+        &mut self,
+        path: &Path,
+        uri: &Uri,
+        range: Range,
+        only: Option<&[CodeActionKind]>,
+    ) -> Result<Vec<CodeActionOrCommand>> {
+        let mut snapshot = self.state.snapshot(self.include_tests);
+        let Some(document) = snapshot.document(path)? else {
+            return Ok(Vec::new());
+        };
+        let report =
+            diagnostics::get_or_compute(&mut self.diagnostics_cache, &mut snapshot, &document)?;
+        actions::code_actions(&mut snapshot, &document, uri, range, only, Some(report))
+    }
+
+    pub(crate) fn prepare_call_hierarchy(
+        &mut self,
+        path: &Path,
+        position: Position,
+    ) -> Result<QueryProgress<Option<Vec<CallHierarchyItem>>>> {
+        hierarchy::call::prepare_call_hierarchy(self, path, position)
+    }
+
+    pub(crate) fn incoming_calls(
+        &mut self,
+        item: &CallHierarchyItem,
+    ) -> Result<
+        QueryProgress<Option<Vec<CallHierarchyIncomingCall>>, hierarchy::call::IncomingCallsTask>,
+    > {
+        hierarchy::call::incoming_calls(self, item)
+    }
+
+    pub(crate) fn outgoing_calls(
+        &mut self,
+        item: &CallHierarchyItem,
+    ) -> Result<QueryProgress<Option<Vec<CallHierarchyOutgoingCall>>>> {
+        hierarchy::call::outgoing_calls(self, item)
+    }
+
+    pub(crate) fn prepare_type_hierarchy(
+        &mut self,
+        path: &Path,
+        position: Position,
+    ) -> Result<QueryProgress<Option<Vec<TypeHierarchyItem>>>> {
+        hierarchy::type_hierarchy::prepare_type_hierarchy(self, path, position)
+    }
+
+    pub(crate) fn supertypes(
+        &mut self,
+        item: &TypeHierarchyItem,
+    ) -> Result<
+        QueryProgress<Option<Vec<TypeHierarchyItem>>, hierarchy::type_hierarchy::TypeHierarchyTask>,
+    > {
+        hierarchy::type_hierarchy::supertypes(self, item)
+    }
+
+    pub(crate) fn subtypes(
+        &mut self,
+        item: &TypeHierarchyItem,
+    ) -> Result<
+        QueryProgress<Option<Vec<TypeHierarchyItem>>, hierarchy::type_hierarchy::TypeHierarchyTask>,
+    > {
+        hierarchy::type_hierarchy::subtypes(self, item)
     }
 }

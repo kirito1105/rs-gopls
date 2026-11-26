@@ -353,7 +353,7 @@ fn fixture_quickfixes_edit_the_selected_diagnostic_and_uri() {
                     unused,
                     "Replace unused variable 'unused' with '_'",
                     "unused := 42",
-                    "_ := 42",
+                    "_ = 42",
                 ),
                 (
                     reassign,
@@ -390,6 +390,39 @@ fn fixture_quickfixes_edit_the_selected_diagnostic_and_uri() {
             }
         },
     );
+}
+
+#[test]
+fn unused_variable_fix_preserves_short_declarations_with_another_name() {
+    for (declaration, fixed, edit_count) in [
+        (
+            "used, unused := f(); _ = used",
+            "used, _ := f(); _ = used",
+            1,
+        ),
+        ("_, /* first */ unused := f()", "_, /* first */ _ = f()", 2),
+    ] {
+        let text = format!(
+            "package actions\nfunc f() (int, int) {{ return 1, 2 }}\nfunc g() {{ {declaration} }}\n"
+        );
+        with_actions(&text, &[], |snapshot, document, uri| {
+            let range = token(document, "unused");
+            let item = diagnostic(
+                DiagnosticCode::VarUnused,
+                range,
+                DiagnosticFixData::ReplaceUnusedVarWithBlank {
+                    name: "unused".into(),
+                    ident_range: range,
+                },
+            );
+            let report = report(snapshot, document, vec![item]);
+            let actions =
+                code_actions(snapshot, document, uri, range, None, Some(&report)).unwrap();
+            let edits = action_edits(action(&actions[0]), uri);
+            assert_eq!(edits.len(), edit_count);
+            assert_eq!(apply(document, edits), text.replace(declaration, fixed));
+        });
+    }
 }
 
 #[test]
@@ -623,7 +656,7 @@ fn an_unsafe_import_header_still_allows_an_independent_utf16_quickfix() {
         .unwrap();
         assert_eq!(actions.len(), 1);
         let edits = action_edits(action(&actions[0]), uri);
-        assert_eq!(edits, [TextEdit::new(range, "_".into())]);
-        assert_eq!(apply(document, edits), text.replace("unused", "_"));
+        assert_eq!(edits.len(), 2);
+        assert_eq!(apply(document, edits), text.replace("unused :=", "_ ="));
     });
 }

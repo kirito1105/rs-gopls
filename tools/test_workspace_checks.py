@@ -59,10 +59,12 @@ def extra_modules(**sources):
 class WorkspaceDiscoveryTests(unittest.TestCase):
     def test_legacy_order_and_public_cases(self):
         cases = workspace_checks.discover_cases()
-        self.assertEqual(tuple(cases), LEGACY_CASES)
-        self.assertEqual(tuple(check_workspace_updates.CASES), LEGACY_CASES)
+        self.assertEqual(tuple(cases)[:len(LEGACY_CASES)], LEGACY_CASES)
+        self.assertEqual(tuple(check_workspace_updates.CASES), tuple(cases))
         for name, case in cases.items():
             self.assertIs(check_workspace_updates.CASES[name], case.check)
+        for name in LEGACY_CASES:
+            case = cases[name]
             self.assertIs(getattr(check_workspace_updates, case.check.__name__), case.check)
 
     def test_discovers_new_modules_and_preserves_declaration_order(self):
@@ -72,7 +74,9 @@ class WorkspaceDiscoveryTests(unittest.TestCase):
             _private='raise AssertionError("private modules must not be imported")',
         ):
             cases = workspace_checks.discover_cases()
-        self.assertEqual(tuple(cases), (*LEGACY_CASES, "another-case", "z-first", "a-second"))
+        self.assertEqual(tuple(cases)[:len(LEGACY_CASES)], LEGACY_CASES)
+        extensions = [name for name, case in cases.items() if case.module in {"aa_extension", "zz_extension"}]
+        self.assertEqual(extensions, ["another-case", "z-first", "a-second"])
         self.assertEqual(cases["another-case"].module, "aa_extension")
         self.assertEqual(cases["a-second"].module, "zz_extension")
 
@@ -101,7 +105,7 @@ class WorkspaceCliTests(unittest.TestCase):
                     raise RuntimeError("injected failure")
             return check
 
-        cases = {name: fake_case(name) for name in LEGACY_CASES}
+        cases = {name: fake_case(name) for name in check_workspace_updates.CASES}
         with mock.patch.dict(check_workspace_updates.CASES, cases), redirect_stdout(StringIO()) as output:
             with redirect_stderr(StringIO()) as errors:
                 try:
@@ -119,10 +123,11 @@ class WorkspaceCliTests(unittest.TestCase):
         return calls
 
     def test_default_runs_every_case_in_baseline_order(self):
-        calls = self.assert_selection(LEGACY_CASES)
+        cases = tuple(check_workspace_updates.CASES)
+        calls = self.assert_selection(cases)
         self.assertEqual({binary for _, binary, _, _ in calls}, {Path(sys.executable).resolve()})
         self.assertEqual({timeout for _, _, _, timeout in calls}, {60.0})
-        self.assertEqual(len({root for _, _, root, _ in calls}), len(LEGACY_CASES))
+        self.assertEqual(len({root for _, _, root, _ in calls}), len(cases))
         self.assertTrue(all(name == root.name and not root.exists() for name, _, root, _ in calls))
 
     def test_repeated_case_keeps_the_first_occurrence_and_requested_order(self):

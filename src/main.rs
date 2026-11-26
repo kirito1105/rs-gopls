@@ -11,7 +11,11 @@ mod test_support;
 mod workspace;
 mod workspace_roots;
 
-use std::{collections::HashSet, env, path::PathBuf};
+use std::{
+    collections::HashSet,
+    env,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, ensure};
 use crossbeam_channel::{bounded, never, select_biased, unbounded};
@@ -19,19 +23,22 @@ use lsp_server::{Connection, ErrorCode, Message, Notification, Request};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
     DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    InitializeParams, InitializeResult, NumberOrString, OneOf, PositionEncodingKind,
+    InitializeParams, NumberOrString, OneOf, PositionEncodingKind, PublishDiagnosticsParams,
     ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, WorkspaceFolder, WorkspaceFoldersServerCapabilities,
+    TextDocumentSyncOptions, Uri, WorkspaceFolder, WorkspaceFoldersServerCapabilities,
     WorkspaceServerCapabilities,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
         DidCloseTextDocument, DidOpenTextDocument, Exit, Initialized, Notification as _,
+        PublishDiagnostics,
     },
-    request::{Initialize, Request as _, Shutdown},
+    request::{Initialize, Request as _, Shutdown, WorkspaceDiagnosticRefresh},
 };
 use serde_json::Value;
 
-use protocol::{RequestResult, file_path, invalid_params, send_response};
+use protocol::{
+    RequestResult, file_path, invalid_params, path_uri, send_notification, send_response,
+};
 use scheduler::{Scheduler, WorkspaceResult};
 use semantic::Engine;
 use workspace::path_key;
@@ -39,12 +46,7 @@ use workspace::path_key;
 #[cfg(test)]
 use lsp_server::{RequestId, Response};
 #[cfg(test)]
-use lsp_types::{
-    Uri,
-    request::{DocumentSymbolRequest, WorkspaceSymbolRequest},
-};
-#[cfg(test)]
-use protocol::path_uri;
+use lsp_types::request::{DocumentSymbolRequest, WorkspaceSymbolRequest};
 
 enum State {
     Starting,
@@ -56,13 +58,72 @@ struct Running {
     engine: Engine,
     watch_files: bool,
     hierarchical_document_symbols: bool,
+    diagnostic_updates: DiagnosticUpdates,
     scheduler: Scheduler,
+}
+
+enum DiagnosticUpdates {
+    None,
+    Publish,
+    Refresh { sequence: u64 },
 }
 
 impl Running {
     fn workspace_loaded(&mut self, connection: &Connection, update: WorkspaceResult) -> Result<()> {
-        self.scheduler
-            .workspace_loaded(&mut self.engine, connection, update)
+        if self
+            .scheduler
+            .workspace_loaded(&mut self.engine, connection, update)?
+        {
+            self.workspace_diagnostics_changed(connection)?;
+        }
+        Ok(())
+    }
+
+    fn publish_document(&mut self, connection: &Connection, path: &Path, uri: Uri) -> Result<()> {
+        if matches!(self.diagnostic_updates, DiagnosticUpdates::Publish)
+            && self.engine.is_open(path)
+        {
+            let (report, load) = self.engine.diagnostics_report(path)?;
+            if let Some(load) = load {
+                self.scheduler.request_workspace(load);
+            }
+            send_notification::<PublishDiagnostics>(
+                connection,
+                PublishDiagnosticsParams::new(
+                    uri,
+                    report.to_lsp_diagnostics(),
+                    report.snapshot.version,
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn publish_open_documents(&mut self, connection: &Connection) -> Result<()> {
+        if matches!(self.diagnostic_updates, DiagnosticUpdates::Publish) {
+            for path in self.engine.open_document_paths() {
+                if let Err(error) = self.publish_document(connection, &path, path_uri(&path)?) {
+                    eprintln!("rs-gopls: diagnostics for {}: {error:#}", path.display());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn workspace_diagnostics_changed(&mut self, connection: &Connection) -> Result<()> {
+        if let DiagnosticUpdates::Refresh { sequence } = &mut self.diagnostic_updates {
+            *sequence += 1;
+            let id = format!("rs-gopls/diagnostic-refresh/{sequence}");
+            connection
+                .sender
+                .send(
+                    Request::new(id.into(), WorkspaceDiagnosticRefresh::METHOD.to_owned(), ())
+                        .into(),
+                )
+                .context("requesting a diagnostic refresh")
+        } else {
+            self.publish_open_documents(connection)
+        }
     }
 
     fn advance_search(&mut self, connection: &Connection) -> Result<()> {
@@ -201,6 +262,10 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
 }
 
 fn initialize(params: Value) -> Result<(Running, Value)> {
+    // lsp-types 0.97 deserializes workspace.diagnostic, while LSP 3.17 uses workspace.diagnostics.
+    let refresh_support = params
+        .pointer("/capabilities/workspace/diagnostics/refreshSupport")
+        .and_then(Value::as_bool);
     let params = serde_json::from_value::<InitializeParams>(params)
         .context("invalid initialize parameters")?;
     let watch_files = params
@@ -215,9 +280,27 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|document| document.document_symbol.as_ref())
         .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
+    let document = params.capabilities.text_document.as_ref();
+    let pull = document.and_then(|d| d.diagnostic.as_ref()).is_some();
+    let publish = document
+        .and_then(|d| d.publish_diagnostics.as_ref())
+        .is_some();
+    let refresh = refresh_support.or_else(|| {
+        params
+            .capabilities
+            .workspace
+            .as_ref()
+            .and_then(|w| w.diagnostic.as_ref())
+            .and_then(|d| d.refresh_support)
+    }) == Some(true);
+    let diagnostic_updates = match (pull, refresh, publish) {
+        (true, true, _) => DiagnosticUpdates::Refresh { sequence: 0 },
+        (false, _, true) => DiagnosticUpdates::Publish,
+        _ => DiagnosticUpdates::None,
+    };
     let roots = workspace_roots(params)?;
 
-    let mut capabilities = ServerCapabilities {
+    let capabilities = ServerCapabilities {
         position_encoding: Some(PositionEncodingKind::UTF16),
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
@@ -235,18 +318,18 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         }),
         ..Default::default()
     };
-    dispatch::write_capabilities(&mut capabilities);
-    let result = serde_json::to_value(InitializeResult {
-        capabilities,
-        server_info: Some(ServerInfo {
+    let result = serde_json::json!({
+        "capabilities": dispatch::capabilities(capabilities),
+        "serverInfo": ServerInfo {
             name: env!("CARGO_PKG_NAME").into(),
             version: Some(env!("CARGO_PKG_VERSION").into()),
-        }),
-    })?;
+        }
+    });
     Ok((
         Running {
             watch_files,
             hierarchical_document_symbols,
+            diagnostic_updates,
             engine: Engine::with_roots(roots),
             scheduler: Scheduler::default(),
         },
@@ -340,6 +423,7 @@ fn handle_notification(
                 running
                     .scheduler
                     .workspace_modified(connection, running.engine.workspace_load())?;
+                running.workspace_diagnostics_changed(connection)?;
             }
             Ok(())
         }
@@ -358,7 +442,7 @@ fn handle_notification(
             if after != before {
                 running.scheduler.workspace_modified(connection, after)?;
             }
-            Ok(())
+            running.publish_open_documents(connection)
         }
         DidOpenTextDocument::METHOD => {
             let params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
@@ -367,7 +451,8 @@ fn handle_notification(
             running
                 .engine
                 .open(path.clone(), document.text, document.version)?;
-            running.scheduler.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)?;
+            running.publish_document(connection, &path, document.uri)
         }
         DidChangeTextDocument::METHOD => {
             let params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
@@ -375,13 +460,22 @@ fn handle_notification(
             running
                 .engine
                 .edit(&path, &params.content_changes, params.text_document.version)?;
-            running.scheduler.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)?;
+            running.publish_document(connection, &path, params.text_document.uri)
         }
         DidCloseTextDocument::METHOD => {
             let params: DidCloseTextDocumentParams = serde_json::from_value(params)?;
             let path = file_path(&params.text_document.uri)?;
+            let was_open = running.engine.is_open(&path);
             running.engine.close(&path);
-            running.scheduler.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)?;
+            if was_open && matches!(running.diagnostic_updates, DiagnosticUpdates::Publish) {
+                send_notification::<PublishDiagnostics>(
+                    connection,
+                    PublishDiagnosticsParams::new(params.text_document.uri, Vec::new(), None),
+                )?;
+            }
+            Ok(())
         }
         Cancel::METHOD => {
             let params: CancelParams = serde_json::from_value(params)?;

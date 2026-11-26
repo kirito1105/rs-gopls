@@ -12,13 +12,9 @@ use crate::semantic::diagnostics::{
 };
 use crate::semantic::query::QueryProgress;
 use crate::semantic::snapshot::{DocumentSnapshot, EngineSnapshot};
-use crate::semantic::source::is_test_source;
+use crate::semantic::source::{is_test_source, node_at_range, node_text};
 use crate::workspace::{Package, Workspace, path_key};
 
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "code action request entry point")
-)]
 pub(crate) fn code_actions(
     snapshot: &mut EngineSnapshot<'_>,
     document: &DocumentSnapshot<'_>,
@@ -135,7 +131,7 @@ pub(crate) fn code_actions(
                 ) => {
                     fix(
                         format!("Replace unused variable '{name}' with '_'"),
-                        vec![TextEdit::new(*ident_range, "_".into())],
+                        replace_unused_variable(document, *ident_range),
                     );
                 }
                 (
@@ -152,6 +148,26 @@ pub(crate) fn code_actions(
         }
     }
     Ok(actions)
+}
+
+fn replace_unused_variable(document: &DocumentSnapshot<'_>, range: Range) -> Vec<TextEdit> {
+    let mut edits = vec![TextEdit::new(range, "_".into())];
+    if let Some(name) = node_at_range(document.indexed(), range)
+        && let Some(left) = name.parent()
+        && let Some(decl) = left.parent()
+        && decl.kind() == "short_var_declaration"
+        && decl.child_by_field_name("left") == Some(left)
+        && left.named_children(&mut left.walk()).all(|other| {
+            other == name || other.is_extra() || node_text(other, document.text()) == "_"
+        })
+        && let Some(operator) = decl.children(&mut decl.walk()).find(|n| n.kind() == ":=")
+    {
+        edits.push(TextEdit::new(
+            document.byte_range(operator.byte_range()),
+            "=".into(),
+        ));
+    }
+    edits
 }
 
 fn wants_kind(only: Option<&[CodeActionKind]>, target: &CodeActionKind) -> bool {
