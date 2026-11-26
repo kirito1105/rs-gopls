@@ -182,3 +182,4 @@ python -B -m unittest discover -s tools -p 'test_workspace_checks.py'
 ## 完成记录
 
 - 2026-11-27 完成本机 GoLand `2026.3.0.1`（`GO-263.7307.354`）插件清单与字节码静态分析（`GoAnnotator`、31 个 `SpecChecker`、29 个 `legacyErrorInspections`、`go-inspections.xml` 与 `GoListOutputParser`），核对 `lsp-types 0.97` 的 Push/Pull 协议类型与 Pre-PR 1/2 后的 Rust 模块边界，创建待确认计划并等待用户确认。
+- 2026-11-27 验证 Wave 0 诊断夹具与采集脚本。`go test ./clean/...` 通过。GoLand `GO-263.7307.354` 的 11 个文件各完成 30 次重复计时，结果一致。两份干净源文件均为零错误，语法错样例核对了非 BMP 字符后的 UTF-16 范围。[诊断夹具](../../tools/fixtures/diagnostics/) · [采集脚本](../../tools/capture_goland_diagnostics.groovy)

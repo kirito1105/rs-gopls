@@ -1,0 +1,33 @@
+{
+  "build": "GO-263.7307.354",
+  "root": "diagnostics",
+  "cases": [
+    {"id": "clean", "path": "clean/clean.go", "expectedCategories": []},
+    {"id": "clean-test", "path": "clean/clean_test.go", "expectedCategories": []},
+    {"id": "missing-paren", "path": "broken_syntax/missing_paren.go", "expectedCategories": ["syntax.error"]},
+    {"id": "missing-expression", "path": "broken_syntax/missing_expression.go", "expectedCategories": ["syntax.error"]},
+    {"id": "unused-import", "path": "semantic_errors/imports.go", "expectedCategories": ["import.unused"]},
+    {"id": "self-import", "path": "semantic_errors/self_import/self.go", "expectedCategories": ["import.self"]},
+    {"id": "invalid-import", "path": "semantic_errors/invalid_import/invalid.go", "expectedCategories": ["import.unresolved"]},
+    {
+      "id": "names",
+      "path": "semantic_errors/names.go",
+      "expectedCategories": ["name.unresolved", "type.unresolved", "field.unresolved", "method.unresolved"]
+    },
+    {
+      "id": "declarations",
+      "path": "semantic_errors/declarations.go",
+      "expectedCategories": ["name.redeclared", "var.unused", "shortvar.no_new_vars", "const.reassigned"]
+    },
+    {
+      "id": "calls",
+      "path": "semantic_errors/calls.go",
+      "expectedCategories": ["call.arity", "return.arity", "call.non_function"]
+    },
+    {
+      "id": "types",
+      "path": "semantic_errors/types.go",
+      "expectedCategories": ["type.mismatch", "type.interface_not_implemented", "field.unknown", "switch.duplicate_case", "name.blank_as_value"]
+    }
+  ]
+}
