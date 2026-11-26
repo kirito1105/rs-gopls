@@ -1,3 +1,6 @@
+mod dispatch;
+mod protocol;
+mod scheduler;
 mod scope;
 mod semantic;
 #[cfg(test)]
@@ -8,38 +11,37 @@ mod test_support;
 mod workspace;
 mod workspace_roots;
 
-use std::{
-    collections::VecDeque,
-    env,
-    path::{Path, PathBuf},
-    thread,
-};
+use std::{env, path::PathBuf};
 
-use anyhow::{Context, Result, anyhow, ensure};
-use crossbeam_channel::{Sender, bounded, never, select_biased, unbounded};
-use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
+use anyhow::{Context, Result, ensure};
+use crossbeam_channel::{bounded, never, select_biased, unbounded};
+use lsp_server::{Connection, ErrorCode, Message, Notification, Request};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams,
-    HoverProviderCapability, InitializeParams, InitializeResult, Location, NumberOrString, OneOf,
-    Position, PositionEncodingKind, Range, ReferenceParams, ServerCapabilities, ServerInfo,
-    SignatureHelpOptions, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, Uri, WorkspaceSymbolParams,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, InitializeParams, InitializeResult,
+    NumberOrString, PositionEncodingKind, ServerCapabilities, ServerInfo,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
-    request::{
-        DocumentSymbolRequest, GotoDefinition, GotoImplementation, GotoTypeDefinition,
-        HoverRequest, Initialize, References, Request as _, Shutdown, SignatureHelpRequest,
-        WorkspaceSymbolRequest,
-    },
+    request::{Initialize, Request as _, Shutdown},
 };
 use serde_json::Value;
-use url::Url;
 
-use semantic::{DefinitionKind, Engine, QueryProgress, Search, SearchResult};
-use workspace::{Workspace, WorkspaceLoad, path_key};
+use protocol::{RequestResult, file_path, invalid_params, send_response};
+use scheduler::{Scheduler, WorkspaceResult};
+use semantic::Engine;
+
+#[cfg(test)]
+use lsp_server::{RequestId, Response};
+#[cfg(test)]
+use lsp_types::{
+    Uri,
+    request::{DocumentSymbolRequest, WorkspaceSymbolRequest},
+};
+#[cfg(test)]
+use protocol::path_uri;
 
 enum State {
     Starting,
@@ -47,242 +49,40 @@ enum State {
     Shutdown,
 }
 
-enum NavigationKind {
-    Definition(DefinitionKind),
-    Hover,
-    SignatureHelp,
-    Implementation,
-    References { include_declaration: bool },
-}
-
-enum Query {
-    Navigation {
-        kind: NavigationKind,
-        path: PathBuf,
-        position: Position,
-    },
-    WorkspaceSymbols(String),
-}
-
-struct QueryRequest {
-    id: RequestId,
-    query: Query,
-}
-
-struct ActiveSearch {
-    id: RequestId,
-    search: Search,
-}
-
-struct WorkspaceResult {
-    load: WorkspaceLoad,
-    result: Result<Workspace>,
-}
-
 struct Running {
     engine: Engine,
     watch_files: bool,
     hierarchical_document_symbols: bool,
-    pending: Vec<QueryRequest>,
-    searches: VecDeque<ActiveSearch>,
-    loading: Option<WorkspaceLoad>,
-    requested: Option<WorkspaceLoad>,
+    scheduler: Scheduler,
 }
 
 impl Running {
-    fn request_workspace(&mut self, load: WorkspaceLoad) {
-        if self.loading != Some(load) {
-            self.requested = Some(load);
-        }
-    }
-
-    fn start_workspace_load(&mut self, results: &Sender<WorkspaceResult>) -> Result<()> {
-        if self.loading.is_some() {
-            return Ok(());
-        }
-        let Some(load) = self.requested.take() else {
-            return Ok(());
-        };
-
-        let root = self.engine.root().to_owned();
-        let results = results.clone();
-        thread::Builder::new()
-            .name("go-package-loader".into())
-            .spawn(move || {
-                let result = Workspace::load(&root, load.include_tests);
-                let _ = results.send(WorkspaceResult { load, result });
-            })
-            .context("starting Go package loader")?;
-        self.loading = Some(load);
-        Ok(())
-    }
-
     fn workspace_loaded(&mut self, connection: &Connection, update: WorkspaceResult) -> Result<()> {
-        self.loading = None;
-        match update.result {
-            Ok(workspace) => {
-                if self.engine.install_workspace(update.load, workspace) {
-                    for request in std::mem::take(&mut self.pending) {
-                        self.resolve_query(connection, request)?;
-                    }
-                }
-            }
-            Err(error) if update.load == self.engine.workspace_load() => {
-                let message = format!("{error:#}");
-                if self.pending.is_empty() {
-                    eprintln!("rs-gopls: loading Go packages: {message}");
-                }
-                for request in std::mem::take(&mut self.pending) {
-                    let result = match request.query {
-                        Query::Navigation {
-                            kind: NavigationKind::Hover,
-                            path,
-                            position,
-                        } => self
-                            .engine
-                            .hover_after_load_failure(&path, position)
-                            .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
-                            .and_then(serialize_query),
-                        Query::Navigation {
-                            kind: NavigationKind::SignatureHelp,
-                            path,
-                            position,
-                        } => self
-                            .engine
-                            .signature_help_after_load_failure(&path, position)
-                            .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
-                            .and_then(serialize_query),
-                        _ => Err((ErrorCode::RequestFailed, message.clone())),
-                    };
-                    send_response(connection, request.id, result)?;
-                }
-            }
-            Err(_) => {}
-        }
-        if !self.pending.is_empty() {
-            self.request_workspace(self.engine.workspace_load());
-        }
-        Ok(())
-    }
-
-    fn resolve_query(&mut self, connection: &Connection, request: QueryRequest) -> Result<()> {
-        let progress = match &request.query {
-            Query::Navigation {
-                kind,
-                path,
-                position,
-            } => match *kind {
-                NavigationKind::Definition(kind) => self
-                    .engine
-                    .definition(path, *position, kind)
-                    .map(|progress| progress.map(serialize_location)),
-                NavigationKind::Hover => self
-                    .engine
-                    .hover(path, *position)
-                    .map(|progress| progress.map(serialize_query)),
-                NavigationKind::SignatureHelp => self
-                    .engine
-                    .signature_help(path, *position)
-                    .map(|progress| progress.map(serialize_query)),
-                NavigationKind::Implementation => self
-                    .engine
-                    .implementations(path, *position)
-                    .map(|progress| progress.map(serialize_locations)),
-                NavigationKind::References {
-                    include_declaration,
-                } => self
-                    .engine
-                    .references(path, *position, include_declaration)
-                    .map(|progress| progress.map(serialize_locations)),
-            },
-            Query::WorkspaceSymbols(query) => {
-                Ok(self.engine.workspace_symbols(query).map(serialize_query))
-            }
-        };
-        let result = match progress {
-            Ok(QueryProgress::Pending(load)) => {
-                self.pending.push(request);
-                self.request_workspace(load);
-                return Ok(());
-            }
-            Ok(QueryProgress::Searching(search)) => {
-                self.searches.push_back(ActiveSearch {
-                    id: request.id,
-                    search,
-                });
-                return Ok(());
-            }
-            Ok(QueryProgress::Ready(result)) => result,
-            Err(error) => Err((ErrorCode::InternalError, format!("{error:#}"))),
-        };
-        send_response(connection, request.id, result)
+        self.scheduler
+            .workspace_loaded(&mut self.engine, connection, update)
     }
 
     fn advance_search(&mut self, connection: &Connection) -> Result<()> {
-        let Some(mut active) = self.searches.pop_front() else {
-            return Ok(());
-        };
-        let response = match self.engine.advance_search(&mut active.search) {
-            Ok(false) => {
-                self.searches.push_back(active);
-                return Ok(());
-            }
-            Ok(true) => match active.search.into_result() {
-                SearchResult::Locations(locations) => serialize_locations(locations),
-                SearchResult::WorkspaceSymbols(symbols) => serialize_query(symbols),
-            },
-            Err(error) => Err((ErrorCode::InternalError, format!("{error:#}"))),
-        };
-        send_response(connection, active.id, response)
-    }
-
-    fn cancel_searches(
-        &mut self,
-        connection: &Connection,
-        mut matches: impl FnMut(&RequestId) -> bool,
-        code: ErrorCode,
-        message: &str,
-    ) -> Result<()> {
-        for active in std::mem::take(&mut self.searches) {
-            if matches(&active.id) {
-                send_response(connection, active.id, Err((code, message.to_owned())))?;
-            } else {
-                self.searches.push_back(active);
-            }
-        }
-        Ok(())
-    }
-
-    fn cancel_pending(
-        &mut self,
-        connection: &Connection,
-        matches: impl FnMut(&mut QueryRequest) -> bool,
-        code: ErrorCode,
-        message: &str,
-    ) -> Result<()> {
-        for request in self.pending.extract_if(.., matches) {
-            send_response(connection, request.id, Err((code, message.to_owned())))?;
-        }
-        Ok(())
-    }
-
-    fn document_modified(&mut self, connection: &Connection, path: &Path) -> Result<()> {
-        let key = path_key(path);
-        self.cancel_pending(
-            connection,
-            |request| matches!(&request.query, Query::Navigation { path, .. } if path_key(path) == key),
-            ErrorCode::ContentModified,
-            "the document changed while loading Go packages",
-        )?;
-        self.cancel_searches(
-            connection,
-            |_| true,
-            ErrorCode::ContentModified,
-            "the document changed during search",
-        )
+        self.scheduler.advance_search(&mut self.engine, connection)
     }
 }
-type RequestResult = std::result::Result<Value, (ErrorCode, String)>;
+
+// Keep the existing in-memory symbol request harness attached to the session.
+#[cfg(test)]
+impl std::ops::Deref for Running {
+    type Target = Scheduler;
+
+    fn deref(&self) -> &Self::Target {
+        &self.scheduler
+    }
+}
+
+#[cfg(test)]
+impl std::ops::DerefMut for Running {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.scheduler
+    }
+}
 
 fn main() -> Result<()> {
     let (connection, threads) = Connection::stdio();
@@ -301,7 +101,7 @@ fn serve(connection: &Connection) -> Result<()> {
         .send(())
         .context("scheduling navigation searches")?;
     loop {
-        let search_receiver = if matches!(&state, State::Running(running) if !running.searches.is_empty())
+        let search_receiver = if matches!(&state, State::Running(running) if !running.scheduler.searches.is_empty())
         {
             &search_ready
         } else {
@@ -348,7 +148,9 @@ fn serve(connection: &Connection) -> Result<()> {
             }
         }
         if let State::Running(running) = &mut state {
-            running.start_workspace_load(&load_sender)?;
+            running
+                .scheduler
+                .start_workspace_load(&running.engine, &load_sender)?;
         }
     }
     Ok(())
@@ -362,7 +164,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 *state = State::Running(Box::new(running));
                 capabilities
             })
-            .map_err(|error| (ErrorCode::InvalidParams, format!("{error:#}"))),
+            .map_err(invalid_params),
         (State::Starting, _) => Err((
             ErrorCode::ServerNotInitialized,
             "initialize must be called first".into(),
@@ -377,121 +179,24 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
         )),
         (state @ State::Running(..), Shutdown::METHOD) => {
             if let State::Running(running) = state {
-                running.cancel_pending(
-                    connection,
-                    |_| true,
-                    ErrorCode::RequestFailed,
-                    "the server is shutting down",
-                )?;
-                running.cancel_searches(
-                    connection,
-                    |_| true,
-                    ErrorCode::RequestFailed,
-                    "the server is shutting down",
-                )?;
+                running.scheduler.shutdown(connection)?;
             }
             *state = State::Shutdown;
             Ok(Value::Null)
         }
-        (State::Running(running), DocumentSymbolRequest::METHOD) => {
-            let document = serde_json::from_value::<DocumentSymbolParams>(params)
-                .map_err(anyhow::Error::from)
-                .and_then(|params| {
-                    let uri = params.text_document.uri;
-                    Ok((file_path(&uri)?, uri))
-                });
-            match document {
-                Ok((path, uri)) => running
-                    .engine
-                    .document_symbols(&path, &uri, running.hierarchical_document_symbols)
-                    .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
-                    .and_then(serialize_query),
-                Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
-            }
+        (State::Running(running), _) => {
+            return dispatch::handle(
+                connection,
+                &mut running.engine,
+                &mut running.scheduler,
+                running.hierarchical_document_symbols,
+                Request { id, method, params },
+            );
         }
-        (State::Running(running), WorkspaceSymbolRequest::METHOD) => {
-            match serde_json::from_value::<WorkspaceSymbolParams>(params) {
-                Ok(params) => {
-                    return running.resolve_query(
-                        connection,
-                        QueryRequest {
-                            id,
-                            query: Query::WorkspaceSymbols(params.query),
-                        },
-                    );
-                }
-                Err(error) => Err((ErrorCode::InvalidParams, error.to_string())),
-            }
-        }
-        (
-            State::Running(running),
-            GotoDefinition::METHOD
-            | GotoTypeDefinition::METHOD
-            | GotoImplementation::METHOD
-            | HoverRequest::METHOD
-            | SignatureHelpRequest::METHOD,
-        ) => match document_position(params) {
-            Ok((path, position)) => {
-                let kind = match method.as_str() {
-                    GotoDefinition::METHOD => {
-                        NavigationKind::Definition(DefinitionKind::Declaration)
-                    }
-                    GotoTypeDefinition::METHOD => NavigationKind::Definition(DefinitionKind::Type),
-                    HoverRequest::METHOD => NavigationKind::Hover,
-                    SignatureHelpRequest::METHOD => NavigationKind::SignatureHelp,
-                    _ => NavigationKind::Implementation,
-                };
-                return running.resolve_query(
-                    connection,
-                    QueryRequest {
-                        id,
-                        query: Query::Navigation {
-                            kind,
-                            path,
-                            position,
-                        },
-                    },
-                );
-            }
-            Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
-        },
-        (State::Running(running), References::METHOD) => match reference_position(params) {
-            Ok((path, position, include_declaration)) => {
-                return running.resolve_query(
-                    connection,
-                    QueryRequest {
-                        id,
-                        query: Query::Navigation {
-                            kind: NavigationKind::References {
-                                include_declaration,
-                            },
-                            path,
-                            position,
-                        },
-                    },
-                );
-            }
-            Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
-        },
-        (State::Running(..), _) => Err((
-            ErrorCode::MethodNotFound,
-            format!("unsupported request: {method}"),
-        )),
     };
-
     send_response(connection, id, result)
 }
 
-fn send_response(connection: &Connection, id: RequestId, result: RequestResult) -> Result<()> {
-    let response = match result {
-        Ok(value) => Response::new_ok(id, value),
-        Err((code, message)) => Response::new_err(id, code as i32, message),
-    };
-    connection
-        .sender
-        .send(response.into())
-        .context("sending LSP response")
-}
 fn initialize(params: Value) -> Result<(Running, Value)> {
     let params = serde_json::from_value::<InitializeParams>(params)
         .context("invalid initialize parameters")?;
@@ -514,7 +219,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         root.display()
     );
 
-    let capabilities = ServerCapabilities {
+    let mut capabilities = ServerCapabilities {
         position_encoding: Some(PositionEncodingKind::UTF16),
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
@@ -523,20 +228,9 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
                 ..Default::default()
             },
         )),
-        definition_provider: Some(OneOf::Left(true)),
-        hover_provider: Some(HoverProviderCapability::Simple(true)),
-        signature_help_provider: Some(SignatureHelpOptions {
-            trigger_characters: Some(vec!["(".into(), ",".into()]),
-            retrigger_characters: Some(vec![",".into()]),
-            work_done_progress_options: Default::default(),
-        }),
-        type_definition_provider: Some(true.into()),
-        implementation_provider: Some(true.into()),
-        references_provider: Some(OneOf::Left(true)),
-        document_symbol_provider: Some(OneOf::Left(true)),
-        workspace_symbol_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
+    dispatch::write_capabilities(&mut capabilities);
     let result = serde_json::to_value(InitializeResult {
         capabilities,
         server_info: Some(ServerInfo {
@@ -546,13 +240,10 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
     })?;
     Ok((
         Running {
-            engine: Engine::new(root),
             watch_files,
             hierarchical_document_symbols,
-            pending: Vec::new(),
-            searches: VecDeque::new(),
-            loading: None,
-            requested: None,
+            engine: Engine::new(root),
+            scheduler: Scheduler::default(),
         },
         result,
     ))
@@ -573,47 +264,6 @@ fn workspace_root(params: InitializeParams) -> Result<PathBuf> {
         return Ok(env::current_dir()?.join(path));
     }
     env::current_dir().context("getting the current directory for a client without a workspace")
-}
-
-fn document_position(params: Value) -> Result<(PathBuf, Position)> {
-    let document: TextDocumentPositionParams = serde_json::from_value(params)?;
-    Ok((file_path(&document.text_document.uri)?, document.position))
-}
-
-fn reference_position(params: Value) -> Result<(PathBuf, Position, bool)> {
-    let params: ReferenceParams = serde_json::from_value(params)?;
-    let document = params.text_document_position;
-    Ok((
-        file_path(&document.text_document.uri)?,
-        document.position,
-        params.context.include_declaration,
-    ))
-}
-
-fn serialize_locations(locations: Vec<(PathBuf, Range)>) -> RequestResult {
-    let result = (|| {
-        let locations = locations
-            .into_iter()
-            .map(|(path, range)| Ok(Location::new(path_uri(&path)?, range)))
-            .collect::<Result<Vec<_>>>()?;
-        Ok::<_, anyhow::Error>(serde_json::to_value(locations)?)
-    })();
-    result.map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
-}
-
-fn serialize_location(location: Option<(PathBuf, Range)>) -> RequestResult {
-    let location = (|| {
-        let Some((path, range)) = location else {
-            return Ok(Value::Null);
-        };
-        let uri = path_uri(&path)?;
-        Ok::<_, anyhow::Error>(serde_json::to_value(Location::new(uri, range))?)
-    })();
-    location.map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
-}
-
-fn serialize_query(result: impl serde::Serialize) -> RequestResult {
-    serde_json::to_value(result).map_err(|error| (ErrorCode::InternalError, error.to_string()))
 }
 
 fn register_file_watches(connection: &Connection) -> Result<()> {
@@ -658,19 +308,13 @@ fn handle_notification(
                 if let Ok(path) = file_path(&change.uri) {
                     running.engine.file_changed(&path, change.typ);
                     if !running.engine.is_open(&path) {
-                        running.document_modified(connection, &path)?;
+                        running.scheduler.document_modified(connection, &path)?;
                     }
                 }
             }
             let after = running.engine.workspace_load();
             if after != before {
-                running.cancel_searches(
-                    connection,
-                    |_| true,
-                    ErrorCode::ContentModified,
-                    "the workspace changed during search",
-                )?;
-                running.request_workspace(after);
+                running.scheduler.workspace_modified(connection, after)?;
             }
             Ok(())
         }
@@ -681,7 +325,7 @@ fn handle_notification(
             running
                 .engine
                 .open(path.clone(), document.text, document.version)?;
-            running.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)
         }
         DidChangeTextDocument::METHOD => {
             let params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
@@ -689,44 +333,22 @@ fn handle_notification(
             running
                 .engine
                 .edit(&path, &params.content_changes, params.text_document.version)?;
-            running.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)
         }
         DidCloseTextDocument::METHOD => {
             let params: DidCloseTextDocumentParams = serde_json::from_value(params)?;
             let path = file_path(&params.text_document.uri)?;
             running.engine.close(&path);
-            running.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)
         }
         Cancel::METHOD => {
             let params: CancelParams = serde_json::from_value(params)?;
             let id = match params.id {
-                NumberOrString::Number(value) => RequestId::from(value),
-                NumberOrString::String(value) => RequestId::from(value),
+                NumberOrString::Number(value) => value.into(),
+                NumberOrString::String(value) => value.into(),
             };
-            running.cancel_pending(
-                connection,
-                |request| request.id == id,
-                ErrorCode::RequestCanceled,
-                "the client cancelled the request",
-            )?;
-            running.cancel_searches(
-                connection,
-                |request| request == &id,
-                ErrorCode::RequestCanceled,
-                "the client cancelled the search",
-            )
+            running.scheduler.cancel(connection, &id)
         }
         _ => Ok(()),
     }
-}
-fn file_path(uri: &Uri) -> Result<PathBuf> {
-    Url::parse(uri.as_str())?
-        .to_file_path()
-        .map_err(|()| anyhow!("expected a file URI, got {}", uri.as_str()))
-}
-
-fn path_uri(path: &Path) -> Result<Uri> {
-    let url = Url::from_file_path(path)
-        .map_err(|()| anyhow!("cannot convert {} to a file URI", path.display()))?;
-    url.as_str().parse().context("parsing definition URI")
 }

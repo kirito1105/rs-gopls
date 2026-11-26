@@ -1,0 +1,992 @@
+use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
+use std::thread;
+
+use anyhow::{Context, Result};
+use crossbeam_channel::Sender;
+use lsp_server::{Connection, ErrorCode, RequestId};
+
+use crate::protocol::{RequestResult, internal_error, send_response};
+use crate::semantic::{Engine, QueryProgress};
+use crate::workspace::{Workspace, WorkspaceLoad, path_key};
+
+const WORKSPACE_CHANGED: &str = "the workspace changed during search";
+const SHUTTING_DOWN: &str = "the server is shutting down";
+
+pub(super) type RequestProgress = QueryProgress<RequestResult, Box<dyn SearchTask>>;
+
+pub(super) trait SearchTask {
+    fn advance(&mut self, engine: &mut Engine) -> Result<bool>;
+    fn finish(self: Box<Self>) -> RequestResult;
+}
+
+pub(super) trait DeferredQuery {
+    fn run(&self, engine: &mut Engine) -> Result<RequestProgress>;
+
+    fn document_path(&self) -> Option<&Path> {
+        None
+    }
+
+    fn load_failed(&self, _engine: &mut Engine, message: &str) -> RequestResult {
+        Err((ErrorCode::RequestFailed, message.to_owned()))
+    }
+}
+
+pub(super) struct Pending {
+    id: RequestId,
+    document_key: Option<PathBuf>,
+    query: Box<dyn DeferredQuery>,
+}
+
+pub(super) struct Searching {
+    id: RequestId,
+    generation: u64,
+    task: Box<dyn SearchTask>,
+}
+
+pub(super) struct WorkspaceResult {
+    pub(super) load: WorkspaceLoad,
+    pub(super) result: Result<Workspace>,
+}
+
+#[derive(Default)]
+pub(super) struct Scheduler {
+    pub(super) pending: Vec<Pending>,
+    pub(super) searches: VecDeque<Searching>,
+    pub(super) loading: Option<WorkspaceLoad>,
+    pub(super) requested: Option<WorkspaceLoad>,
+}
+
+impl Scheduler {
+    fn request_workspace(&mut self, load: WorkspaceLoad) {
+        if self.loading != Some(load) {
+            self.requested = Some(load);
+        }
+    }
+
+    pub(super) fn start_workspace_load(
+        &mut self,
+        engine: &Engine,
+        results: &Sender<WorkspaceResult>,
+    ) -> Result<()> {
+        if self.loading.is_some() {
+            return Ok(());
+        }
+        let Some(load) = self.requested.take() else {
+            return Ok(());
+        };
+        let root = engine.root().to_owned();
+        let results = results.clone();
+        thread::Builder::new()
+            .name("go-package-loader".into())
+            .spawn(move || {
+                let result = Workspace::load(&root, load.include_tests);
+                let _ = results.send(WorkspaceResult { load, result });
+            })
+            .context("starting Go package loader")?;
+        self.loading = Some(load);
+        Ok(())
+    }
+
+    pub(super) fn workspace_loaded(
+        &mut self,
+        engine: &mut Engine,
+        connection: &Connection,
+        update: WorkspaceResult,
+    ) -> Result<()> {
+        if self.loading == Some(update.load) {
+            self.loading = None;
+        }
+        match update.result {
+            Ok(workspace) => {
+                if engine.install_workspace(update.load, workspace) {
+                    for pending in std::mem::take(&mut self.pending) {
+                        let Pending {
+                            id,
+                            document_key,
+                            query,
+                        } = pending;
+                        let progress = query.run(engine);
+                        self.resolve(engine, connection, id, progress, |id| Pending {
+                            id,
+                            document_key,
+                            query,
+                        })?;
+                    }
+                }
+            }
+            Err(error) if update.load == engine.workspace_load() => {
+                let message = format!("{error:#}");
+                if self.pending.is_empty() {
+                    eprintln!("rs-gopls: loading Go packages: {message}");
+                }
+                for pending in std::mem::take(&mut self.pending) {
+                    let result = pending.query.load_failed(engine, &message);
+                    send_response(connection, pending.id, result)?;
+                }
+            }
+            Err(_) => {}
+        }
+        if !self.pending.is_empty() {
+            self.request_workspace(engine.workspace_load());
+        }
+        Ok(())
+    }
+
+    pub(super) fn submit(
+        &mut self,
+        engine: &mut Engine,
+        connection: &Connection,
+        id: RequestId,
+        query: impl DeferredQuery + 'static,
+    ) -> Result<()> {
+        let progress = query.run(engine);
+        self.resolve(engine, connection, id, progress, |id| Pending {
+            id,
+            document_key: query.document_path().map(path_key),
+            query: Box::new(query),
+        })
+    }
+
+    fn resolve(
+        &mut self,
+        engine: &Engine,
+        connection: &Connection,
+        id: RequestId,
+        progress: Result<RequestProgress>,
+        defer: impl FnOnce(RequestId) -> Pending,
+    ) -> Result<()> {
+        let result = match progress {
+            Ok(QueryProgress::Pending(load)) => {
+                self.pending.push(defer(id));
+                self.request_workspace(load);
+                return Ok(());
+            }
+            Ok(QueryProgress::Searching(task)) => {
+                self.searches.push_back(Searching {
+                    id,
+                    generation: engine.workspace_load().generation,
+                    task,
+                });
+                return Ok(());
+            }
+            Ok(QueryProgress::Ready(result)) => result,
+            Err(error) => Err(internal_error(error)),
+        };
+        send_response(connection, id, result)
+    }
+
+    pub(super) fn advance_search(
+        &mut self,
+        engine: &mut Engine,
+        connection: &Connection,
+    ) -> Result<()> {
+        let Some(mut search) = self.searches.pop_front() else {
+            return Ok(());
+        };
+        let current_generation = engine.workspace_load().generation;
+        let result = if current_generation == search.generation {
+            let progress = search.task.advance(engine);
+            if engine.workspace_load().generation != search.generation {
+                Err((ErrorCode::ContentModified, WORKSPACE_CHANGED.to_owned()))
+            } else {
+                match progress {
+                    Ok(false) => {
+                        self.searches.push_back(search);
+                        return Ok(());
+                    }
+                    Ok(true) => search.task.finish(),
+                    Err(error) => Err(internal_error(error)),
+                }
+            }
+        } else {
+            Err((ErrorCode::ContentModified, WORKSPACE_CHANGED.to_owned()))
+        };
+        send_response(connection, search.id, result)
+    }
+
+    fn cancel_searches(
+        &mut self,
+        connection: &Connection,
+        mut matches: impl FnMut(&RequestId) -> bool,
+        code: ErrorCode,
+        message: &str,
+    ) -> Result<()> {
+        for search in std::mem::take(&mut self.searches) {
+            if matches(&search.id) {
+                send_response(connection, search.id, Err((code, message.to_owned())))?;
+            } else {
+                self.searches.push_back(search);
+            }
+        }
+        Ok(())
+    }
+
+    fn cancel_pending(
+        &mut self,
+        connection: &Connection,
+        matches: impl FnMut(&mut Pending) -> bool,
+        code: ErrorCode,
+        message: &str,
+    ) -> Result<()> {
+        for request in self.pending.extract_if(.., matches) {
+            send_response(connection, request.id, Err((code, message.to_owned())))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn cancel(&mut self, connection: &Connection, id: &RequestId) -> Result<()> {
+        self.cancel_pending(
+            connection,
+            |request| &request.id == id,
+            ErrorCode::RequestCanceled,
+            "the client cancelled the request",
+        )?;
+        self.cancel_searches(
+            connection,
+            |active| active == id,
+            ErrorCode::RequestCanceled,
+            "the client cancelled the search",
+        )
+    }
+
+    pub(super) fn document_modified(&mut self, connection: &Connection, path: &Path) -> Result<()> {
+        if !self.pending.is_empty() {
+            let key = path_key(path);
+            self.cancel_pending(
+                connection,
+                |request| request.document_key.as_ref() == Some(&key),
+                ErrorCode::ContentModified,
+                "the document changed while loading Go packages",
+            )?;
+        }
+        self.cancel_searches(
+            connection,
+            |_| true,
+            ErrorCode::ContentModified,
+            "the document changed during search",
+        )
+    }
+
+    pub(super) fn workspace_modified(
+        &mut self,
+        connection: &Connection,
+        load: WorkspaceLoad,
+    ) -> Result<()> {
+        self.cancel_searches(
+            connection,
+            |_| true,
+            ErrorCode::ContentModified,
+            WORKSPACE_CHANGED,
+        )?;
+        self.request_workspace(load);
+        Ok(())
+    }
+
+    pub(super) fn shutdown(&mut self, connection: &Connection) -> Result<()> {
+        self.cancel_pending(
+            connection,
+            |_| true,
+            ErrorCode::RequestFailed,
+            SHUTTING_DOWN,
+        )?;
+        self.cancel_searches(
+            connection,
+            |_| true,
+            ErrorCode::RequestFailed,
+            SHUTTING_DOWN,
+        )?;
+        self.requested = None;
+        self.loading = None;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    use anyhow::anyhow;
+    use lsp_server::{Message, Notification, Request, Response, ResponseError};
+    use lsp_types::{
+        FileChangeType,
+        notification::{
+            Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidOpenTextDocument, Exit,
+            Initialized, Notification as _,
+        },
+        request::{
+            GotoImplementation, HoverRequest, Initialize, References, Request as _, Shutdown,
+            SignatureHelpRequest, WorkspaceSymbolRequest,
+        },
+    };
+    use serde_json::{Value, json};
+
+    use super::*;
+    use crate::protocol::path_uri;
+    use crate::test_support::TestProject;
+    use crate::{State, handle_notification, handle_request, serve};
+
+    struct Session {
+        server: Connection,
+        client: Connection,
+        state: State,
+        replies: HashMap<RequestId, Response>,
+    }
+
+    impl Session {
+        fn start(project: &TestProject) -> Self {
+            let (server, client) = Connection::memory();
+            let mut session = Self {
+                server,
+                client,
+                state: State::Starting,
+                replies: HashMap::new(),
+            };
+            session.request(
+                0,
+                Initialize::METHOD,
+                json!({
+                    "rootUri": path_uri(&project.root).unwrap(), "capabilities": {}
+                }),
+            );
+            assert!(session.reply(0).result.is_some());
+            session
+        }
+
+        fn running(&mut self) -> &mut crate::Running {
+            let State::Running(running) = &mut self.state else {
+                panic!("expected a running session");
+            };
+            running
+        }
+
+        fn scheduler(&mut self) -> &mut Scheduler {
+            &mut self.running().scheduler
+        }
+
+        fn request(&mut self, id: impl Into<RequestId>, method: &str, params: Value) {
+            handle_request(
+                &self.server,
+                &mut self.state,
+                Request::new(id.into(), method.into(), params),
+            )
+            .unwrap();
+        }
+
+        fn notify(&mut self, method: &str, params: Value) {
+            let State::Running(running) = &mut self.state else {
+                panic!("expected a running session");
+            };
+            handle_notification(&self.server, running, method, params).unwrap();
+        }
+
+        fn cancel(&mut self, id: impl Into<RequestId>) {
+            self.notify(Cancel::METHOD, json!({ "id": id.into() }));
+        }
+
+        fn open(&mut self, path: &Path, text: &str) {
+            self.notify(DidOpenTextDocument::METHOD, json!({
+                "textDocument": {
+                    "uri": path_uri(path).unwrap(), "languageId": "go", "version": 1, "text": text
+                }
+            }));
+        }
+
+        fn edit(&mut self, path: &Path, version: i32, text: &str) {
+            self.notify(
+                DidChangeTextDocument::METHOD,
+                json!({
+                    "textDocument": { "uri": path_uri(path).unwrap(), "version": version },
+                    "contentChanges": [{ "text": text }]
+                }),
+            );
+        }
+
+        fn watch(&mut self, path: &Path, change: FileChangeType) {
+            self.notify(
+                DidChangeWatchedFiles::METHOD,
+                json!({
+                    "changes": [{ "uri": path_uri(path).unwrap(), "type": change }]
+                }),
+            );
+        }
+
+        fn deliver(&mut self, load: WorkspaceLoad, result: Result<Workspace>) {
+            let State::Running(running) = &mut self.state else {
+                panic!("expected a running session");
+            };
+            running
+                .workspace_loaded(&self.server, WorkspaceResult { load, result })
+                .unwrap();
+        }
+
+        fn begin_load(&mut self) -> WorkspaceLoad {
+            let scheduler = self.scheduler();
+            assert!(scheduler.loading.is_none());
+            let load = scheduler.requested.take().expect("a load was scheduled");
+            scheduler.loading = Some(load);
+            load
+        }
+
+        fn step(&mut self) {
+            let State::Running(running) = &mut self.state else {
+                panic!("expected a running session");
+            };
+            running.advance_search(&self.server).unwrap();
+        }
+
+        fn finish_searches(&mut self) {
+            for _ in 0..4096 {
+                if self.scheduler().searches.is_empty() {
+                    return;
+                }
+                self.step();
+            }
+            panic!("searches did not finish");
+        }
+
+        fn expect_next(&mut self, id: impl Into<RequestId>) {
+            assert_eq!(self.scheduler().searches.front().unwrap().id, id.into());
+        }
+
+        fn collect(&mut self) {
+            for message in self.client.receiver.try_iter() {
+                let Message::Response(response) = message else {
+                    panic!("expected a response");
+                };
+                let id = response.id.clone();
+                assert!(
+                    self.replies.insert(id.clone(), response).is_none(),
+                    "duplicate response for {id}"
+                );
+            }
+        }
+
+        fn reply(&mut self, id: impl Into<RequestId>) -> &Response {
+            self.collect();
+            &self.replies[&id.into()]
+        }
+
+        fn count(&mut self, expected: usize) {
+            self.collect();
+            assert_eq!(self.replies.len(), expected);
+        }
+
+        fn error(&mut self, id: impl Into<RequestId>, code: ErrorCode, message: &str) {
+            let error = self.reply(id).error.as_ref().unwrap();
+            assert_eq!(error.code, code as i32);
+            assert_eq!(error.message, message);
+        }
+    }
+
+    fn position(path: &Path, line: u32, character: u32) -> Value {
+        json!({
+            "textDocument": { "uri": path_uri(path).unwrap() },
+            "position": { "line": line, "character": character }
+        })
+    }
+
+    fn reference(path: &Path, line: u32, character: u32) -> Value {
+        let mut params = position(path, line, character);
+        params["context"] = json!({ "includeDeclaration": true });
+        params
+    }
+
+    #[test]
+    fn interleaves_three_real_searches_and_cancels_waiting_indexing_and_scanning() {
+        // A single step always leaves index work (8 files) and scan work (128 files).
+        const FILES: usize = 140;
+        let project = TestProject::new();
+        let api = project.write(
+            "api.go",
+            "package sample\ntype Contract interface { Render() }\nvar Needle int\n",
+        );
+        let mut files = vec!["api.go".to_owned()];
+        for index in 0..FILES {
+            let file = format!("s{index:03}.go");
+            let ty = format!("Concrete{index:03}");
+            project.write(&file, &format!(
+                "package sample\ntype {ty} struct{{}}\nfunc ({ty}) Render() {{}}\nvar _ = Needle\n"
+            ));
+            files.push(file);
+        }
+        let names: Vec<_> = files.iter().map(String::as_str).collect();
+        let mut session = Session::start(&project);
+        let implementation = "implementation".to_owned();
+        let waiting = "waiting".to_owned();
+        let warm_scan = "warm-scan".to_owned();
+        session.request(1, References::METHOD, reference(&api, 2, 4));
+        session.request(
+            implementation.clone(),
+            GotoImplementation::METHOD,
+            position(&api, 1, 5),
+        );
+        session.request(
+            2,
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Concrete" }),
+        );
+        session.request(waiting.clone(), References::METHOD, reference(&api, 2, 4));
+        assert_eq!(session.scheduler().pending.len(), 4);
+        session.cancel(waiting.clone());
+        session.cancel(waiting.clone());
+        session.error(
+            waiting,
+            ErrorCode::RequestCanceled,
+            "the client cancelled the request",
+        );
+        session.count(2);
+
+        let load = session.begin_load();
+        assert!(load.include_tests);
+        session.deliver(load, Ok(project.workspace(&names, true)));
+        assert!(session.scheduler().pending.is_empty());
+        session.expect_next(1);
+        session.step();
+        session.expect_next(implementation.clone());
+        session.step();
+        session.expect_next(2);
+        session.step();
+        session.expect_next(1);
+        assert_eq!(session.scheduler().searches.len(), 3);
+        session.cancel(2);
+        session.cancel(2);
+        session.error(
+            2,
+            ErrorCode::RequestCanceled,
+            "the client cancelled the search",
+        );
+        session.count(3);
+        session.request(
+            3,
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Concrete" }),
+        );
+        session.finish_searches();
+
+        let references = session
+            .reply(1)
+            .result
+            .as_ref()
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(references.len(), FILES + 1);
+        assert_eq!(references[0]["uri"], path_uri(&api).unwrap().as_str());
+        assert_eq!(
+            references[0]["range"]["start"],
+            json!({ "line": 2, "character": 4 })
+        );
+        let implementations = session
+            .reply(implementation.clone())
+            .result
+            .as_ref()
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(implementations.len(), FILES);
+        assert_eq!(
+            implementations[0]["uri"],
+            path_uri(&project.root.join("s000.go")).unwrap().as_str()
+        );
+        assert_eq!(
+            implementations[0]["range"]["start"],
+            json!({ "line": 1, "character": 5 })
+        );
+        let symbols = session.reply(3).result.clone().unwrap();
+        assert_eq!(symbols.as_array().unwrap().len(), FILES);
+        assert_eq!(symbols[0]["name"], "Concrete000");
+        session.cancel(implementation);
+        session.cancel(3);
+        session.count(6);
+
+        session.request(
+            warm_scan.clone(),
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Concrete" }),
+        );
+        session.request(
+            4,
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Concrete" }),
+        );
+        session.request(5, References::METHOD, reference(&api, 2, 4));
+        session.step();
+        session.expect_next(4);
+        assert_eq!(session.scheduler().searches.len(), 3);
+        session.cancel(warm_scan.clone());
+        session.error(
+            warm_scan,
+            ErrorCode::RequestCanceled,
+            "the client cancelled the search",
+        );
+        session.step();
+        session.expect_next(5);
+        session.step();
+        session.cancel(5);
+        session.error(
+            5,
+            ErrorCode::RequestCanceled,
+            "the client cancelled the search",
+        );
+        session.finish_searches();
+        assert_eq!(session.reply(4).result.as_ref(), Some(&symbols));
+        session.count(9);
+    }
+
+    #[test]
+    fn reruns_pending_queries_on_the_latest_graph_and_cancels_affected_requests() {
+        let project = TestProject::new();
+        let original = "package sample\nvar NeedleOld int\n";
+        let editable = project.write("edit.go", original);
+        let other = project.write("other.go", "package sample\nvar NeedleOther int\n");
+        let mut session = Session::start(&project);
+        session.open(&editable, original);
+        let regular = session.running().engine.workspace_load();
+        session.scheduler().loading = Some(regular);
+        session.request(1, References::METHOD, reference(&editable, 1, 4));
+        session.request(2, References::METHOD, reference(&other, 1, 4));
+        session.request(
+            3,
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Needle" }),
+        );
+        session.deliver(
+            regular,
+            Ok(project.workspace(&["edit.go", "other.go"], false)),
+        );
+        assert_eq!(session.scheduler().pending.len(), 3);
+        let old_tests = session.begin_load();
+        assert_eq!(old_tests.generation, regular.generation);
+        assert!(old_tests.include_tests);
+        session.deliver(regular, Err(anyhow!("old regular-view failure")));
+        assert_eq!(session.scheduler().loading, Some(old_tests));
+        session.count(1);
+
+        session.edit(&editable, 2, "package sample\n\nvar NeedleBuffer int\n");
+        session.error(
+            1,
+            ErrorCode::ContentModified,
+            "the document changed while loading Go packages",
+        );
+        assert_eq!(session.scheduler().pending.len(), 2);
+        let flat = project.write("created.go", "package sample\nvar NeedleDisk int\n");
+        session.watch(&flat, FileChangeType::CREATED);
+        let current = session.running().engine.workspace_load();
+        assert!(current.generation > old_tests.generation);
+        assert_eq!(session.scheduler().requested, Some(current));
+        session.deliver(
+            old_tests,
+            Ok(project.workspace(&["edit.go", "other.go"], true)),
+        );
+        assert_eq!(session.begin_load(), current);
+        session.deliver(old_tests, Err(anyhow!("old generation failure")));
+        assert_eq!(session.scheduler().loading, Some(current));
+        assert_eq!(session.scheduler().pending.len(), 2);
+        assert!(session.scheduler().searches.is_empty());
+        session.count(2);
+
+        let files = ["edit.go", "other.go", "created.go"];
+        session.deliver(current, Ok(project.workspace(&files, true)));
+        session.finish_searches();
+        let references = session
+            .reply(2)
+            .result
+            .as_ref()
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0]["uri"], path_uri(&other).unwrap().as_str());
+        let symbols = session
+            .reply(3)
+            .result
+            .as_ref()
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(
+            symbols
+                .iter()
+                .map(|symbol| symbol["name"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["NeedleBuffer", "NeedleDisk", "NeedleOther"]
+        );
+        assert_eq!(symbols[0]["location"]["range"]["start"]["line"], 2);
+
+        session.request(4, References::METHOD, reference(&other, 1, 4));
+        session.edit(&editable, 3, "package sample\nvar LatestBuffer int\n");
+        session.error(
+            4,
+            ErrorCode::ContentModified,
+            "the document changed during search",
+        );
+        session.request(
+            5,
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Latest" }),
+        );
+        // Deleting a file with an open overlay invalidates the graph and leaves the buffer open.
+        std::fs::remove_file(&editable).unwrap();
+        session.watch(&editable, FileChangeType::DELETED);
+        session.error(5, ErrorCode::ContentModified, WORKSPACE_CHANGED);
+        let refreshed = session.begin_load();
+        assert!(refreshed.generation > current.generation);
+        session.deliver(
+            refreshed,
+            Ok(project.workspace(&["other.go", "created.go"], true)),
+        );
+        session.request(
+            6,
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "Needle" }),
+        );
+        session.finish_searches();
+        assert_eq!(
+            session
+                .reply(6)
+                .result
+                .as_ref()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        session.count(7);
+    }
+
+    #[test]
+    fn sends_load_fallbacks_and_cleans_up_pending_and_active_requests_at_shutdown() {
+        let project = TestProject::new();
+        let path = project.write("api.go", "package sample\nfunc f() { _ = len(\"x\") }\n");
+        let mut session = Session::start(&project);
+        let signature = "signature".to_owned();
+        session.request(1, HoverRequest::METHOD, position(&path, 1, 15));
+        session.request(
+            signature.clone(),
+            SignatureHelpRequest::METHOD,
+            position(&path, 1, 19),
+        );
+        session.request(2, WorkspaceSymbolRequest::METHOD, json!({ "query": "f" }));
+        assert_eq!(session.scheduler().pending.len(), 3);
+        let load = session.begin_load();
+        session.deliver(load, Err(anyhow!("Go package loading failed")));
+        let hover = session.reply(1).result.as_ref().unwrap();
+        assert_eq!(
+            hover["contents"]["value"].as_str().unwrap().lines().nth(1),
+            Some("func len(v Type) int")
+        );
+        assert_eq!(
+            session.reply(signature).result.as_ref().unwrap()["signatures"][0]["label"],
+            "func len(v Type) int"
+        );
+        session.error(2, ErrorCode::RequestFailed, "Go package loading failed");
+        assert!(session.scheduler().pending.is_empty());
+        assert!(session.scheduler().loading.is_none());
+
+        session.request(3, WorkspaceSymbolRequest::METHOD, json!({ "query": "f" }));
+        let retry = session.begin_load();
+        assert_eq!(retry, load);
+        session.deliver(retry, Ok(project.workspace(&["api.go"], true)));
+        // Invalidate directly so both states are present before shutdown runs.
+        session
+            .running()
+            .engine
+            .file_changed(&project.root.join("go.mod"), FileChangeType::CHANGED);
+        let pending = "pending-at-shutdown".to_owned();
+        session.request(
+            pending.clone(),
+            WorkspaceSymbolRequest::METHOD,
+            json!({ "query": "f" }),
+        );
+        session.begin_load();
+        assert_eq!(session.scheduler().pending.len(), 1);
+        assert_eq!(session.scheduler().searches.len(), 1);
+        session.request(4, Shutdown::METHOD, Value::Null);
+        session.error(pending, ErrorCode::RequestFailed, SHUTTING_DOWN);
+        session.error(3, ErrorCode::RequestFailed, SHUTTING_DOWN);
+        assert_eq!(session.reply(4).result, Some(Value::Null));
+        assert!(matches!(session.state, State::Shutdown));
+        session.request(5, WorkspaceSymbolRequest::METHOD, json!({ "query": "f" }));
+        session.error(5, ErrorCode::InvalidRequest, "server has already shut down");
+        session.count(8);
+    }
+
+    #[test]
+    fn checks_generation_before_advancing_and_before_publishing() {
+        struct InvalidatingTask {
+            calls: Rc<Cell<usize>>,
+            manifest: PathBuf,
+        }
+
+        impl SearchTask for InvalidatingTask {
+            fn advance(&mut self, engine: &mut Engine) -> Result<bool> {
+                self.calls.set(self.calls.get() + 1);
+                engine.file_changed(&self.manifest, FileChangeType::CHANGED);
+                Ok(true)
+            }
+
+            fn finish(self: Box<Self>) -> RequestResult {
+                panic!("stale search published a result");
+            }
+        }
+
+        let project = TestProject::new();
+        let manifest = project.root.join("go.mod");
+        let mut session = Session::start(&project);
+        let calls = Rc::new(Cell::new(0));
+        for (id, invalidate_before_step, expected_calls) in [(1, true, 0), (2, false, 1)] {
+            let running = session.running();
+            running.scheduler.searches.push_back(Searching {
+                id: id.into(),
+                generation: running.engine.workspace_load().generation,
+                task: Box::new(InvalidatingTask {
+                    calls: Rc::clone(&calls),
+                    manifest: manifest.clone(),
+                }),
+            });
+            if invalidate_before_step {
+                running
+                    .engine
+                    .file_changed(&manifest, FileChangeType::CHANGED);
+            }
+            session.step();
+            assert_eq!(calls.get(), expected_calls);
+            session.error(id, ErrorCode::ContentModified, WORKSPACE_CHANGED);
+        }
+        session.finish_searches();
+        session.count(3);
+    }
+
+    #[test]
+    fn event_loop_preserves_capabilities_file_watches_and_lifecycle_errors() {
+        let project = TestProject::new();
+        let (server, client) = Connection::memory();
+        let send_request = |id: i32, method: &str, params| {
+            client
+                .sender
+                .send(Request::new(id.into(), method.into(), params).into())
+                .unwrap();
+        };
+        let send_notification = |method: &str| {
+            client
+                .sender
+                .send(Notification::new(method.into(), Value::Null).into())
+                .unwrap();
+        };
+        send_request(1, WorkspaceSymbolRequest::METHOD, json!({ "query": "" }));
+        send_request(
+            2,
+            Initialize::METHOD,
+            json!({
+                "rootUri": path_uri(&project.root).unwrap(),
+                "capabilities": { "workspace": { "didChangeWatchedFiles": { "dynamicRegistration": true } } }
+            }),
+        );
+        send_notification(Initialized::METHOD);
+        send_request(3, Initialize::METHOD, Value::Null);
+        send_request(4, "unsupported", Value::Null);
+        send_request(
+            5,
+            HoverRequest::METHOD,
+            json!({
+                "textDocument": { "uri": "untitled:buffer" },
+                "position": { "line": 0, "character": 0 }
+            }),
+        );
+        send_request(6, WorkspaceSymbolRequest::METHOD, json!({ "query": " " }));
+        send_request(7, Shutdown::METHOD, Value::Null);
+        send_request(8, WorkspaceSymbolRequest::METHOD, json!({ "query": "" }));
+        send_notification(Exit::METHOD);
+        serve(&server).unwrap();
+
+        let response = |id: i32| {
+            let Message::Response(response) = client.receiver.try_recv().unwrap() else {
+                panic!("expected an LSP response for {id}");
+            };
+            assert_eq!(response.id, id.into());
+            response
+        };
+        let error = |id, code: ErrorCode, message: &str| {
+            let ResponseError {
+                code: actual,
+                message: actual_message,
+                data,
+            } = response(id).error.unwrap();
+            assert_eq!(actual, code as i32);
+            assert_eq!(actual_message, message);
+            assert!(data.is_none());
+        };
+        error(
+            1,
+            ErrorCode::ServerNotInitialized,
+            "initialize must be called first",
+        );
+        let initialize = response(2).result.unwrap();
+        assert_eq!(
+            initialize["capabilities"],
+            json!({
+                "positionEncoding": "utf-16",
+                "textDocumentSync": { "openClose": true, "change": 2 },
+                "definitionProvider": true,
+                "typeDefinitionProvider": true,
+                "implementationProvider": true,
+                "referencesProvider": true,
+                "hoverProvider": true,
+                "signatureHelpProvider": { "triggerCharacters": ["(", ","], "retriggerCharacters": [","] },
+                "documentSymbolProvider": true,
+                "workspaceSymbolProvider": true,
+            })
+        );
+        let Message::Request(registration) = client.receiver.try_recv().unwrap() else {
+            panic!("expected watched file registration");
+        };
+        assert_eq!(registration.method, "client/registerCapability");
+        assert_eq!(
+            registration.params,
+            json!({
+                "registrations": [{
+                    "id": "rs-gopls/watch-go-files",
+                    "method": DidChangeWatchedFiles::METHOD,
+                    "registerOptions": { "watchers": [
+                        { "globPattern": "**/*.go" }, { "globPattern": "**/go.mod" },
+                        { "globPattern": "**/go.sum" }, { "globPattern": "**/go.work" },
+                        { "globPattern": "**/go.work.sum" }
+                    ] }
+                }]
+            })
+        );
+        error(
+            3,
+            ErrorCode::InvalidRequest,
+            "server is already initialized",
+        );
+        error(
+            4,
+            ErrorCode::MethodNotFound,
+            "unsupported request: unsupported",
+        );
+        error(
+            5,
+            ErrorCode::InvalidParams,
+            "expected a file URI, got untitled:buffer",
+        );
+        assert_eq!(response(6).result, Some(json!([])));
+        assert_eq!(response(7).result, Some(Value::Null));
+        error(8, ErrorCode::InvalidRequest, "server has already shut down");
+        assert!(client.receiver.is_empty());
+
+        let (server, client) = Connection::memory();
+        client
+            .sender
+            .send(Notification::new(Exit::METHOD.into(), Value::Null).into())
+            .unwrap();
+        assert_eq!(
+            serve(&server).unwrap_err().to_string(),
+            "exit arrived before shutdown"
+        );
+    }
+}

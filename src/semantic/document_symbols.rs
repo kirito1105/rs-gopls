@@ -5,9 +5,9 @@ use lsp_types::{
     DocumentSymbol, DocumentSymbolResponse, Location, Range, SymbolInformation, SymbolKind, Uri,
 };
 
-use super::{Engine, Source, read_source};
+use super::Engine;
+use super::snapshot::DocumentSnapshot;
 use crate::symbols::{OutlineKind, OutlineSymbol};
-use crate::workspace::path_key;
 
 impl Engine {
     pub fn document_symbols(
@@ -16,13 +16,8 @@ impl Engine {
         uri: &Uri,
         hierarchical: bool,
     ) -> Result<DocumentSymbolResponse> {
-        let disk;
-        let source = if let Some(source) = self.documents.get(&path_key(path)) {
-            source
-        } else if path.extension().is_some_and(|extension| extension == "go") {
-            disk = read_source(&mut self.parser, path)?;
-            &disk
-        } else {
+        let mut snapshot = self.snapshot();
+        let Some(source) = snapshot.document(path)? else {
             return Ok(if hierarchical {
                 DocumentSymbolResponse::Nested(Vec::new())
             } else {
@@ -36,7 +31,7 @@ impl Engine {
                 outline
                     .symbols
                     .iter()
-                    .map(|symbol| nested(source, symbol))
+                    .map(|symbol| nested(&source, symbol))
                     .collect(),
             ));
         }
@@ -63,7 +58,7 @@ impl Engine {
 }
 
 #[allow(deprecated)]
-fn nested(source: &Source, symbol: &OutlineSymbol) -> DocumentSymbol {
+fn nested(source: &DocumentSnapshot<'_>, symbol: &OutlineSymbol) -> DocumentSymbol {
     let children = symbol.children();
     DocumentSymbol {
         name: match &symbol.receiver {
@@ -133,7 +128,7 @@ mod tests {
     use lsp_types::{Position, TextDocumentContentChangeEvent};
 
     use super::*;
-    use crate::{path_uri, test_support::TestProject};
+    use crate::{protocol::path_uri, test_support::TestProject, workspace::path_key};
 
     #[test]
     fn projects_hierarchical_and_flat_ranges_in_utf16() {
@@ -267,7 +262,7 @@ mod tests {
                 1,
             )
             .unwrap();
-        assert!(engine.documents[&key].outline.get().is_none());
+        assert!(engine.state.documents[&key].outline.get().is_none());
 
         let query = |engine: &mut Engine, expected: &str| {
             let DocumentSymbolResponse::Flat(symbols) =
@@ -282,7 +277,7 @@ mod tests {
             query(&mut engine, "Before"),
             Range::new(Position::new(1, 4), Position::new(1, 10))
         );
-        assert!(engine.documents[&key].outline.get().is_some());
+        assert!(engine.state.documents[&key].outline.get().is_some());
         engine
             .edit(
                 &path,
@@ -294,7 +289,7 @@ mod tests {
                 2,
             )
             .unwrap();
-        assert!(engine.documents[&key].outline.get().is_none());
+        assert!(engine.state.documents[&key].outline.get().is_none());
         assert_eq!(
             query(&mut engine, "Updated"),
             Range::new(Position::new(2, 4), Position::new(2, 11))

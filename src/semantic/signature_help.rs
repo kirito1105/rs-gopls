@@ -1,15 +1,29 @@
 use std::fmt::Write;
+use std::path::{Path, PathBuf};
+
+use anyhow::Result;
 
 use lsp_types::{
-    Documentation, MarkupContent, MarkupKind, ParameterInformation, ParameterLabel, SignatureHelp,
-    SignatureInformation,
+    Documentation, MarkupContent, MarkupKind, ParameterInformation, ParameterLabel, Position,
+    SignatureHelp, SignatureInformation,
 };
+use tree_sitter::{Node, Parser};
 
+use super::Engine;
+use super::index::IndexedSource;
 use super::presentation::{
-    builtin_function, documentation, node_at_range, parameter_labels_with, result_label_with,
-    syntax_text_with,
+    builtin_function, documentation, parameter_labels_with, result_label_with, syntax_text_with,
 };
-use super::*;
+use super::query::QueryProgress;
+use super::resolver::{
+    CallArguments, GenericCall, MAX_TYPE_DEPTH, Resolver, TypeIdentity, TypeKind, TypeOrigin,
+    explicit_type_arguments, is_exported,
+};
+use super::source::{
+    Source, function_at, is_test_source, is_type_declaration, node_at_range, node_text,
+};
+use crate::scope::{declaration_binding, lexical_binding};
+use crate::workspace::{Package, path_key};
 
 mod cursor;
 
@@ -126,26 +140,21 @@ impl Engine {
         position: Position,
         load_workspace: bool,
     ) -> Result<QueryProgress<Option<SignatureHelp>>> {
-        let disk;
-        let original = if let Some(source) = self.documents.get(&path_key(path)) {
-            source
-        } else if path.extension().is_some_and(|extension| extension == "go") {
-            disk = match read_source(&mut self.parser, path) {
-                Ok(source) => source,
-                Err(error)
-                    if error
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
-                {
-                    return Ok(QueryProgress::Ready(None));
-                }
-                Err(error) => return Err(error),
-            };
-            &disk
-        } else {
-            return Ok(QueryProgress::Ready(None));
+        let mut snapshot = self.state.snapshot(self.include_tests);
+        let document = match snapshot.document(path) {
+            Ok(Some(document)) => document,
+            Ok(None) => return Ok(QueryProgress::Ready(None)),
+            Err(error)
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                return Ok(QueryProgress::Ready(None));
+            }
+            Err(error) => return Err(error),
         };
-        let Some(offset) = original.lines.offset(&original.text, position) else {
+        let original = document.indexed();
+        let Some(offset) = document.offset(position) else {
             return Ok(QueryProgress::Ready(None));
         };
         let repaired;
@@ -153,14 +162,14 @@ impl Engine {
             CallSite::Found(call) => (original, call),
             CallSite::Blocked => return Ok(QueryProgress::Ready(None)),
             CallSite::Missing => {
-                repaired = repair_call(&mut self.parser, original, offset)?;
-                let Some(repaired) = &repaired else {
+                let Some(syntax) = repair_call(snapshot.parser(), original, offset)? else {
                     return Ok(QueryProgress::Ready(None));
                 };
-                let CallSite::Found(call) = call_at(repaired, offset) else {
+                repaired = IndexedSource::new(syntax, None);
+                let CallSite::Found(call) = call_at(&repaired, offset) else {
                     return Ok(QueryProgress::Ready(None));
                 };
-                (repaired, call)
+                (&repaired, call)
             }
         };
         let ready = |signature: Option<Signature>| {
@@ -176,7 +185,7 @@ impl Engine {
         if !load_workspace {
             return Ok(ready(
                 builtin
-                    .map(|(_, syntax)| fallback_builtin(&mut self.parser, syntax))
+                    .map(|(_, syntax)| fallback_builtin(snapshot.parser(), syntax))
                     .transpose()?
                     .flatten(),
             ));
@@ -184,23 +193,16 @@ impl Engine {
 
         let test_source = is_test_source(path);
         self.include_tests |= test_source;
-        let load = self.workspace_load();
-        let Some(workspace) = &self.workspace else {
-            return Ok(QueryProgress::Pending(load));
+        let from = match snapshot.package_for(&document, test_source) {
+            QueryProgress::Ready(from) => from,
+            QueryProgress::Pending(load) => return Ok(QueryProgress::Pending(load)),
+            QueryProgress::Searching(task) => match task {},
         };
-        let from = active_package(workspace, original, &self.new_documents);
-        if (test_source && !workspace.includes_tests())
-            || self.graph_changes.affects_source(workspace, from, original)
-        {
-            return Ok(QueryProgress::Pending(load));
-        }
-        let indexes = IndexReader {
-            parser: &mut self.parser,
-            documents: &self.documents,
-            disk_index: &mut self.disk_index,
-            drafts: draft_files(workspace, &self.documents, &self.new_documents),
-        };
-        let mut resolver = Resolver { workspace, indexes };
+        let workspace = snapshot
+            .workspace()
+            .expect("package selection needs a workspace");
+        let root = snapshot.root();
+        let mut resolver = snapshot.resolver(workspace);
         if let Some(from) = from {
             if let Some(ty) = resolver.callable_type(from, source, call)? {
                 return Ok(ready(resolver.present_callable(from, source, call, ty)?));
@@ -215,7 +217,7 @@ impl Engine {
                 && resolver.is_builtin_error(from, source, unparenthesize(receiver))?
             {
                 let mut signature =
-                    resolver.builtin_signature(&self.root, "Error", "func Error() string")?;
+                    resolver.builtin_signature(root, "Error", "func Error() string")?;
                 if let Some(signature) = &mut signature {
                     // The predeclared error type has no package-indexed symbol.
                     let receiver = unparenthesize(receiver);
@@ -241,25 +243,10 @@ impl Engine {
             }
         }
         match builtin {
-            Some((name, syntax)) => {
-                Ok(ready(resolver.builtin_signature(&self.root, name, syntax)?))
-            }
+            Some((name, syntax)) => Ok(ready(resolver.builtin_signature(root, name, syntax)?)),
             None => Ok(ready(None)),
         }
     }
-}
-
-fn function_at(source: &Source, origin: Range) -> Option<Node<'_>> {
-    let node = node_at_range(source, origin)?.parent()?;
-    matches!(
-        node.kind(),
-        "function_declaration"
-            | "method_declaration"
-            | "method_elem"
-            | "function_type"
-            | "func_literal"
-    )
-    .then_some(node)
 }
 
 fn unparenthesize(mut node: Node<'_>) -> Node<'_> {
@@ -278,7 +265,7 @@ fn unparenthesize(mut node: Node<'_>) -> Node<'_> {
     node
 }
 
-fn local_name<'tree>(source: &'tree Source, name: Node<'tree>) -> Option<Node<'tree>> {
+fn local_name<'tree>(source: &'tree IndexedSource, name: Node<'tree>) -> Option<Node<'tree>> {
     let spelling = node_text(name, &source.text);
     if let Some(binding) = lexical_binding(name, spelling, &source.text) {
         return Some(binding.name);
@@ -288,7 +275,7 @@ fn local_name<'tree>(source: &'tree Source, name: Node<'tree>) -> Option<Node<'t
 }
 
 fn local_callable<'tree>(
-    source: &'tree Source,
+    source: &'tree IndexedSource,
     callee: Node<'tree>,
     depth: usize,
 ) -> Option<Node<'tree>> {
@@ -321,7 +308,7 @@ fn local_callable<'tree>(
 }
 
 fn local_func_type<'tree>(
-    source: &'tree Source,
+    source: &'tree IndexedSource,
     mut ty: Node<'tree>,
     depth: usize,
 ) -> Option<Node<'tree>> {
@@ -342,7 +329,10 @@ fn local_func_type<'tree>(
     None
 }
 
-fn unshadowed_builtin<'a>(source: &'a Source, callee: Node<'_>) -> Option<(&'a str, &'static str)> {
+fn unshadowed_builtin<'a>(
+    source: &'a IndexedSource,
+    callee: Node<'_>,
+) -> Option<(&'a str, &'static str)> {
     let callee = unparenthesize(callee);
     if callee.kind() != "identifier" {
         return None;
@@ -434,7 +424,7 @@ impl<'w> Resolver<'w, '_> {
     fn present_callable(
         &mut self,
         from: &'w Package,
-        source: &Source,
+        source: &IndexedSource,
         call: Call<'_>,
         ty: TypeIdentity<'w>,
     ) -> Result<Option<Signature>> {
@@ -527,108 +517,17 @@ impl<'w> Resolver<'w, '_> {
         }
         fallback_builtin(self.indexes.parser, fallback)
     }
-
-    pub(super) fn unify_function_types(
-        &mut self,
-        expected: TypeIdentity<'w>,
-        actual: TypeIdentity<'w>,
-        bindings: &mut [Option<TypeIdentity<'w>>],
-    ) -> Result<bool> {
-        let (Some(expected), Some(actual)) = (
-            self.callable_components(expected)?,
-            self.callable_components(actual)?,
-        ) else {
-            return Ok(false);
-        };
-        if expected.variadic != actual.variadic
-            || expected.parameters.len() != actual.parameters.len()
-            || expected.results.len() != actual.results.len()
-        {
-            return Ok(false);
-        }
-        for (left, right) in expected
-            .parameters
-            .into_iter()
-            .chain(expected.results)
-            .zip(actual.parameters.into_iter().chain(actual.results))
-        {
-            if !self.unify_types(left, right, bindings, false)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn callable_components(
-        &mut self,
-        ty: TypeIdentity<'w>,
-    ) -> Result<Option<CallableComponents<'w>>> {
-        let TypeKind::Function {
-            file,
-            signature,
-            substitutions,
-            method_receiver,
-        } = ty.kind
-        else {
-            return Ok(None);
-        };
-        let parsed;
-        let parameters = if signature.parameters.is_empty()
-            && signature.origin.function_type().is_none()
-            && let Some(source) = self.indexes.reference_source(&file)?
-            && let Some(function) = function_at(source.as_ref(), signature.origin.range())
-            && let Some(list) = function.child_by_field_name("parameters")
-        {
-            let source = source.as_ref();
-            parsed = symbols::parameter_types(list, |node| {
-                symbols::type_ref(node, &source.text, &|node| source.range(node))
-            });
-            &parsed
-        } else {
-            &signature.parameters
-        };
-        let imports = &self.indexes.file_index(&file)?.imports;
-        let materialize = |reference: &Option<TypeRef>| {
-            materialize_type(
-                self.workspace,
-                ty.package,
-                &file,
-                imports,
-                reference.clone()?,
-                &substitutions,
-            )
-        };
-        let parameters = method_receiver
-            .into_iter()
-            .map(|receiver| Some(*receiver))
-            .chain(parameters.iter().map(materialize))
-            .collect::<Option<Vec<_>>>();
-        let results = signature
-            .results
-            .iter()
-            .map(materialize)
-            .collect::<Option<Vec<_>>>();
-        Ok(parameters
-            .zip(results)
-            .map(|(parameters, results)| CallableComponents {
-                parameters,
-                results,
-                variadic: signature.variadic,
-            }))
-    }
-}
-
-struct CallableComponents<'w> {
-    parameters: Vec<TypeIdentity<'w>>,
-    results: Vec<TypeIdentity<'w>>,
-    variadic: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
 
+    use lsp_types::TextDocumentContentChangeEvent;
+
     use super::*;
+    use crate::semantic::source::LineIndex;
+    use crate::workspace::Workspace;
 
     fn fixture_root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/fixtures/hover-signature")
@@ -719,7 +618,7 @@ mod tests {
             ParameterLabel::LabelOffsets([8, 17]),
         );
         assert_eq!(docs(&help), Some("𐐀 accepts a label and counts."));
-        assert!(engine.workspace.is_none());
+        assert!(engine.state.workspace.is_none());
     }
 
     #[test]
@@ -812,14 +711,14 @@ func run() {
             let help = lookup(&mut engine, &path, position).unwrap_or_else(|| {
                 panic!(
                     "missing signature in {tail}: {}",
-                    engine.documents[&path_key(&path)]
+                    engine.state.documents[&path_key(&path)]
                         .tree
                         .root_node()
                         .to_sexp()
                 )
             });
             assert_call(&help, &["a int", "b string"], Some(active));
-            assert!(engine.workspace.is_none(), "{tail}");
+            assert!(engine.state.workspace.is_none(), "{tail}");
         }
     }
 
@@ -835,7 +734,7 @@ func run() {
         let help = lookup(&mut engine, &path, position).unwrap_or_else(|| {
             panic!(
                 "missing method in {}",
-                engine.documents[&path_key(&path)]
+                engine.state.documents[&path_key(&path)]
                     .tree
                     .root_node()
                     .to_sexp()
@@ -994,7 +893,7 @@ func run(callback Alias, holder Holder, table []Alias) {
             "min", "max", "clear", "complex", "real", "imag", "print", "println",
         ] {
             assert!(
-                fallback_builtin(&mut engine.parser, builtin_function(name).unwrap())
+                fallback_builtin(&mut engine.state.parser, builtin_function(name).unwrap())
                     .unwrap()
                     .is_some(),
                 "{name}"

@@ -1,20 +1,27 @@
 use std::fmt::Write;
+use std::path::Path;
 
-use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind};
+use anyhow::Result;
 
-use crate::scope::Binding;
+use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position, Range};
+use tree_sitter::Node;
+
+use crate::scope::{
+    Binding, declaration_binding, lexical_binding, receiver_type_parameters, reference_binding,
+};
 use crate::symbols::{FileSymbols, Symbol};
 
-use super::presentation::{
-    builtin_function, documentation, function_signature, node_at_range, syntax_text,
+use super::Engine;
+use super::index::{IndexedSource, draft_package};
+use super::presentation::{builtin_function, documentation, function_signature, syntax_text};
+use super::query::QueryProgress;
+use super::resolver::{Resolver, TypeKind, is_predeclared, is_predeclared_type};
+use super::snapshot::DocumentSnapshot;
+use super::source::{
+    ReferenceQuery, Source, import_path, is_declaration_name, is_test_source, is_type_declaration,
+    node_at_range, node_text,
 };
-use super::{
-    Engine, IndexReader, Node, Package, Path, Position, QueryProgress, Range, ReferenceQuery,
-    Resolver, Result, Source, TypeKind, active_package, declaration_binding, draft_files,
-    draft_package, import_path, is_declaration_name, is_predeclared, is_predeclared_type,
-    is_test_source, is_type_declaration, lexical_binding, node_text, path_key, read_source,
-    receiver_type_parameters, reference_binding,
-};
+use crate::workspace::{Package, path_key};
 
 mod values;
 
@@ -31,18 +38,17 @@ enum Target<'tree> {
 }
 
 impl<'tree> Target<'tree> {
-    fn at(source: &'tree Source, position: Position) -> Option<Self> {
-        let offset = source.lines.offset(&source.text, position)?;
-        if offset == source.text.len() {
+    fn at(document: &'tree DocumentSnapshot<'_>, position: Position) -> Option<Self> {
+        let offset = document.offset(position)?;
+        if offset == document.text().len() {
             return None;
         }
-        let leaf = source
-            .tree
+        let leaf = document
             .root_node()
             .descendant_for_byte_range(offset, offset + 1)?;
-        let reference = source.reference_from_leaf(leaf, offset);
+        let reference = document.indexed().reference_from_leaf(leaf, offset);
         let token = reference.map_or(leaf, ReferenceQuery::name);
-        if !token.byte_range().contains(&offset) || node_text(token, &source.text) == "_" {
+        if !token.byte_range().contains(&offset) || node_text(token, document.text()) == "_" {
             return None;
         }
         match token.parent()?.kind() {
@@ -117,26 +123,21 @@ impl Engine {
         position: Position,
         load_workspace: bool,
     ) -> Result<QueryProgress<Option<Hover>>> {
-        let disk;
-        let source = if let Some(source) = self.documents.get(&path_key(path)) {
-            source
-        } else if path.extension().is_some_and(|extension| extension == "go") {
-            disk = match read_source(&mut self.parser, path) {
-                Ok(source) => source,
-                Err(error)
-                    if error
-                        .downcast_ref::<std::io::Error>()
-                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
-                {
-                    return Ok(QueryProgress::Ready(None));
-                }
-                Err(error) => return Err(error),
-            };
-            &disk
-        } else {
-            return Ok(QueryProgress::Ready(None));
+        let mut snapshot = self.state.snapshot(self.include_tests);
+        let document = match snapshot.document(path) {
+            Ok(Some(document)) => document,
+            Ok(None) => return Ok(QueryProgress::Ready(None)),
+            Err(error)
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                return Ok(QueryProgress::Ready(None));
+            }
+            Err(error) => return Err(error),
         };
-        let Some(target) = Target::at(source, position) else {
+        let source = document.indexed();
+        let Some(target) = Target::at(&document, position) else {
             return Ok(QueryProgress::Ready(None));
         };
         let ready = |presentation: Option<Presentation>| {
@@ -163,27 +164,20 @@ impl Engine {
 
         let test_source = is_test_source(path);
         self.include_tests |= test_source;
-        let load = self.workspace_load();
-        let Some(workspace) = &self.workspace else {
-            return Ok(QueryProgress::Pending(load));
+        let from = match snapshot.package_for(&document, test_source) {
+            QueryProgress::Ready(from) => from,
+            QueryProgress::Pending(load) => return Ok(QueryProgress::Pending(load)),
+            QueryProgress::Searching(task) => match task {},
         };
-        let from = active_package(workspace, source, &self.new_documents);
-        if (test_source && !workspace.includes_tests())
-            || self.graph_changes.affects_source(workspace, from, source)
-        {
-            return Ok(QueryProgress::Pending(load));
-        }
-        let indexes = IndexReader {
-            parser: &mut self.parser,
-            documents: &self.documents,
-            disk_index: &mut self.disk_index,
-            drafts: draft_files(workspace, &self.documents, &self.new_documents),
-        };
-        let mut resolver = Resolver { workspace, indexes };
+        let workspace = snapshot
+            .workspace()
+            .expect("package selection needs a workspace");
+        let root = snapshot.root();
+        let mut resolver = snapshot.resolver(workspace);
         let info = if let Some(local) = local {
             local.present(source, from.map(|from| (&mut resolver, from)), true)?
         } else {
-            resolver.hover_target(from, source, target, &self.root)?
+            resolver.hover_target(from, source, target, root)?
         };
         Ok(ready(info))
     }
@@ -193,7 +187,7 @@ impl<'w> Resolver<'w, '_> {
     fn hover_target(
         &mut self,
         from: Option<&'w Package>,
-        source: &Source,
+        source: &IndexedSource,
         target: Target<'_>,
         root: &Path,
     ) -> Result<Option<Presentation>> {
@@ -298,7 +292,7 @@ impl<'w> Resolver<'w, '_> {
 
     fn present_at(
         &mut self,
-        source: &Source,
+        source: &IndexedSource,
         range: Range,
         from: &'w Package,
     ) -> Result<Option<Presentation>> {
@@ -391,7 +385,7 @@ impl<'tree> Declaration<'tree> {
         }
     }
 
-    fn local(source: &'tree Source, reference: ReferenceQuery<'tree>) -> Option<Self> {
+    fn local(source: &'tree IndexedSource, reference: ReferenceQuery<'tree>) -> Option<Self> {
         let name = reference.name();
         if field_declaration(name).is_some_and(|field| field.child_by_field_name("name").is_none())
         {
@@ -416,9 +410,9 @@ impl<'tree> Declaration<'tree> {
         if name.kind() == "package_identifier" {
             return None;
         }
-        let symbol = source
+        let document = DocumentSnapshot::borrowed(&source.path, source);
+        let symbol = document
             .declarations()
-            .symbols
             .declaration(node_text(name, &source.text))?;
         let target = node_at_range(source, symbol.range)?;
         Some(Self::new(source, target))
@@ -426,7 +420,7 @@ impl<'tree> Declaration<'tree> {
 
     fn present<'w>(
         self,
-        source: &Source,
+        source: &IndexedSource,
         context: Option<(&mut Resolver<'w, '_>, &'w Package)>,
         allow_partial: bool,
     ) -> Result<Option<Presentation>> {
@@ -563,7 +557,7 @@ fn package_in_file(source: &Source, name: Node<'_>) -> Presentation {
 }
 
 fn receiver_parameter_constraint<'w>(
-    source: &Source,
+    source: &IndexedSource,
     parameter: Node<'_>,
     context: Option<(&mut Resolver<'w, '_>, &'w Package)>,
 ) -> Result<Option<String>> {
@@ -642,6 +636,7 @@ mod tests {
     use lsp_types::TextDocumentContentChangeEvent;
 
     use super::*;
+    use crate::semantic::source::LineIndex;
     use crate::workspace::Workspace;
 
     fn fixture_root() -> PathBuf {
@@ -659,7 +654,7 @@ mod tests {
     fn token_range(text: &str, anchor: &str, token: &str) -> Range {
         let start = text.find(anchor).expect("anchor in source")
             + anchor.find(token).expect("token in anchor");
-        let lines = super::super::LineIndex::new(text);
+        let lines = LineIndex::new(text);
         Range::new(
             lines.position(text, start),
             lines.position(text, start + token.len()),
@@ -720,7 +715,7 @@ mod tests {
             at(&mut engine, &path, text, "func Next", "Next"),
             "```go\nfunc Next()\n```"
         );
-        assert!(engine.workspace.is_none());
+        assert!(engine.state.workspace.is_none());
     }
 
     #[test]
@@ -803,7 +798,7 @@ const Limit = 5 // at most five
                 "{name}",
             );
         }
-        assert!(engine.workspace.is_none());
+        assert!(engine.state.workspace.is_none());
     }
 
     #[test]
@@ -855,7 +850,7 @@ func Wrap[T any](in T) (out T, err error) { return in, nil }
                 format!("```go\n{expected}\n```")
             );
         }
-        assert!(engine.workspace.is_none());
+        assert!(engine.state.workspace.is_none());
     }
 
     #[test]
@@ -933,7 +928,7 @@ func run(payload any) {
         let (mut engine, path) = open(text);
         let word = at(&mut engine, &path, text, "word :=", "word");
         assert!(word.contains("var word string = \"hello\"\n```\n\nWord in the next line."));
-        assert!(engine.workspace.is_none());
+        assert!(engine.state.workspace.is_none());
         for (anchor, token, expected) in [
             ("\n    next\n", "next", "const next int = iota"),
             ("_ = number", "number", "var number int64 = get()"),

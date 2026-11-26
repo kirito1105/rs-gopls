@@ -9,9 +9,13 @@ use anyhow::{Context, Result, ensure};
 use lsp_types::{Range, SymbolInformation, Uri};
 use tree_sitter::Parser;
 
+use super::Engine;
 use super::document_symbols::symbol_information;
-use super::{Engine, GraphChanges, QueryProgress, Search, Source, text_fingerprint};
-use crate::path_uri;
+use super::index::{IndexedSource, text_fingerprint};
+use super::query::{QueryProgress, SemanticTask};
+use super::snapshot::DocumentSnapshot;
+use super::source::Source;
+use crate::protocol::path_uri;
 use crate::symbols::{OutlineKind, OutlineSymbol};
 use crate::workspace::{Workspace, is_symbol_source, path_key};
 
@@ -67,7 +71,7 @@ struct ContainerName {
     owner: Option<SearchName>,
 }
 
-pub struct WorkspaceSymbolSearch {
+pub(crate) struct WorkspaceSymbolSearch {
     query: String,
     revision: u64,
     next_file: usize,
@@ -82,45 +86,46 @@ struct RankedMatch {
 }
 
 impl Engine {
-    pub fn workspace_symbols(&mut self, query: &str) -> QueryProgress<Vec<SymbolInformation>> {
+    pub(crate) fn workspace_symbols(
+        &mut self,
+        query: &str,
+    ) -> QueryProgress<Vec<SymbolInformation>, WorkspaceSymbolSearch> {
         let query = query.trim();
         if query.is_empty() {
             return QueryProgress::Ready(Vec::new());
         }
 
         self.include_tests = true;
-        let load = self.workspace_load();
-        let Some(workspace) = &self.workspace else {
-            return QueryProgress::Pending(load);
+        let snapshot = self.state.snapshot(self.include_tests);
+        let workspace = match snapshot.active_graph(true) {
+            QueryProgress::Ready(workspace) => workspace,
+            QueryProgress::Pending(load) => return QueryProgress::Pending(load),
+            QueryProgress::Searching(task) => match task {},
         };
-        if !workspace.includes_tests() || !matches!(self.graph_changes, GraphChanges::Clean) {
-            return QueryProgress::Pending(load);
-        }
-
         let index = &mut self.workspace_symbol_index;
         if !index.project_current {
-            index.synchronize(workspace, &self.root, &self.documents);
+            index.synchronize(workspace, snapshot.root(), snapshot.docs());
         }
         index
             .paths
             .get_or_insert_with(|| index.files.keys().cloned().collect());
-        QueryProgress::Searching(Search::WorkspaceSymbols(WorkspaceSymbolSearch {
+        QueryProgress::Searching(WorkspaceSymbolSearch {
             query: fold(query),
             revision: index.revision,
             next_file: 0,
             matches: Vec::new(),
-        }))
+        })
     }
+}
 
-    pub(super) fn advance_workspace_symbol_search(
-        &mut self,
-        search: &mut WorkspaceSymbolSearch,
-    ) -> Result<bool> {
-        let index = &mut self.workspace_symbol_index;
+impl SemanticTask<Vec<SymbolInformation>> for WorkspaceSymbolSearch {
+    fn advance(&mut self, engine: &mut Engine) -> Result<bool> {
+        let mut snapshot = engine.state.snapshot(engine.include_tests);
+        let index = &mut engine.workspace_symbol_index;
         ensure!(
             index.project_current
-                && index.revision == search.revision
-                && matches!(self.graph_changes, GraphChanges::Clean),
+                && index.revision == self.revision
+                && matches!(snapshot.active_graph(false), QueryProgress::Ready(_)),
             "workspace changed during symbol search"
         );
         let started = Instant::now();
@@ -134,7 +139,11 @@ impl Engine {
                 .files
                 .get_mut(key)
                 .expect("pending symbol index file exists");
-            file.refresh(key, self.documents.get(key), &mut self.parser)?;
+            let document = snapshot
+                .docs()
+                .get(key)
+                .map(|source| DocumentSnapshot::borrowed(&source.path, source));
+            file.refresh(key, document.as_ref(), snapshot.parser())?;
             index.pending.pop_first();
             if started.elapsed() >= SEARCH_BUDGET {
                 return Ok(false);
@@ -148,15 +157,15 @@ impl Engine {
             .paths
             .as_deref()
             .expect("workspace symbol search paths prepared");
-        let (qualifier, name) = match search.query.rsplit_once('.') {
+        let (qualifier, name) = match self.query.rsplit_once('.') {
             Some((qualifier, name)) => (Some(qualifier), name),
-            None => (None, search.query.as_str()),
+            None => (None, self.query.as_str()),
         };
         for _ in 0..SEARCH_FILE_BATCH {
-            let Some(key) = paths.get(search.next_file) else {
+            let Some(key) = paths.get(self.next_file) else {
                 break;
             };
-            search.next_file += 1;
+            self.next_file += 1;
             if let Some(file) = index.files[key].symbols() {
                 for (entry, symbol) in file.entries.iter().enumerate() {
                     if let Some(rank) = symbol.name.rank(name) {
@@ -171,7 +180,7 @@ impl Engine {
                         } else {
                             None
                         };
-                        search.matches.push(RankedMatch {
+                        self.matches.push(RankedMatch {
                             rank: rank.max(qualifier_rank.unwrap_or(MatchRank::Exact)),
                             qualifier_rank,
                             file: Rc::clone(file),
@@ -184,7 +193,27 @@ impl Engine {
                 break;
             }
         }
-        Ok(search.next_file == paths.len())
+        Ok(self.next_file == paths.len())
+    }
+
+    fn finish(mut self) -> Vec<SymbolInformation> {
+        self.matches
+            .sort_unstable_by(|left, right| left.sort_key().cmp(&right.sort_key()));
+        self.matches
+            .into_iter()
+            .map(|matched| {
+                let file = matched.file;
+                let entry = &file.entries[matched.entry];
+                symbol_information(
+                    entry.name.display.to_string(),
+                    entry.kind,
+                    file.container(entry)
+                        .map(|container| container.display.clone()),
+                    file.uri.clone(),
+                    entry.range,
+                )
+            })
+            .collect()
     }
 }
 
@@ -198,7 +227,7 @@ impl WorkspaceSymbolIndex {
         &mut self,
         workspace: &Workspace,
         root: &Path,
-        documents: &HashMap<PathBuf, Source>,
+        documents: &HashMap<PathBuf, IndexedSource>,
     ) {
         let root = path_key(root);
         let mut previous = std::mem::take(&mut self.files);
@@ -308,12 +337,12 @@ impl CachedFile {
     fn refresh(
         &mut self,
         key: &Path,
-        document: Option<&Source>,
+        document: Option<&DocumentSnapshot<'_>>,
         parser: &mut Parser,
     ) -> Result<()> {
-        if let Some(source) = document {
-            let version = source
-                .document_version
+        if let Some(document) = document {
+            let version = document
+                .version()
                 .expect("open document has a client version");
             if self
                 .overlay
@@ -322,7 +351,11 @@ impl CachedFile {
             {
                 self.overlay = Some((
                     version,
-                    Rc::new(WorkspaceFileSymbols::new(key, source, self.project_file)?),
+                    Rc::new(WorkspaceFileSymbols::new(
+                        key,
+                        document.indexed(),
+                        self.project_file,
+                    )?),
                 ));
             }
             return Ok(());
@@ -465,28 +498,6 @@ impl ContainerName {
     }
 }
 
-impl WorkspaceSymbolSearch {
-    pub(super) fn into_matches(mut self) -> Vec<SymbolInformation> {
-        self.matches
-            .sort_unstable_by(|left, right| left.sort_key().cmp(&right.sort_key()));
-        self.matches
-            .into_iter()
-            .map(|matched| {
-                let file = matched.file;
-                let entry = &file.entries[matched.entry];
-                symbol_information(
-                    entry.name.display.to_string(),
-                    entry.kind,
-                    file.container(entry)
-                        .map(|container| container.display.clone()),
-                    file.uri.clone(),
-                    entry.range,
-                )
-            })
-            .collect()
-    }
-}
-
 impl RankedMatch {
     fn sort_key(&self) -> impl Ord + '_ {
         let entry = &self.file.entries[self.entry];
@@ -584,7 +595,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::semantic::SearchResult;
     use crate::test_support::TestProject;
 
     fn query(engine: &mut Engine, name: &str) -> Vec<SymbolInformation> {
@@ -593,11 +603,8 @@ mod tests {
             QueryProgress::Searching(search) => search,
             QueryProgress::Pending(load) => panic!("missing workspace for query {name}: {load:?}"),
         };
-        while !engine.advance_search(&mut search).unwrap() {}
-        let SearchResult::WorkspaceSymbols(symbols) = search.into_result() else {
-            panic!("expected workspace symbol results");
-        };
-        symbols
+        while !search.advance(engine).unwrap() {}
+        search.finish()
     }
 
     fn install(engine: &mut Engine, workspace: Workspace) {

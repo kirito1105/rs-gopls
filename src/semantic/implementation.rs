@@ -1,4 +1,18 @@
-use super::*;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result, ensure};
+use lsp_types::{Position, Range};
+
+use super::Engine;
+use super::index::active_package;
+use super::query::{QueryProgress, SemanticTask};
+use super::resolver::{Resolver, TypeIdentity, TypeKind, is_exported};
+use super::source::{ReferenceQuery, Source, TextEditDelta, is_type_declaration, node_text};
+use crate::symbols::{self, TypeRef, TypeRefKind};
+use crate::workspace::{Package, path_key};
 
 mod candidates;
 mod interface_index;
@@ -45,7 +59,7 @@ impl ImplementationCache {
         self.packages.insert(candidates.key, candidates.eligible);
     }
 
-    pub(super) fn shift(&mut self, path: &Path, shift: LineShift) {
+    fn shift(&mut self, path: &Path, shift: LineShift) {
         if shift.old_end == shift.new_end {
             return;
         }
@@ -69,28 +83,61 @@ impl ImplementationCache {
     }
 }
 
-pub(super) struct LineShift {
+pub(super) struct ObservedEdit {
+    shifts: Option<Vec<LineShift>>,
+}
+
+impl ObservedEdit {
+    pub(super) fn new() -> Self {
+        Self {
+            shifts: Some(Vec::new()),
+        }
+    }
+
+    pub(super) fn observe(&mut self, delta: TextEditDelta<'_>) -> bool {
+        if let Some(shift) = LineShift::for_edit(delta) {
+            self.shifts.as_mut().expect("valid edit batch").push(shift);
+        } else {
+            self.shifts = None;
+        }
+        self.shifts.is_some()
+    }
+
+    pub(super) fn apply(self, cache: &mut ImplementationCache, path: &Path) {
+        if let Some(shifts) = self.shifts {
+            for shift in shifts {
+                cache.shift(path, shift);
+            }
+        } else {
+            cache.clear();
+        }
+    }
+}
+
+struct LineShift {
     start: u32,
     old_end: u32,
     new_end: u32,
 }
 
 impl LineShift {
-    pub(super) fn for_edit(
-        tree: &Tree,
-        text: &str,
-        bytes: std::ops::Range<usize>,
-        change: &TextDocumentContentChangeEvent,
-        new_end: usize,
-    ) -> Option<Self> {
-        let range = change.range?;
+    fn for_edit(delta: TextEditDelta<'_>) -> Option<Self> {
+        let TextEditDelta {
+            range,
+            bytes,
+            inserted,
+            new_end_line,
+            text,
+            tree,
+        } = delta;
+        let range = range?;
         let root = tree.root_node();
         if range.start.character != 0
             || range.end.character != 0
             || root.has_error()
             || (bytes.start == 0 && text.starts_with('\u{feff}'))
             || !top_level_trivia(&text[bytes.clone()])
-            || !top_level_trivia(&change.text)
+            || !top_level_trivia(inserted)
         {
             return None;
         }
@@ -109,7 +156,7 @@ impl LineShift {
         unaffected.then_some(Self {
             start: range.start.line,
             old_end: range.end.line,
-            new_end: u32::try_from(new_end).ok()?,
+            new_end: u32::try_from(new_end_line).ok()?,
         })
     }
 
@@ -141,7 +188,7 @@ fn ordinary_comment(text: &str) -> bool {
     })
 }
 
-pub struct ImplementationSearch {
+pub(crate) struct ImplementationSearch {
     key: QueryKey,
     direction: Direction,
     selected: Option<MethodKey>,
@@ -190,10 +237,6 @@ struct Candidate {
 }
 
 impl ImplementationSearch {
-    pub(super) fn into_matches(self) -> Vec<Location> {
-        self.matches
-    }
-
     fn complete(&mut self, cache: &mut ImplementationCache) {
         self.matches
             .sort_by_cached_key(|(file, range)| (path_key(file), range.start, range.end));
@@ -214,43 +257,37 @@ struct Subject<'w> {
 }
 
 impl Engine {
-    pub fn implementations(
+    pub(crate) fn implementations(
         &mut self,
         path: &Path,
         position: Position,
-    ) -> Result<QueryProgress<Vec<Location>>> {
+    ) -> Result<QueryProgress<Vec<Location>, ImplementationSearch>> {
         if path.extension().is_none_or(|extension| extension != "go") {
             return Ok(QueryProgress::Ready(Vec::new()));
         }
         self.include_tests = true;
-        let load = self.workspace_load();
-        let Some(workspace) = &self.workspace else {
-            return Ok(QueryProgress::Pending(load));
+        let mut snapshot = self.state.snapshot(self.include_tests);
+        let workspace = match snapshot.active_graph(true) {
+            QueryProgress::Ready(workspace) => workspace,
+            QueryProgress::Pending(load) => return Ok(QueryProgress::Pending(load)),
+            QueryProgress::Searching(task) => match task {},
         };
-        if !workspace.includes_tests() || !matches!(self.graph_changes, GraphChanges::Clean) {
-            return Ok(QueryProgress::Pending(load));
-        }
         let key = (path_key(path), position);
         if let Some(cached) = self.implementation_cache.results.get(&key) {
             return Ok(QueryProgress::Ready(cached.clone()));
         }
 
-        let indexes = IndexReader {
-            parser: &mut self.parser,
-            documents: &self.documents,
-            disk_index: &mut self.disk_index,
-            drafts: draft_files(workspace, &self.documents, &self.new_documents),
-        };
-        let mut resolver = Resolver { workspace, indexes };
+        let root = snapshot.root();
+        let new_documents = snapshot.new_documents();
+        let mut resolver = snapshot.resolver(workspace);
         let Some(source) = resolver.indexes.reference_source(path)? else {
             return Ok(QueryProgress::Ready(Vec::new()));
         };
         let source = source.as_ref();
-        let Some(from) = active_package(workspace, source, &self.new_documents) else {
+        let Some(from) = active_package(workspace, source, new_documents) else {
             return Ok(QueryProgress::Ready(Vec::new()));
         };
-        let Some(subject) = resolver.implementation_subject(from, source, position, &self.root)?
-        else {
+        let Some(subject) = resolver.implementation_subject(from, source, position, root)? else {
             return Ok(QueryProgress::Ready(Vec::new()));
         };
         let mut matches = Vec::new();
@@ -330,63 +367,54 @@ impl Engine {
                 Some(CandidatePackages::new(probe, key, &packages))
             }
         });
-        Ok(QueryProgress::Searching(Search::Implementations(
-            ImplementationSearch {
-                key,
-                direction,
-                selected: subject.method,
-                declaration: subject.declaration,
-                packages,
-                package_filter,
-                current: None,
-                matches,
-            },
-        )))
+        Ok(QueryProgress::Searching(ImplementationSearch {
+            key,
+            direction,
+            selected: subject.method,
+            declaration: subject.declaration,
+            packages,
+            package_filter,
+            current: None,
+            matches,
+        }))
     }
+}
 
-    pub(super) fn advance_implementation_search(
-        &mut self,
-        search: &mut ImplementationSearch,
-    ) -> Result<bool> {
-        let workspace = self
-            .workspace
-            .as_ref()
+impl SemanticTask<Vec<Location>> for ImplementationSearch {
+    fn advance(&mut self, engine: &mut Engine) -> Result<bool> {
+        let mut snapshot = engine.state.snapshot(engine.include_tests);
+        let workspace = snapshot
+            .workspace()
             .context("implementation search needs a workspace")?;
         ensure!(
-            matches!(self.graph_changes, GraphChanges::Clean),
+            matches!(snapshot.active_graph(false), QueryProgress::Ready(_)),
             "workspace changed during implementation search"
         );
-        let indexes = IndexReader {
-            parser: &mut self.parser,
-            documents: &self.documents,
-            disk_index: &mut self.disk_index,
-            drafts: draft_files(workspace, &self.documents, &self.new_documents),
-        };
-        let mut resolver = Resolver { workspace, indexes };
-        if let Some(filter) = &mut search.package_filter {
-            if filter.advance(&resolver, &mut self.implementation_sources) {
-                search.packages.retain(|id| filter.eligible.contains(id));
-                if let Some(filter) = search.package_filter.take() {
-                    self.implementation_cache.remember_packages(filter);
+        let mut resolver = snapshot.resolver(workspace);
+        if let Some(filter) = &mut self.package_filter {
+            if filter.advance(&resolver, &mut engine.implementation_sources) {
+                self.packages.retain(|id| filter.eligible.contains(id));
+                if let Some(filter) = self.package_filter.take() {
+                    engine.implementation_cache.remember_packages(filter);
                 }
             }
             return Ok(false);
         }
         let started = Instant::now();
-        let index_interfaces = search.indexes_interfaces();
-        let receiver_shapes = search.direction.receiver_shapes();
+        let index_interfaces = self.indexes_interfaces();
+        let receiver_shapes = self.direction.receiver_shapes();
         for _ in 0..32 {
-            if search.current.is_none() {
-                let Some(id) = search.packages.pop_front() else {
+            if self.current.is_none() {
+                let Some(id) = self.packages.pop_front() else {
                     break;
                 };
                 let Some(package) = workspace.package(&id) else {
                     continue;
                 };
                 let existing = index_interfaces
-                    .then(|| self.implementation_cache.interfaces.get(&id))
+                    .then(|| engine.implementation_cache.interfaces.get(&id))
                     .flatten();
-                search.current = Some(PackageSearch {
+                self.current = Some(PackageSearch {
                     id,
                     files: if existing.is_some() {
                         Vec::new()
@@ -401,16 +429,16 @@ impl Engine {
                         .map_or_else(Vec::new, |index| index.candidates(receiver_shapes)),
                 });
             }
-            let current = search.current.as_mut().expect("initialized package search");
+            let current = self.current.as_mut().expect("initialized package search");
             if let Some(file) = current.files.pop() {
                 resolver.collect_implementation_candidates(
                     current,
                     &file,
-                    &search.direction,
+                    &self.direction,
                     index_interfaces,
                 )?;
             } else if let Some(candidate) = current.candidates.pop() {
-                let eligible = match search.direction {
+                let eligible = match self.direction {
                     Direction::Implementations { .. } => {
                         candidate.inherits || current.direct_owners.contains(&candidate.name)
                     }
@@ -423,62 +451,44 @@ impl Engine {
                             index.insert(candidate.location, required);
                         }
                     } else if let Some(target) =
-                        resolver.match_implementation(package, search, candidate)?
+                        resolver.match_implementation(package, self, candidate)?
                     {
-                        search.matches.push(target);
+                        self.matches.push(target);
                     }
                 }
             } else if let Some(index) = current.interface_index.take() {
                 current.indexed_interfaces = index.candidates(receiver_shapes);
-                self.implementation_cache
+                engine
+                    .implementation_cache
                     .interfaces
                     .insert(current.id.clone(), index);
             } else if let Some(candidate) = current.indexed_interfaces.pop() {
                 if let Some(package) = workspace.package(&current.id)
                     && let Some(target) = resolver.match_interface(
                         package,
-                        search,
+                        self,
                         &candidate.methods,
                         &candidate.location,
                     )?
                 {
-                    search.matches.push(target);
+                    self.matches.push(target);
                 }
             } else {
-                search.current = None;
+                self.current = None;
             }
             if started.elapsed() >= Duration::from_millis(2) {
                 break;
             }
         }
-        let done = search.current.is_none() && search.packages.is_empty();
+        let done = self.current.is_none() && self.packages.is_empty();
         if done {
-            search.complete(&mut self.implementation_cache);
+            self.complete(&mut engine.implementation_cache);
         }
         Ok(done)
     }
-}
 
-impl IndexReader<'_> {
-    fn interface_candidate_index(&mut self, file: &Path) -> Result<Option<&FileIndex>> {
-        let key = path_key(file);
-        if let Some(source) = self.documents.get(&key) {
-            return Ok(Some(source.declarations()));
-        }
-        let cached = match self.disk_index.entry(key) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let text = fs::read_to_string(file)
-                    .with_context(|| format!("reading {}", file.display()))?;
-                // Candidate declarations require a type spec, including aliases.
-                if !text.contains("type") {
-                    return Ok(None);
-                }
-                let source = Source::parse(self.parser, file.to_owned(), text, None)?;
-                entry.insert(DiskIndex::new(&source))
-            }
-        };
-        Ok(Some(&cached.declarations))
+    fn finish(self) -> Vec<Location> {
+        self.matches
     }
 }
 
@@ -577,7 +587,7 @@ impl<'w> Resolver<'w, '_> {
         index_interfaces: bool,
     ) -> Result<()> {
         let index = if index_interfaces {
-            self.indexes.interface_candidate_index(file)
+            self.indexes.candidate_index(file)
         } else {
             self.indexes.file_index(file).map(Some)
         };
@@ -687,4 +697,193 @@ impl<'w> Resolver<'w, '_> {
 
 fn same_location(left: &Location, right: &Location) -> bool {
     left.1 == right.1 && path_key(&left.0) == path_key(&right.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use lsp_types::TextDocumentContentChangeEvent;
+
+    use super::*;
+    use crate::test_support::TestProject;
+
+    fn edit_lines(start: u32, end: u32, text: &str) -> TextDocumentContentChangeEvent {
+        TextDocumentContentChangeEvent {
+            range: Some(Range::new(Position::new(start, 0), Position::new(end, 0))),
+            range_length: None,
+            text: text.into(),
+        }
+    }
+
+    fn location(path: &Path, line: u32) -> Location {
+        (
+            path.to_owned(),
+            Range::new(Position::new(line, 5), Position::new(line, 9)),
+        )
+    }
+
+    fn opened(project: &TestProject, text: &str) -> (Engine, PathBuf) {
+        let path = project.write("item.go", text);
+        let mut engine = Engine::new(project.root.clone());
+        engine.open(path.clone(), text.into(), 1).unwrap();
+        (engine, path)
+    }
+
+    fn seed_cache(engine: &mut Engine, path: &Path, line: u32) -> QueryKey {
+        let key = (path_key(path), Position::new(line, 5));
+        let cache = &mut engine.implementation_cache;
+        cache.remember(key.clone(), vec![location(path, line)]);
+        cache.packages.insert(
+            PackageProbeKey::Method("Run".into()),
+            HashSet::from(["example.test/sample".into()]),
+        );
+        cache
+            .interfaces
+            .insert("example.test/sample".into(), InterfaceIndex::default());
+        key
+    }
+
+    #[test]
+    fn shifts_queries_and_results_in_batch_order_and_drops_deleted_ranges() {
+        let project = TestProject::new();
+        let text = "package sample\r\n// item\r\n\r\ntype Item struct{}\r\n";
+        let (mut engine, path) = opened(&project, text);
+        let other = project.root.join("other.go");
+        let old_key = seed_cache(&mut engine, &path, 3);
+        let cache = &mut engine.implementation_cache;
+        cache.remember(
+            (path_key(&other), Position::new(5, 0)),
+            vec![location(&other, 5), location(&path, 3)],
+        );
+        cache.remember(
+            (path_key(&path), Position::new(2, 0)),
+            vec![location(&other, 5)],
+        );
+        cache.remember(
+            (path_key(&other), Position::new(6, 0)),
+            vec![(
+                path.clone(),
+                Range::new(Position::new(1, 0), Position::new(2, 0)),
+            )],
+        );
+
+        engine
+            .edit(
+                &path,
+                &[
+                    edit_lines(1, 1, "// inserted\r\n\r\n"),
+                    edit_lines(4, 5, ""),
+                ],
+                2,
+            )
+            .unwrap();
+        let cache = &engine.implementation_cache;
+        let shifted_key = (path_key(&path), Position::new(4, 5));
+        assert_eq!(
+            cache.results.get(&shifted_key),
+            Some(&vec![location(&path, 4)])
+        );
+        assert_eq!(
+            cache.results.get(&(path_key(&other), Position::new(5, 0))),
+            Some(&vec![location(&other, 5), location(&path, 4)])
+        );
+        assert_eq!(cache.results.len(), 2);
+        assert!(!cache.results.contains_key(&old_key));
+        assert_eq!(cache.packages.len(), 1);
+        assert!(cache.interfaces.is_empty());
+        let mut snapshot = engine.snapshot();
+        let document = snapshot.document(&path).unwrap().unwrap();
+        assert_eq!(document.version(), Some(2));
+        assert_eq!(
+            document.text(),
+            "package sample\r\n// inserted\r\n\r\n// item\r\ntype Item struct{}\r\n"
+        );
+    }
+
+    #[test]
+    fn retains_every_cache_for_ordinary_comment_replacement_with_equal_line_count() {
+        let project = TestProject::new();
+        let (mut engine, path) = opened(&project, "package sample\n// old\ntype Item struct{}\n");
+        let key = seed_cache(&mut engine, &path, 2);
+        engine
+            .edit(&path, &[edit_lines(1, 2, "// revised 😀\n")], 2)
+            .unwrap();
+        let cache = &engine.implementation_cache;
+        assert_eq!(cache.results.get(&key), Some(&vec![location(&path, 2)]));
+        assert_eq!(cache.packages.len(), 1);
+        assert_eq!(cache.interfaces.len(), 1);
+    }
+
+    #[test]
+    fn clears_all_caches_for_directives_bom_and_semantic_edits() {
+        const TEXT: &str = "package sample\n// old\ntype Item struct{}\n";
+        for (label, text, changes) in [
+            ("directive", TEXT, vec![edit_lines(1, 2, "//go:noinline\n")]),
+            (
+                "build constraint",
+                TEXT,
+                vec![edit_lines(0, 0, "// +build example\n\n")],
+            ),
+            (
+                "line directive",
+                TEXT,
+                vec![edit_lines(1, 2, "//line mapped.go:42\n")],
+            ),
+            (
+                "block comment",
+                TEXT,
+                vec![edit_lines(1, 2, "/* block */\n")],
+            ),
+            (
+                "BOM",
+                "\u{feff}package sample\n// old\ntype Item struct{}\n",
+                vec![edit_lines(0, 0, "\n")],
+            ),
+            (
+                "semantic edit after trivia",
+                TEXT,
+                vec![edit_lines(1, 1, "\n"), edit_lines(3, 4, "type Item int\n")],
+            ),
+            (
+                "full replacement",
+                TEXT,
+                vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: TEXT.into(),
+                }],
+            ),
+        ] {
+            let project = TestProject::new();
+            let (mut engine, path) = opened(&project, text);
+            seed_cache(&mut engine, &path, 2);
+            engine.edit(&path, &changes, 2).unwrap();
+            assert!(engine.implementation_cache.is_empty(), "{label}");
+        }
+    }
+
+    #[test]
+    fn failed_edit_keeps_version_declarations_and_implementation_cache() {
+        let project = TestProject::new();
+        let text = "package sample\n\ntype Item struct{}\n";
+        let (mut engine, path) = opened(&project, text);
+        let key = seed_cache(&mut engine, &path, 2);
+        let before = std::ptr::from_ref(engine.state.documents[&key.0].declarations());
+        let changes = [edit_lines(1, 1, "// inserted\n"), edit_lines(99, 99, "\n")];
+        assert_eq!(
+            engine.edit(&path, &changes, 2).unwrap_err().to_string(),
+            "invalid edit start"
+        );
+        let cache = &engine.implementation_cache;
+        assert_eq!(cache.results.get(&key), Some(&vec![location(&path, 2)]));
+        assert_eq!(cache.packages.len(), 1);
+        assert_eq!(cache.interfaces.len(), 1);
+        let mut snapshot = engine.snapshot();
+        let document = snapshot.document(&path).unwrap().unwrap();
+        assert_eq!(document.version(), Some(1));
+        assert_eq!(document.text(), text);
+        assert_eq!(
+            std::ptr::from_ref(document.indexed().declarations()),
+            before
+        );
+    }
 }
