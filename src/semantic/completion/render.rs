@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::Result;
 use lsp_types::{
@@ -13,7 +14,7 @@ use tree_sitter::Node;
 use crate::protocol::path_uri;
 use crate::semantic::{
     actions::imports::{ImportOperation, import_edits},
-    index::text_fingerprint,
+    index::{CompletionRead, text_fingerprint},
     presentation::{documentation, function_signature, syntax_text},
     snapshot::{DocumentSnapshot, EngineSnapshot},
     source::{Source, node_at_range, node_text},
@@ -57,16 +58,34 @@ pub(super) struct ItemData {
     pub(super) pending_import: Option<PendingImport>,
 }
 
-pub(super) struct Description {
+#[derive(Clone)]
+pub(in crate::semantic) struct Description {
     pub(super) kind: CompletionItemKind,
     pub(super) detail: Option<String>,
     pub(super) label_suffix: Option<String>,
     pub(super) deprecated: bool,
     pub(super) has_parameters: bool,
+    docs: Option<Rc<str>>,
 }
 
-fn owner(source: &Source, range: Range) -> Option<Node<'_>> {
-    ancestors(node_at_range(source, range)?).find(|node| {
+impl Description {
+    pub(super) fn with_kind(mut self, kind: CompletionItemKind, detect_deprecation: bool) -> Self {
+        if self.kind != CompletionItemKind::CONSTANT {
+            self.kind = kind;
+        }
+        self.deprecated &= detect_deprecation;
+        self
+    }
+
+    pub(super) fn markup(&self, caps: &CompletionClientCapabilities) -> Option<Documentation> {
+        self.docs
+            .as_deref()
+            .map(|docs| documentation_markup(docs.to_owned(), caps))
+    }
+}
+
+fn owner(token: Node<'_>) -> Option<Node<'_>> {
+    ancestors(token).find(|node| {
         matches!(
             node.kind(),
             "function_declaration"
@@ -90,12 +109,30 @@ fn owner(source: &Source, range: Range) -> Option<Node<'_>> {
     })
 }
 
-pub(super) fn describe(
+pub(in crate::semantic) fn describe(
     source: &Source,
     range: Range,
     name: &str,
     default_kind: CompletionItemKind,
     detect_deprecation: bool,
+) -> Description {
+    describe_token(
+        node_at_range(source, range),
+        &source.text,
+        name,
+        default_kind,
+        detect_deprecation,
+        false,
+    )
+}
+
+pub(in crate::semantic) fn describe_token(
+    token: Option<Node<'_>>,
+    text: &str,
+    name: &str,
+    default_kind: CompletionItemKind,
+    detect_deprecation: bool,
+    keep_docs: bool,
 ) -> Description {
     let mut description = Description {
         kind: default_kind,
@@ -103,11 +140,11 @@ pub(super) fn describe(
         label_suffix: None,
         deprecated: false,
         has_parameters: false,
+        docs: None,
     };
-    let Some(owner) = owner(source, range) else {
+    let Some(owner) = token.and_then(owner) else {
         return description;
     };
-    let text = &source.text;
     let ty = owner.child_by_field_name("type");
     let prefix = match owner.kind() {
         "function_declaration" | "method_declaration" | "method_elem" => {
@@ -154,13 +191,17 @@ pub(super) fn describe(
             |ty| format!("{prefix} {name} {}", syntax_text(ty, text)),
         ));
     }
-    if detect_deprecation {
-        description.deprecated = documentation(owner, text).contains("Deprecated:");
+    if detect_deprecation || keep_docs {
+        let docs = documentation(owner, text);
+        description.deprecated = detect_deprecation && docs.contains("Deprecated:");
+        if keep_docs && !docs.is_empty() {
+            description.docs = Some(docs.into());
+        }
     }
     description
 }
 
-pub(super) fn package_name(source: &Source) -> Option<&str> {
+pub(in crate::semantic) fn package_name(source: &Source) -> Option<&str> {
     let root = source.tree.root_node();
     let clause = root
         .named_children(&mut root.walk())
@@ -175,13 +216,15 @@ pub(super) fn response(
     candidates: Vec<Candidate>,
     caps: &CompletionClientCapabilities,
     graph_generation: Option<u64>,
+    request: &mut CompletionRead,
 ) -> Result<CompletionResponse> {
+    let _phase = request.trace.as_ref().map(|trace| trace.phase("render"));
     let mut items = Vec::new();
     let mut import_edits = HashMap::new();
     let mut docs = HashMap::new();
     let mut resolver = snapshot
         .workspace()
-        .map(|workspace| snapshot.resolver(workspace));
+        .map(|workspace| snapshot.resolver_with_completion(workspace, Some(request)));
     let uri = path_uri(document.path())?;
     let version = document.version();
     let fingerprint = format!("{:016x}", text_fingerprint(document.text()));
@@ -214,25 +257,14 @@ pub(super) fn response(
         let documentation = if defer_docs {
             None
         } else if let Some(target) = &candidate.target {
-            let key = path_key(&target.file);
-            if !docs.contains_key(&key) && key != path_key(document.path()) {
-                let source = resolver.as_mut().and_then(|resolver| {
-                    resolver
-                        .indexes
-                        .reference_source(&target.file)
-                        .ok()
-                        .flatten()
-                });
-                docs.insert(key.clone(), source);
-            }
-            let source = if key == path_key(document.path()) {
-                Some(&**document.indexed())
-            } else {
-                docs.get(&key)
-                    .and_then(Option::as_ref)
-                    .map(|source| &**source.as_ref())
-            };
-            source.and_then(|source| markup(source, target.range, caps))
+            docs.entry((path_key(&target.file), target.range))
+                .or_insert_with(|| {
+                    if path_key(&target.file) == path_key(document.path()) {
+                        return markup(document.indexed(), target.range, caps);
+                    }
+                    target_markup(&mut resolver.as_mut()?.indexes, target, caps)
+                })
+                .clone()
         } else {
             None
         };
@@ -377,13 +409,33 @@ pub(super) fn markup(
     range: Range,
     caps: &CompletionClientCapabilities,
 ) -> Option<Documentation> {
-    let value = documentation(owner(source, range)?, &source.text);
-    (!value.is_empty()).then_some(Documentation::MarkupContent(MarkupContent {
+    let value = documentation(owner(node_at_range(source, range)?)?, &source.text);
+    (!value.is_empty()).then(|| documentation_markup(value, caps))
+}
+
+pub(super) fn target_markup(
+    indexes: &mut crate::semantic::index::IndexReader<'_>,
+    target: &Target,
+    caps: &CompletionClientCapabilities,
+) -> Option<Documentation> {
+    let key = path_key(&target.file);
+    if let Some(presentation) = indexes
+        .known_index(&key)
+        .and_then(|index| index.presentation.get(&target.range))
+    {
+        return presentation.markup(caps);
+    }
+    let source = indexes.reference_source(&target.file).ok()??;
+    markup(source.as_ref(), target.range, caps)
+}
+
+fn documentation_markup(value: String, caps: &CompletionClientCapabilities) -> Documentation {
+    Documentation::MarkupContent(MarkupContent {
         kind: if caps.markdown_docs {
             MarkupKind::Markdown
         } else {
             MarkupKind::PlainText
         },
         value,
-    }))
+    })
 }

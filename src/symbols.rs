@@ -29,7 +29,7 @@ pub(crate) struct NamedType {
     pub(crate) arguments: Vec<Option<TypeRef>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum Container<T> {
     Slice(T),
     Array {
@@ -185,6 +185,13 @@ impl FileSymbols {
         self.members
             .get(ty)
             .into_iter()
+            .flatten()
+            .map(|(name, member)| (name.as_str(), member))
+    }
+
+    pub(crate) fn members(&self) -> impl Iterator<Item = (&str, &Symbol)> {
+        self.members
+            .values()
             .flatten()
             .map(|(name, member)| (name.as_str(), member))
     }
@@ -601,10 +608,16 @@ fn outline_inline_type(node: Node<'_>) -> Option<Node<'_>> {
     matches!(node.kind(), "struct_type" | "interface_type").then_some(node)
 }
 
-pub(crate) fn collect(tree: &Tree, text: &str, range: impl Fn(Node<'_>) -> Range) -> FileSymbols {
+pub(crate) fn collect(
+    tree: &Tree,
+    text: &str,
+    range: impl Fn(Node<'_>) -> Range,
+    mut visit: impl FnMut(Node<'_>, &str, &Symbol),
+) -> FileSymbols {
     let mut indexer = Indexer {
         text,
         range: &range,
+        visit: &mut visit,
         symbols: FileSymbols::default(),
     };
     let root = tree.root_node();
@@ -618,6 +631,7 @@ pub(crate) fn collect(tree: &Tree, text: &str, range: impl Fn(Node<'_>) -> Range
 struct Indexer<'a> {
     text: &'a str,
     range: &'a dyn Fn(Node<'_>) -> Range,
+    visit: &'a mut dyn FnMut(Node<'_>, &str, &Symbol),
     symbols: FileSymbols,
 }
 
@@ -676,10 +690,13 @@ impl Indexer<'_> {
         if key.is_empty() || key == "_" {
             return;
         }
-        self.symbols
-            .declarations
-            .entry(key.to_owned())
-            .or_insert_with(|| Symbol::new((self.range)(name), kind, addressable));
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            self.symbols.declarations.entry(key.to_owned())
+        {
+            let symbol = Symbol::new((self.range)(name), kind, addressable);
+            (self.visit)(name, key, &symbol);
+            entry.insert(symbol);
+        }
     }
 
     fn type_declaration(&mut self, declaration: Node<'_>) {
@@ -780,12 +797,16 @@ impl Indexer<'_> {
         if key.is_empty() || key == "_" {
             return;
         }
-        self.symbols
+        if let std::collections::hash_map::Entry::Vacant(entry) = self
+            .symbols
             .members
             .entry(owner.to_owned())
             .or_default()
             .entry(key.to_owned())
-            .or_insert(symbol);
+        {
+            (self.visit)(name, key, &symbol);
+            entry.insert(symbol);
+        }
     }
 }
 
@@ -1154,19 +1175,9 @@ fn function_signature(
         list.named_children(&mut list.walk())
             .any(|node| node.kind() == "variadic_parameter_declaration")
     });
-    // Plain function calls only need result types. Method and function-type
-    // signatures retain their parameters for method-set comparison.
-    let parameters = if matches!(
-        function.kind(),
-        "method_declaration" | "method_elem" | "function_type" | "func_literal"
-    ) || !type_parameters.is_empty()
-    {
-        parameters.map_or_else(Vec::new, |list| {
-            parameter_types(list, |node| type_ref(node, text, range))
-        })
-    } else {
-        Vec::new()
-    };
+    let parameters = parameters.map_or_else(Vec::new, |list| {
+        parameter_types(list, |node| type_ref(node, text, range))
+    });
     let origin = if matches!(function.kind(), "function_type" | "func_literal") {
         FunctionOrigin::FuncKeyword(range(function.child(0).unwrap_or(function)))
     } else {
@@ -1286,15 +1297,20 @@ mod outline_tests {
             "func Function() { var local int }\n",
             "func (Record) Method() {}\n",
         );
-        let symbols = collect(&parse(text), text, |node| {
-            let position = |point: tree_sitter::Point| {
-                lsp_types::Position::new(point.row as u32, point.column as u32)
-            };
-            Range::new(
-                position(node.start_position()),
-                position(node.end_position()),
-            )
-        });
+        let symbols = collect(
+            &parse(text),
+            text,
+            |node| {
+                let position = |point: tree_sitter::Point| {
+                    lsp_types::Position::new(point.row as u32, point.column as u32)
+                };
+                Range::new(
+                    position(node.start_position()),
+                    position(node.end_position()),
+                )
+            },
+            |_, _, _| {},
+        );
         let mut declarations: Vec<_> = symbols.declarations().collect();
         declarations.sort_unstable_by_key(|(name, _)| *name);
         assert_eq!(

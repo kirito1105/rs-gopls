@@ -1,39 +1,35 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::rc::Rc;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::thread;
-use std::time::Duration;
-use std::time::SystemTime;
+use std::sync::Arc;
 
 use anyhow::Result;
 use lsp_types::{CompletionItemKind as Kind, Range};
-use serde::Deserialize;
-use tree_sitter::Parser;
 
 use crate::semantic::{
-    index::IndexedSource,
-    resolver::{ResolvedSymbol, is_exported},
+    index::{CompletionRead, FileIndex, IndexReader},
+    resolver::{ResolvedSymbol, Resolver, is_exported},
     snapshot::{DocumentSnapshot, EngineSnapshot},
-    source::{Source, is_test_source, read_source},
+    source::is_test_source,
 };
 use crate::symbols::{Container, SymbolKind, TypeRef, TypeRefKind};
-use crate::workspace::{Package, Workspace, is_symbol_source, path_key};
+use crate::workspace::{Package, Workspace, path_key};
 
-use super::CompletionClientCapabilities;
 use super::candidates::resolved_candidate;
 use super::cursor::{identifier_char, identifier_start};
 use super::expected::{Expected, named_key};
+use super::prefilter::{Batch, Decision, Input, SOURCE_LIMIT, Scanner};
+use super::profile::Phase;
 use super::ranking::{
     AUTO_IMPORT, Candidate, Insert, Match, SYMBOL, Weight, match_member_hump, match_name,
     match_start, package_priority,
 };
-use super::render::{Description, PendingImport, Target, describe, package_name};
-use super::sdk_names::exported_names;
+use super::render::{Description, PendingImport, Target, package_name};
+use super::sdk::{Catalog, Inventory};
+use super::{CompletionClientCapabilities, Trace};
 
-const BATCH_SIZE: usize = 8;
+const BATCH_SIZE: usize = SOURCE_LIMIT;
 
 pub(super) struct FileImport {
     pub(super) path: String,
@@ -52,6 +48,7 @@ pub(super) struct SymbolSearch {
     pub(super) address_of: bool,
     pub(super) literal: bool,
     pub(super) declared: HashSet<String>,
+    pub(super) skipped_package_names: HashSet<String>,
     pub(super) imports: Vec<FileImport>,
     pub(super) expected: Option<Expected>,
 }
@@ -61,28 +58,16 @@ pub(super) enum SearchKind {
     Symbols(SymbolSearch),
 }
 
-#[derive(Default)]
 pub(in crate::semantic) struct ImportCache {
     generation: Option<u64>,
     graph: Rc<[Importable]>,
-    sdk: SdkState,
-    sdk_identity: Option<SdkIdentity>,
-    disk_names: HashMap<PathBuf, Vec<String>>,
+    inventory: Inventory,
+    sdk: Option<(Arc<Catalog>, Rc<[Importable]>)>,
     sdk_exports: HashMap<PathBuf, Rc<[Export]>>,
-}
-
-#[derive(Default)]
-enum SdkState {
-    #[default]
-    Unloaded,
-    Loading(Receiver<Vec<Importable>>),
-    Ready(Rc<[Importable]>),
-}
-
-#[derive(PartialEq, Eq)]
-struct SdkIdentity {
-    src: PathBuf,
-    version_stamp: Option<SystemTime>,
+    scanner: Scanner,
+    wake: crossbeam_channel::Receiver<()>,
+    #[cfg(test)]
+    empty_sdk: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -92,16 +77,57 @@ struct Importable {
     directory: PathBuf,
     vendor_parent: Option<PathBuf>,
     prefilter_disk: bool,
-    origin: Origin,
+    project: bool,
+    elide_bodies: bool,
+    package_id: Option<String>,
+    files: Rc<[ImportFile]>,
 }
 
 #[derive(Clone)]
-enum Origin {
-    Graph(String),
-    Sdk(Vec<PathBuf>),
+struct ImportFile {
+    path: PathBuf,
+    key: PathBuf,
+}
+
+impl ImportFile {
+    fn new(path: &Path) -> Self {
+        Self {
+            path: path.to_owned(),
+            key: path_key(path),
+        }
+    }
+}
+
+impl Default for ImportCache {
+    fn default() -> Self {
+        let (signal, wake) = crossbeam_channel::bounded(1);
+        Self {
+            generation: None,
+            graph: Rc::from([]),
+            inventory: Inventory::new(signal.clone()),
+            sdk: None,
+            sdk_exports: HashMap::new(),
+            scanner: Scanner::new(signal),
+            wake,
+            #[cfg(test)]
+            empty_sdk: None,
+        }
+    }
 }
 
 impl ImportCache {
+    pub(in crate::semantic) fn prewarm(&self, root: &Path, refresh: bool) {
+        self.inventory.start(root, refresh);
+    }
+
+    pub(in crate::semantic) fn sdk_root(&self) -> Option<PathBuf> {
+        self.inventory.root()
+    }
+
+    pub(in crate::semantic) fn wake(&self) -> &crossbeam_channel::Receiver<()> {
+        &self.wake
+    }
+
     fn prepare(&mut self, generation: u64, workspace: &Workspace) {
         if self.generation == Some(generation) {
             return;
@@ -112,88 +138,128 @@ impl ImportCache {
             .filter(|package| package.is_production())
             .filter_map(|package| Importable::from_graph(workspace, package))
             .collect();
-        self.sdk = SdkState::Unloaded;
     }
 
-    fn sdk(&mut self, workspace: &Workspace, root: &Path) -> Option<Rc<[Importable]>> {
-        if matches!(self.sdk, SdkState::Unloaded) {
-            let src = workspace
-                .builtin_source(root)
-                .ok()
-                .and_then(|file| file.parent()?.parent());
-            let identity = src.map(|src| SdkIdentity {
-                src: path_key(src),
-                version_stamp: src
-                    .parent()
-                    .and_then(|root| fs::metadata(root.join("VERSION")).ok()?.modified().ok()),
-            });
-            if self.sdk_identity != identity {
-                self.disk_names.clear();
-                self.sdk_exports.clear();
-                self.sdk_identity = identity;
+    fn sdk(
+        &mut self,
+        workspace: &Workspace,
+        root: &Path,
+        trace: Option<&Trace>,
+        indexes: &mut IndexReader<'_>,
+    ) -> Option<Rc<[Importable]>> {
+        #[cfg(test)]
+        if self.empty_sdk.is_some() && self.empty_sdk == self.generation {
+            return Some(Rc::from([]));
+        }
+        self.inventory.start(root, false);
+        let Some(catalog) = self.inventory.ready() else {
+            if self.inventory.is_loading() {
+                if let Some(trace) = trace {
+                    trace.sdk("loading", None);
+                }
+                return None;
             }
-            self.sdk = src
-                .and_then(|src| start_sdk_inventory(root, src))
-                .map_or_else(|| SdkState::Ready(Rc::from([])), SdkState::Loading);
+            return Some(Rc::from([]));
+        };
+        if let Some(root) = self.inventory.root() {
+            workspace.share_sdk_root(&root);
+            if let Some(graph_root) = workspace.sdk_root()
+                && path_key(&root) != path_key(graph_root)
+                && root.canonicalize().ok().map(|root| path_key(&root))
+                    != graph_root.canonicalize().ok().map(|root| path_key(&root))
+            {
+                if let Some(trace) = trace {
+                    trace.sdk("different graph SDK", Some(catalog.stats.clone()));
+                }
+                return Some(Rc::from([]));
+            }
         }
-        if let SdkState::Loading(receiver) = &self.sdk {
-            let entries = match receiver.try_recv() {
-                Ok(entries) => entries,
-                Err(TryRecvError::Empty) => return None,
-                Err(TryRecvError::Disconnected) => Vec::new(),
-            };
-            self.sdk = SdkState::Ready(entries.into());
+        let cached = self
+            .sdk
+            .as_ref()
+            .filter(|(old, _)| Arc::ptr_eq(old, &catalog));
+        if let Some(trace) = trace {
+            let mut stats = catalog.stats.clone();
+            stats.reused = cached.is_some();
+            trace.sdk(
+                if stats.method == "unavailable" {
+                    "unavailable"
+                } else {
+                    "ready"
+                },
+                Some(stats),
+            );
         }
-        match &self.sdk {
-            SdkState::Ready(entries) => Some(Rc::clone(entries)),
-            _ => None,
+        if let Some((_, entries)) = cached {
+            return Some(Rc::clone(entries));
         }
+        if let Some((previous, _)) = &self.sdk
+            && let Some(root) = previous.root_key()
+        {
+            indexes.disk_names.retain(|path, _| !path.starts_with(root));
+            if !previous.same_sdk(&catalog) {
+                indexes.disk_index.retain(|path, _| !path.starts_with(root));
+            }
+        }
+        indexes.disk_names.extend(
+            catalog
+                .names
+                .iter()
+                .map(|(path, names)| (path.clone(), names.clone())),
+        );
+        self.sdk_exports.clear();
+        let entries: Rc<[Importable]> = catalog
+            .packages
+            .iter()
+            .map(|package| Importable {
+                path: package.path.clone(),
+                name: package.name.clone(),
+                directory: path_key(&package.dir),
+                vendor_parent: None,
+                prefilter_disk: true,
+                project: false,
+                elide_bodies: true,
+                package_id: None,
+                files: package
+                    .files
+                    .iter()
+                    .map(|file| ImportFile::new(file))
+                    .collect(),
+            })
+            .collect();
+        self.sdk = Some((catalog, Rc::clone(&entries)));
+        Some(entries)
     }
 
     fn exports(
         &mut self,
-        parser: &mut Parser,
+        indexes: &mut IndexReader<'_>,
         file: &Path,
-        overlay: Option<&IndexedSource>,
+        key: &Path,
         entry: &Importable,
     ) -> Rc<[Export]> {
-        if let Some(overlay) = overlay {
-            return sdk_exports(overlay, entry);
+        if let Some(overlay) = indexes.documents.get(key) {
+            return sdk_exports(overlay.declarations(), entry);
         }
-        let key = path_key(file);
-        if let Some(exports) = self.sdk_exports.get(&key) {
+        if let Some(exports) = self.sdk_exports.get(key) {
             return Rc::clone(exports);
         }
-        self.sdk_exports
-            .entry(key)
-            .or_insert_with(|| {
-                let Ok(source) = read_source(parser, file) else {
-                    return Rc::from([]);
-                };
-                sdk_exports(&IndexedSource::new(source, None), entry)
-            })
-            .clone()
-    }
-
-    fn disk_file_matches(&mut self, file: &Path, matcher: &SymbolMatcher<'_>) -> bool {
-        self.disk_names
-            .entry(path_key(file))
-            .or_insert_with(|| {
-                fs::read_to_string(file).map_or_else(|_| Vec::new(), |text| exported_names(&text))
-            })
-            .iter()
-            .any(|name| matcher.match_symbol(name).is_some())
+        let Ok(index) = indexes.file_index(file) else {
+            return Rc::from([]);
+        };
+        let exports = sdk_exports(index, entry);
+        self.sdk_exports.insert(key.to_owned(), Rc::clone(&exports));
+        exports
     }
 
     pub(in crate::semantic) fn source_changed(&mut self, key: &Path) {
-        self.disk_names.remove(key);
         self.sdk_exports.remove(key);
     }
 
     #[cfg(test)]
     pub(super) fn use_empty_sdk(&mut self, generation: u64, workspace: &Workspace) {
         self.prepare(generation, workspace);
-        self.sdk = SdkState::Ready(Rc::from([]));
+        self.empty_sdk = Some(generation);
     }
 
     #[cfg(test)]
@@ -221,20 +287,26 @@ impl Importable {
             name: name.into(),
             directory: directory.to_owned(),
             vendor_parent: vendor.and_then(Path::parent).map(Path::to_owned),
-            prefilter_disk: !package.load_error
-                && workspace.contains_external_symbol_path(directory),
-            origin: Origin::Graph(package.id.clone()),
+            prefilter_disk: !package.load_error,
+            project: workspace.is_project_package(package) || vendor.is_some(),
+            elide_bodies: package.is_external() && vendor.is_none(),
+            package_id: Some(package.id.clone()),
+            files: package
+                .files
+                .iter()
+                .filter(|file| !is_test_source(file))
+                .map(|file| ImportFile::new(file))
+                .collect(),
         })
     }
 
     fn weight(&self, workspace: &Workspace, caller: Option<&Package>, weight: &mut Weight) {
-        match &self.origin {
-            Origin::Graph(id) => {
-                if let Some(package) = workspace.package(id) {
-                    package_weight(workspace, caller, package, weight);
-                }
+        if let Some(id) = &self.package_id {
+            if let Some(package) = workspace.package(id) {
+                package_weight(workspace, caller, package, weight);
             }
-            Origin::Sdk(_) => weight.vgo = 1,
+        } else {
+            weight.vgo = 1;
         }
     }
 }
@@ -264,7 +336,7 @@ pub(super) fn package_weight(
     };
 }
 
-fn valid_package(path: &str, name: &str) -> bool {
+pub(super) fn valid_package(path: &str, name: &str) -> bool {
     !matches!(name, "" | "_" | "main" | "documentation")
         && path != "builtin"
         && path.split('/').all(|part| {
@@ -360,43 +432,72 @@ pub(super) struct Search {
     sdk_prepared: bool,
     seen_paths: HashSet<String>,
     queue: VecDeque<Importable>,
-    current: Option<Job>,
+    jobs: Vec<Job>,
+    files: VecDeque<FileWork>,
+    scans: Vec<Input>,
+    pending: Option<Batch>,
+    prefilter_time: Option<Phase>,
+    waiting_sdk: bool,
+    waiting_scanner: bool,
+    checked_shadows: HashMap<String, bool>,
+}
+
+struct FileWork {
+    job: usize,
+    index: usize,
+    skip: bool,
 }
 
 struct Job {
     entry: Importable,
-    files: VecDeque<PathBuf>,
+    files: Rc<[ImportFile]>,
+    next_file: usize,
     names: HashSet<String>,
     binding: Binding,
     weight: Weight,
 }
 
-struct SymbolMatcher<'a> {
-    prefix: &'a str,
-    qualified_prefix: Option<&'a str>,
+pub(super) struct SymbolMatcher<'a> {
+    prefix: Cow<'a, str>,
+    qualified_prefix: Option<Cow<'a, str>>,
     allow_substring: bool,
     qualified_member: bool,
+    pub(super) types_only: bool,
 }
 
 impl SymbolMatcher<'_> {
-    fn match_symbol(&self, name: &str) -> Option<Match> {
+    pub(super) fn match_symbol(&self, name: &str) -> Option<Match> {
+        let prefix = self.prefix.as_ref();
         if self.allow_substring {
-            return match_name(self.prefix, name);
+            return match_name(prefix, name);
         }
         if self.qualified_member {
-            return match_member_hump(self.prefix, name);
+            return match_member_hump(prefix, name);
         }
-        let member = match_start(self.prefix, name);
-        let qualified = self.qualified_prefix.and_then(|qualifier| {
-            if qualifier.starts_with(self.prefix) {
+        let member = match_start(prefix, name);
+        let qualified = self.qualified_prefix.as_deref().and_then(|qualifier| {
+            if qualifier.starts_with(prefix) {
                 Some(Match::Prefix)
             } else {
-                match_start(self.prefix, &format!("{qualifier}.{name}"))
+                match_start(prefix, &format!("{qualifier}.{name}"))
             }
         });
         match (member, qualified) {
             (Some(a), Some(b)) => Some(a.min(b)),
             _ => member.or(qualified),
+        }
+    }
+
+    fn owned(&self) -> SymbolMatcher<'static> {
+        SymbolMatcher {
+            prefix: Cow::Owned(self.prefix.to_string()),
+            qualified_prefix: self
+                .qualified_prefix
+                .as_ref()
+                .map(|qualifier| Cow::Owned(qualifier.to_string())),
+            allow_substring: self.allow_substring,
+            qualified_member: self.qualified_member,
+            types_only: self.types_only,
         }
     }
 }
@@ -428,8 +529,21 @@ impl Search {
             sdk_prepared: false,
             seen_paths: HashSet::new(),
             queue: VecDeque::new(),
-            current: None,
+            jobs: Vec::new(),
+            files: VecDeque::new(),
+            scans: Vec::new(),
+            pending: None,
+            prefilter_time: None,
+            waiting_sdk: false,
+            waiting_scanner: false,
+            checked_shadows: HashMap::new(),
         }
+    }
+
+    pub(super) fn is_ready(&self, cache: &ImportCache) -> bool {
+        self.pending.as_ref().is_none_or(Batch::is_ready)
+            && (!self.waiting_sdk || !cache.inventory.is_loading())
+            && (!self.waiting_scanner || !cache.scanner.busy())
     }
 
     pub(super) fn advance(
@@ -441,167 +555,336 @@ impl Search {
         prefix: &str,
         candidates: &mut Vec<Candidate>,
         caps: &CompletionClientCapabilities,
+        request: &mut CompletionRead,
     ) -> Result<bool> {
         let workspace = snapshot
             .workspace()
             .expect("import search requires an active graph");
         let caller = self.caller.as_deref().and_then(|id| workspace.package(id));
-        cache.prepare(generation, workspace);
-        if !self.graph_prepared {
-            self.enqueue(&cache.graph, caller, document);
-            self.graph_prepared = true;
-        }
-        if !self.sdk_prepared
-            && let Some(sdk) = cache.sdk(workspace, snapshot.root())
+        let root = snapshot.root();
+        let mut resolver = snapshot.resolver_with_completion(workspace, Some(request));
         {
-            self.enqueue(&sdk, caller, document);
-            self.sdk_prepared = true;
+            let trace = resolver.indexes.trace().cloned();
+            let _phase = trace.as_ref().map(|trace| trace.phase("import_catalog"));
+            cache.prepare(generation, workspace);
+            if !self.graph_prepared {
+                self.enqueue(&cache.graph, caller, document);
+                self.graph_prepared = true;
+            }
+            if !self.sdk_prepared
+                && let Some(sdk) = cache.sdk(workspace, root, trace.as_ref(), &mut resolver.indexes)
+            {
+                self.enqueue(&sdk, caller, document);
+                self.sdk_prepared = true;
+            }
         }
-        let docs = snapshot.docs();
-        let mut resolver = snapshot.resolver(workspace);
-        for _ in 0..BATCH_SIZE {
-            if let Some(job) = &mut self.current {
-                if let Some(file) = job.files.pop_front() {
-                    match &job.entry.origin {
-                        Origin::Graph(id) => {
-                            let Some((caller, target)) = caller.zip(workspace.package(id)) else {
-                                continue;
-                            };
-                            if let SearchKind::Symbols(query) = &self.kind {
-                                let matcher = query.matcher(&job.binding, prefix);
-                                // Keep the recovering parser for mutable project
-                                // files and open buffers, including broken drafts.
-                                if job.entry.prefilter_disk
-                                    && !docs.contains_key(&path_key(&file))
-                                    && !cache.disk_file_matches(&file, &matcher)
-                                {
-                                    continue;
-                                }
-                                let symbols = resolver
-                                    .indexes
-                                    .file_index(&file)
-                                    .ok()
-                                    .into_iter()
-                                    .flat_map(|index| index.symbols.declarations())
-                                    .filter(|(name, symbol)| {
-                                        is_exported(name) && allows_symbol(query, &symbol.kind)
-                                    })
-                                    .filter_map(|(name, symbol)| {
-                                        Some((
-                                            name.to_owned(),
-                                            symbol.clone(),
-                                            matcher.match_symbol(name)?,
-                                        ))
-                                    })
-                                    .collect::<Vec<_>>();
-                                for (name, symbol, matched) in symbols {
-                                    if !job.names.insert(name.clone())
-                                        || matches!(job.binding, Binding::Dot)
-                                            && query.shadows_dot_name(&name)
-                                    {
-                                        continue;
-                                    }
-                                    let resolved = ResolvedSymbol {
-                                        package: target,
-                                        file: file.clone(),
-                                        symbol,
-                                        receiver: None,
-                                        method_receiver: None,
-                                    };
-                                    let candidate = resolved_candidate(
-                                        &mut resolver,
-                                        caller,
-                                        document.indexed(),
-                                        &name,
-                                        &resolved,
-                                        matched,
-                                        query.expected.as_ref(),
-                                        query.literal,
-                                        caps,
-                                    )?;
-                                    candidates.push(job.decorate(query, prefix, candidate));
-                                }
-                            }
-                        }
-                        Origin::Sdk(_) => {
-                            if let SearchKind::Symbols(query) = &self.kind {
-                                let matcher = query.matcher(&job.binding, prefix);
-                                let source = docs.get(&path_key(&file));
-                                if source.is_none() && !cache.disk_file_matches(&file, &matcher) {
-                                    continue;
-                                }
-                                let exports = cache.exports(
-                                    resolver.indexes.parser,
-                                    &file,
-                                    source,
-                                    &job.entry,
-                                );
-                                for export in exports.iter() {
-                                    if !export.allowed(query)
-                                        || matches!(job.binding, Binding::Dot)
-                                            && query.shadows_dot_name(&export.name)
-                                    {
-                                        continue;
-                                    }
-                                    let Some(matched) = matcher.match_symbol(&export.name) else {
-                                        continue;
-                                    };
-                                    if job.names.insert(export.name.clone()) {
-                                        candidates.push(job.decorate(
-                                            query,
-                                            prefix,
-                                            export.candidate(&file, query, matched),
-                                        ));
-                                    }
-                                }
-                            }
+        if let SearchKind::Path { close } = self.kind {
+            for _ in 0..BATCH_SIZE {
+                let Some(entry) = self.queue.pop_front() else {
+                    break;
+                };
+                let mut weight = Weight::default();
+                entry.weight(workspace, caller, &mut weight);
+                candidates.extend(path_candidate(&entry, caller, prefix, close, weight));
+            }
+            self.waiting_sdk = self.queue.is_empty() && !self.sdk_prepared;
+            return Ok(self.queue.is_empty() && self.sdk_prepared);
+        }
+        if self.files.is_empty() {
+            debug_assert!(self.pending.is_none());
+            let _phase = resolver
+                .indexes
+                .trace()
+                .map(|trace| trace.phase("plan_batch"));
+            self.plan_batch(
+                cache,
+                &mut resolver,
+                caller,
+                is_test_source(document.path()),
+                prefix,
+            )?;
+            if self.files.is_empty() {
+                self.waiting_sdk = !self.sdk_prepared;
+                return Ok(self.sdk_prepared);
+            }
+        }
+        self.waiting_sdk = false;
+        if !self.scans.is_empty() {
+            self.waiting_scanner = cache.scanner.busy();
+            if self.waiting_scanner {
+                return Ok(false);
+            }
+            self.prefilter_time = resolver
+                .indexes
+                .trace()
+                .map(|trace| trace.phase("prefilter_batch"));
+            self.pending = cache.scanner.submit(std::mem::take(&mut self.scans));
+        }
+        if let Some(batch) = &self.pending {
+            if !batch.is_ready() {
+                return Ok(false);
+            }
+            self.prefilter_time.take();
+            for result in batch.results() {
+                if let Some(trace) = resolver.indexes.trace()
+                    && result.read
+                {
+                    trace.read(&result.key, true, result.project, false);
+                }
+                if let Some(names) = result.names {
+                    resolver
+                        .indexes
+                        .disk_names
+                        .insert(result.key.clone(), names);
+                }
+                match result.decision {
+                    Decision::Text(text) => {
+                        resolver
+                            .indexes
+                            .completion
+                            .as_mut()
+                            .unwrap()
+                            .prefetched
+                            .insert(result.key, text);
+                    }
+                    Decision::Skip => {
+                        for file in &mut self.files {
+                            file.skip |= self.jobs[file.job].files[file.index].key == result.key;
                         }
                     }
+                    Decision::Deferred => {}
+                }
+            }
+        }
+        while let Some(file) = self.files.pop_front() {
+            if !file.skip {
+                self.consume_file(
+                    cache,
+                    &mut resolver,
+                    document,
+                    caller,
+                    prefix,
+                    candidates,
+                    caps,
+                    &file,
+                )?;
+                // The LSP loop can handle a cancellation before the next file.
+                break;
+            }
+        }
+        if self.files.is_empty() {
+            resolver
+                .indexes
+                .completion
+                .as_mut()
+                .unwrap()
+                .prefetched
+                .clear();
+            self.pending.take();
+        }
+        Ok(false)
+    }
+
+    fn plan_batch<'w>(
+        &mut self,
+        cache: &ImportCache,
+        resolver: &mut Resolver<'w, '_>,
+        caller: Option<&'w Package>,
+        include_tests: bool,
+        prefix: &str,
+    ) -> Result<()> {
+        let SearchKind::Symbols(query) = &self.kind else {
+            unreachable!();
+        };
+        let mut scanning = HashSet::new();
+        while self.files.len() < BATCH_SIZE {
+            let Some(job) = self
+                .jobs
+                .last_mut()
+                .filter(|job| job.next_file < job.files.len())
+            else {
+                let Some(entry) = self.queue.pop_front() else {
+                    break;
+                };
+                let binding = query.binding(&entry, |name| {
+                    if query.declared.contains(name) {
+                        return Ok(true);
+                    }
+                    let Some(caller) =
+                        caller.filter(|_| query.skipped_package_names.contains(name))
+                    else {
+                        return Ok(false);
+                    };
+                    if let Some(&shadowed) = self.checked_shadows.get(name) {
+                        return Ok(shadowed);
+                    }
+                    // A skipped declaration only matters when its name
+                    // would be used as an import qualifier. Verify it here.
+                    let shadowed = resolver
+                        .find_symbol(caller, name, None)?
+                        .is_some_and(|decl| include_tests || !is_test_source(&decl.file));
+                    self.checked_shadows.insert(name.to_owned(), shadowed);
+                    Ok(shadowed)
+                })?;
+                let Some(binding) = binding else {
+                    continue;
+                };
+                if entry.package_id.is_some() && caller.is_none() {
                     continue;
                 }
-                self.current = None;
-            }
-            let Some(entry) = self.queue.pop_front() else {
-                if !self.sdk_prepared {
-                    // Leave the request in the scheduler while go list
-                    // runs. A short yield also avoids polling at full CPU.
-                    thread::sleep(Duration::from_millis(2));
-                }
-                return Ok(self.sdk_prepared);
+                let files = entry
+                    .package_id
+                    .as_deref()
+                    .and_then(|id| resolver.workspace.package(id))
+                    .and_then(|package| resolver.indexes.drafts.get(&package.directory_and_name()))
+                    .map_or_else(
+                        || Rc::clone(&entry.files),
+                        |drafts| {
+                            entry
+                                .files
+                                .iter()
+                                .cloned()
+                                .chain(
+                                    drafts
+                                        .iter()
+                                        .filter(|file| !is_test_source(file))
+                                        .map(|file| ImportFile::new(file)),
+                                )
+                                .collect()
+                        },
+                    );
+                let mut weight = Weight::default();
+                entry.weight(resolver.workspace, caller, &mut weight);
+                self.jobs.push(Job {
+                    entry,
+                    binding,
+                    weight,
+                    files,
+                    next_file: 0,
+                    names: HashSet::new(),
+                });
+                continue;
             };
-            let mut weight = Weight::default();
-            entry.weight(workspace, caller, &mut weight);
-            match &self.kind {
-                SearchKind::Path { close } => {
-                    if let Some(candidate) = path_candidate(&entry, caller, prefix, *close, weight)
-                    {
-                        candidates.push(candidate);
-                    }
-                }
-                SearchKind::Symbols(query) => {
-                    let Some(binding) = query.binding(&entry) else {
-                        continue;
-                    };
-                    let files = match &entry.origin {
-                        Origin::Graph(id) => workspace
-                            .package(id)
-                            .into_iter()
-                            .flat_map(|target| resolver.indexes.files(target).into_owned())
-                            .filter(|file| !is_test_source(file))
-                            .collect(),
-                        Origin::Sdk(files) => files.iter().cloned().collect(),
-                    };
-                    self.current = Some(Job {
-                        entry,
-                        binding,
-                        weight,
-                        files,
-                        names: HashSet::new(),
+            let index = job.next_file;
+            job.next_file += 1;
+            let ImportFile { path, key } = &job.files[index];
+            let mut skip = false;
+            if job.entry.prefilter_disk && !resolver.indexes.documents.contains_key(key) {
+                let matcher = query.matcher(&job.binding, prefix);
+                if let Some(names) = resolver.indexes.disk_names.get(key) {
+                    skip = !names.matches(&matcher);
+                } else if !resolver.indexes.disk_index.contains_key(key)
+                    && !cache.sdk_exports.contains_key(key)
+                    && scanning.insert(key.clone())
+                {
+                    self.scans.push(Input {
+                        key: key.clone(),
+                        path: path.clone(),
+                        project: job.entry.project,
+                        elide_bodies: job.entry.elide_bodies,
+                        matcher: matcher.owned(),
                     });
                 }
             }
+            self.files.push_back(FileWork {
+                job: self.jobs.len() - 1,
+                index,
+                skip,
+            });
         }
-        Ok(false)
+        Ok(())
+    }
+
+    fn consume_file<'w>(
+        &mut self,
+        cache: &mut ImportCache,
+        resolver: &mut Resolver<'w, '_>,
+        document: &DocumentSnapshot<'_>,
+        caller: Option<&'w Package>,
+        prefix: &str,
+        candidates: &mut Vec<Candidate>,
+        caps: &CompletionClientCapabilities,
+        file: &FileWork,
+    ) -> Result<()> {
+        let SearchKind::Symbols(query) = &self.kind else {
+            unreachable!();
+        };
+        let job = &mut self.jobs[file.job];
+        let file = &job.files[file.index];
+        let matcher = query.matcher(&job.binding, prefix);
+        match &job.entry.package_id {
+            Some(id) => {
+                let Some((caller, target)) = caller.zip(resolver.workspace.package(id)) else {
+                    return Ok(());
+                };
+                let symbols = resolver
+                    .indexes
+                    .file_index(&file.path)
+                    .ok()
+                    .into_iter()
+                    .flat_map(|index| index.symbols.declarations())
+                    .filter(|(name, symbol)| {
+                        is_exported(name) && allows_symbol(query, &symbol.kind)
+                    })
+                    .filter_map(|(name, symbol)| {
+                        Some((name.to_owned(), symbol.clone(), matcher.match_symbol(name)?))
+                    })
+                    .collect::<Vec<_>>();
+                let _phase = resolver
+                    .indexes
+                    .trace()
+                    .map(|trace| trace.phase("candidate_expansion"));
+                for (name, symbol, matched) in symbols {
+                    if !job.names.insert(name.clone())
+                        || matches!(job.binding, Binding::Dot) && query.shadows_dot_name(&name)
+                    {
+                        continue;
+                    }
+                    let resolved = ResolvedSymbol {
+                        package: target,
+                        file: file.path.clone(),
+                        symbol,
+                        receiver: None,
+                        method_receiver: None,
+                    };
+                    let candidate = resolved_candidate(
+                        resolver,
+                        caller,
+                        document.indexed(),
+                        &name,
+                        &resolved,
+                        matched,
+                        query.expected.as_ref(),
+                        query.literal,
+                        caps,
+                    )?;
+                    candidates.push(job.decorate(query, prefix, candidate));
+                }
+            }
+            None => {
+                let exports =
+                    cache.exports(&mut resolver.indexes, &file.path, &file.key, &job.entry);
+                for export in exports.iter() {
+                    if !export.allowed(query)
+                        || matches!(job.binding, Binding::Dot)
+                            && query.shadows_dot_name(&export.name)
+                    {
+                        continue;
+                    }
+                    let Some(matched) = matcher.match_symbol(&export.name) else {
+                        continue;
+                    };
+                    if job.names.insert(export.name.clone()) {
+                        candidates.push(job.decorate(
+                            query,
+                            prefix,
+                            export.candidate(&file.path, query, matched),
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn enqueue(
@@ -659,14 +942,15 @@ impl SymbolSearch {
                     .is_some_and(|(left, right)| left.to_lowercase().eq(right.to_lowercase()))
         });
         SymbolMatcher {
-            prefix,
-            qualified_prefix,
+            prefix: Cow::Borrowed(prefix),
+            qualified_prefix: qualified_prefix.map(Cow::Borrowed),
             allow_substring: matches!(binding, Binding::Dot)
                 || matches!(
                     (&self.selection, binding),
                     (Selection::Qualifier { .. }, Binding::Existing(_))
                 ),
             qualified_member: matches!(self.selection, Selection::Qualifier { .. }),
+            types_only: self.types_only || self.address_of,
         }
     }
 
@@ -698,46 +982,51 @@ impl SymbolSearch {
         }
     }
 
-    fn binding(&self, entry: &Importable) -> Option<Binding> {
+    fn binding(
+        &self,
+        entry: &Importable,
+        mut is_declared: impl FnMut(&str) -> Result<bool>,
+    ) -> Result<Option<Binding>> {
         let imports = || {
             self.imports
                 .iter()
                 .filter(|import| import.path == entry.path)
         };
         if let Some(dot) = imports().find(|import| import.qualifier == ".") {
-            return (matches!(self.selection, Selection::Name { .. }) && !dot.in_graph)
-                .then_some(Binding::Dot);
+            return Ok(
+                (matches!(self.selection, Selection::Name { .. }) && !dot.in_graph)
+                    .then_some(Binding::Dot),
+            );
         }
         if let Some(import) = imports().find(|import| import.qualifier != "_") {
-            if self.declared.contains(&import.qualifier) {
-                return None;
+            if is_declared(&import.qualifier)? {
+                return Ok(None);
             }
-            return Some(Binding::Existing(import.qualifier.clone()));
+            return Ok(Some(Binding::Existing(import.qualifier.clone())));
         }
-        let clean = |qualifier: &str| {
-            !self.declared.contains(qualifier)
+        let mut clean = |qualifier: &str| -> Result<bool> {
+            Ok(qualifier != "init"
                 && self
                     .imports
                     .iter()
                     .all(|import| import.qualifier != qualifier)
-                && qualifier != "init"
+                && !is_declared(qualifier)?)
         };
-        let qualifier = if clean(&entry.name) {
-            entry.name.clone()
-        } else {
-            (2..)
-                .map(|suffix| format!("{}{suffix}", entry.name))
-                .find(|name| clean(name))?
-        };
+        let mut qualifier = entry.name.clone();
+        let mut suffix = 2;
+        while !clean(&qualifier)? {
+            qualifier = format!("{}{suffix}", entry.name);
+            suffix += 1;
+        }
         let alias = (qualifier != entry.name || qualifier != assumed_package_name(&entry.path))
             .then(|| qualifier.clone());
-        Some(Binding::New {
+        Ok(Some(Binding::New {
             qualifier,
             import: PendingImport {
                 path: entry.path.clone(),
                 alias,
             },
-        })
+        }))
     }
 }
 
@@ -822,79 +1111,6 @@ fn path_candidate(
     Some(candidate)
 }
 
-fn start_sdk_inventory(root: &Path, src: &Path) -> Option<Receiver<Vec<Importable>>> {
-    let src = src.to_owned();
-    let root = root.to_owned();
-    let (sender, receiver) = mpsc::channel();
-    thread::Builder::new()
-        .name("go-completion-sdk".into())
-        .spawn(move || {
-            let _ = sender.send(sdk_inventory(&root, &src).unwrap_or_default());
-        })
-        .ok()?;
-    Some(receiver)
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default, rename_all = "PascalCase")]
-struct SdkPackage {
-    dir: PathBuf,
-    import_path: String,
-    name: String,
-    go_files: Vec<PathBuf>,
-    cgo_files: Vec<PathBuf>,
-}
-
-fn sdk_inventory(root: &Path, src: &Path) -> Result<Vec<Importable>> {
-    // Use the Go command's build view for SDK metadata. It can select the
-    // right GOOS/GOARCH, cgo and tagged files without parsing declarations.
-    let output = Command::new("go")
-        .args([
-            "list",
-            "-e",
-            "-json=Dir,ImportPath,Name,GoFiles,CgoFiles",
-            "std",
-        ])
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .output()?;
-    if !output.status.success() {
-        return Ok(Vec::new());
-    }
-    let src = path_key(src);
-    let entries = serde_json::Deserializer::from_slice(&output.stdout).into_iter::<SdkPackage>();
-    let mut packages = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        let directory = path_key(&entry.dir);
-        if !directory.starts_with(&src)
-            || entry.import_path == "cmd"
-            || entry.import_path.starts_with("cmd/")
-            || !valid_package(&entry.import_path, &entry.name)
-        {
-            continue;
-        }
-        let files = entry
-            .go_files
-            .into_iter()
-            .chain(entry.cgo_files)
-            .filter(|path| is_symbol_source(path) && !is_test_source(path))
-            .map(|file| entry.dir.join(file))
-            .collect::<Vec<_>>();
-        if !files.is_empty() {
-            packages.push(Importable {
-                path: entry.import_path,
-                name: entry.name,
-                directory,
-                origin: Origin::Sdk(files),
-                vendor_parent: None,
-                prefilter_disk: true,
-            });
-        }
-    }
-    Ok(packages)
-}
-
 struct Export {
     name: String,
     range: Range,
@@ -931,11 +1147,11 @@ impl Export {
     }
 }
 
-fn sdk_exports(source: &IndexedSource, entry: &Importable) -> Rc<[Export]> {
-    if package_name(source) != Some(entry.name.as_str()) {
+fn sdk_exports(index: &FileIndex, entry: &Importable) -> Rc<[Export]> {
+    if index.package_name.as_deref() != Some(entry.name.as_str()) {
         return Rc::from([]);
     }
-    let declarations = &source.declarations().symbols;
+    let declarations = &index.symbols;
     declarations.declarations().filter(|(name, _)| is_exported(name)).map(|(name, symbol)| {
         let mut braces = false;
         let mut value = None;
@@ -953,17 +1169,17 @@ fn sdk_exports(source: &IndexedSource, entry: &Importable) -> Rc<[Export]> {
             }
             SymbolKind::Function(signature) => {
                 if let [Some(ty)] = signature.results.as_ref() {
-                    value = sdk_type_key(source, &entry.path, ty);
+                    value = sdk_type_key(index, &entry.path, ty);
                 }
                 Kind::FUNCTION
             }
             SymbolKind::Value(Some(ty)) => {
-                value = sdk_type_key(source, &entry.path, ty);
+                value = sdk_type_key(index, &entry.path, ty);
                 Kind::VARIABLE
             }
             _ => Kind::VARIABLE,
         };
-        let description = describe(source, symbol.range, name, kind, true);
+        let description = index.presentation[&symbol.range].clone().with_kind(kind, true);
         let parameters = matches!(symbol.kind, SymbolKind::Function(_)).then_some(description.has_parameters);
         Export {
             name: name.to_owned(), range: symbol.range, is_type: matches!(symbol.kind, SymbolKind::Type),
@@ -972,12 +1188,12 @@ fn sdk_exports(source: &IndexedSource, entry: &Importable) -> Rc<[Export]> {
     }).collect()
 }
 
-fn sdk_type_key(source: &Source, package: &str, ty: &TypeRef) -> Option<String> {
-    let child = |ty| sdk_type_key(source, package, ty);
+fn sdk_type_key(index: &FileIndex, package: &str, ty: &TypeRef) -> Option<String> {
+    let child = |ty| sdk_type_key(index, package, ty);
     let key = match &ty.kind {
         TypeRefKind::Named(named) => {
             let owner = if let Some(qualifier) = &named.qualifier {
-                &source
+                &index
                     .imports
                     .iter()
                     .find(|import| {

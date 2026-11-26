@@ -20,7 +20,7 @@ use crate::protocol::{
 };
 use crate::scheduler::{DeferredQuery, RequestProgress, Scheduler, SearchTask};
 use crate::semantic::completion::{
-    CompletionClientCapabilities, ResolveCompletionResult, StaleCompletion,
+    CompletionClientCapabilities, ResolveCompletionResult, StaleCompletion, Trace,
 };
 use crate::semantic::{DefinitionKind, Engine, QueryProgress, SemanticTask};
 
@@ -218,9 +218,18 @@ struct EncodedTask<T, Task> {
 }
 
 impl<T, Task: SemanticTask<T>> SearchTask for EncodedTask<T, Task> {
+    fn ready(&self, engine: &Engine) -> bool {
+        self.task.ready(engine)
+    }
+
+    fn discard(&mut self, code: ErrorCode) {
+        self.task.discard(code);
+    }
+
     fn advance(&mut self, engine: &mut Engine) -> Result<bool> {
         match self.task.advance(engine) {
             Err(error) if error.is::<StaleCompletion>() => {
+                self.task.discard(ErrorCode::ContentModified);
                 self.stale = true;
                 Ok(true)
             }
@@ -369,31 +378,70 @@ fn workspace_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Va
 }
 
 fn completion(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
-    let caps = context.completion_capabilities;
-    let params = (|| {
+    let query = (|| {
         let params: CompletionParams = serde_json::from_value(params)?;
         let document = params.text_document_position;
-        Ok((
-            file_path(&document.text_document.uri)?,
-            (document.position, params.context, caps),
-        ))
+        let path = file_path(&document.text_document.uri)?;
+        Ok(CompletionQuery {
+            trace: Trace::start(&path, document.position),
+            path,
+            position: document.position,
+            caps: context.completion_capabilities,
+        })
     })();
-    context.document_query(
-        id,
-        params,
-        |engine, path, (position, context, caps)| {
-            Ok(adapt(
-                engine.complete(path, *position, context.clone(), caps)?,
-                serialize_query,
-            ))
-        },
-        Some(|engine, path, (position, _, caps)| {
-            engine
-                .complete_after_load_failure(path, *position, caps)
-                .map_err(internal_error)
-                .and_then(serialize_query)
-        }),
-    )
+    match query {
+        Ok(query) => context
+            .scheduler
+            .submit(context.engine, context.connection, id, query),
+        Err(error) => context.respond(id, Err(invalid_params(error))),
+    }
+}
+
+struct CompletionQuery {
+    path: PathBuf,
+    position: Position,
+    caps: CompletionClientCapabilities,
+    trace: Option<Trace>,
+}
+
+impl DeferredQuery for CompletionQuery {
+    fn document_path(&self) -> Option<&Path> {
+        Some(&self.path)
+    }
+
+    fn run(&self, engine: &mut Engine) -> Result<RequestProgress> {
+        let result =
+            engine.complete_traced(&self.path, self.position, &self.caps, self.trace.as_ref());
+        if result.is_err()
+            && let Some(trace) = &self.trace
+        {
+            trace.outcome("failed");
+        }
+        Ok(adapt(result?, serialize_query))
+    }
+
+    fn load_failed(&self, engine: &mut Engine, _message: &str) -> RequestResult {
+        let result = engine.complete_after_load_failure(
+            &self.path,
+            self.position,
+            &self.caps,
+            self.trace.as_ref(),
+        );
+        if let Some(trace) = &self.trace {
+            trace.outcome(if result.is_ok() {
+                "completed with local syntax"
+            } else {
+                "failed"
+            });
+        }
+        result.map_err(internal_error).and_then(serialize_query)
+    }
+
+    fn discard(&mut self, code: ErrorCode) {
+        if let Some(trace) = &self.trace {
+            trace.error(code);
+        }
+    }
 }
 
 fn resolve_completion(

@@ -36,6 +36,7 @@ pub struct Workspace {
     file_packages: HashMap<PathBuf, String>,
     importers: HashMap<String, Vec<String>>,
     includes_tests: bool,
+    sdk_root: OnceCell<PathBuf>,
     builtin_source: OnceCell<Result<PathBuf, String>>,
 }
 
@@ -111,6 +112,7 @@ impl Workspace {
         let PackageListing {
             packages,
             importers,
+            sdk_root,
         } = listing;
         let mut file_packages = HashMap::new();
         // Ordinary files belong to their normal package, even when the Go
@@ -134,6 +136,7 @@ impl Workspace {
             file_packages,
             importers,
             includes_tests,
+            sdk_root: sdk_root.map_or_else(OnceCell::new, OnceCell::from),
             builtin_source: OnceCell::new(),
         }
     }
@@ -153,10 +156,24 @@ impl Workspace {
 
     pub(crate) fn builtin_source(&self, root: &Path) -> Result<&Path> {
         self.builtin_source
-            .get_or_init(|| find_builtin_source(root).map_err(|error| format!("{error:#}")))
+            .get_or_init(|| {
+                if let Some(sdk) = self.sdk_root() {
+                    Ok(sdk.join("src").join("builtin").join("builtin.go"))
+                } else {
+                    find_builtin_source(root).map_err(|error| format!("{error:#}"))
+                }
+            })
             .as_ref()
             .map(PathBuf::as_path)
             .map_err(|error| anyhow!("{error}"))
+    }
+
+    pub(crate) fn sdk_root(&self) -> Option<&Path> {
+        self.sdk_root.get().map(PathBuf::as_path)
+    }
+
+    pub(crate) fn share_sdk_root(&self, root: &Path) {
+        let _ = self.sdk_root.set(root.to_owned());
     }
 
     pub fn includes_tests(&self) -> bool {
@@ -285,6 +302,10 @@ impl Package {
         self.standard
     }
 
+    pub(crate) fn is_external(&self) -> bool {
+        self.external
+    }
+
     pub(crate) fn module_path(&self) -> Option<&str> {
         self.module_path.as_deref()
     }
@@ -360,6 +381,7 @@ impl ListedModule {
 struct PackageListing {
     packages: BTreeMap<String, Package>,
     importers: HashMap<String, Vec<String>>,
+    sdk_root: Option<PathBuf>,
 }
 
 fn read_packages(reader: impl Read) -> Result<PackageListing> {
@@ -367,6 +389,19 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
     let stream = serde_json::Deserializer::from_reader(reader).into_iter::<ListedPackage>();
     for package in stream {
         let package = package.context("decoding go list package metadata")?;
+        if package.goroot && listing.sdk_root.is_none() {
+            let import = package.import_path.split(" [").next().unwrap_or_default();
+            let relative = Path::new(import);
+            if !import.is_empty() && package.dir.is_absolute() && package.dir.ends_with(relative) {
+                listing.sdk_root = package
+                    .dir
+                    .ancestors()
+                    .nth(relative.components().count())
+                    .filter(|src| src.file_name().is_some_and(|name| name == "src"))
+                    .and_then(Path::parent)
+                    .map(Path::to_owned);
+            }
+        }
         let load_error = package.error.is_some();
         if package.dir.as_os_str().is_empty()
             || package.import_path.is_empty()

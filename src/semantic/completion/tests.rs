@@ -284,7 +284,7 @@ fn classifies_incomplete_imports_types_struct_literals_and_qualified_types() {
         let (_, position) = open(&mut engine, &path, text, 1);
         let mut snapshot = engine.snapshot();
         let document = snapshot.document(&path).unwrap().unwrap();
-        let probe = Probe::new(&document, snapshot.parser(), position)
+        let probe = Probe::new(&document, snapshot.parser(), position, None)
             .unwrap()
             .unwrap();
         let source = probe.source(&document);
@@ -1501,8 +1501,14 @@ fn sdk_inventory_loads_only_the_qualified_packages_and_reuses_exported_symbols()
 }
 
 #[test]
+fn native_inventory_selects_the_same_sdk_packages_and_files_as_go_list() {
+    let project = TestProject::new();
+    super::sdk::compare_current_sdk(&project.root).unwrap();
+}
+
+#[test]
 fn lightweight_sdk_names_cover_go_declaration_groups_and_skip_nested_syntax() {
-    let names = super::sdk_names::exported_names(concat!(
+    let names = super::sdk_names::scan_names(concat!(
         "\u{feff}package sdk\n",
         "// func Comment()\n/* var Hidden int */\n",
         "func Exported[T any](value T) {}\nfunc (t T) Method() {}\n",
@@ -1511,7 +1517,9 @@ fn lightweight_sdk_names_cover_go_declaration_groups_and_skip_nested_syntax() {
         "const ( A = '\\''; B = \"var String int\" )\n",
         "type ( Named struct { Field int }; Alias = int )\n",
         "type Étage int\n",
-    ));
+    ))
+    .unwrap()
+    .exported;
     assert_eq!(
         names,
         [
@@ -1527,6 +1535,416 @@ fn lightweight_sdk_names_cover_go_declaration_groups_and_skip_nested_syntax() {
             "Étage"
         ]
     );
+}
+
+#[test]
+fn closed_workspace_and_vendor_name_indexes_follow_overlay_disk_and_graph_changes() {
+    let (project, mut engine, caller) = engine();
+    let local = project.write("lib/lib.go", "package lib\nvar (Unrelated = 1)\n");
+    let vendor = project.write(
+        "vendor/example.test/v/v.go",
+        "package v\ntype (Unrelated int)\n",
+    );
+    let packages = [
+        pkg(
+            &project.root,
+            "example.test/sample",
+            "sample",
+            &["sample.go"],
+        ),
+        pkg(
+            local.parent().unwrap(),
+            "example.test/sample/lib",
+            "lib",
+            &["lib.go"],
+        ),
+        pkg(vendor.parent().unwrap(), "example.test/v", "v", &["v.go"]),
+    ];
+    install(&mut engine, listing(&project, &packages, false), false);
+    let (_, position) = open(&mut engine, &caller, "package sample\nvar _ = Éta¦\n", 1);
+    let caps = CompletionClientCapabilities::default();
+    let local_key = path_key(&local);
+    let vendor_key = path_key(&vendor);
+    assert_labels(
+        &items(&mut engine, &caller, position, &caps),
+        &[],
+        &["Étage"],
+    );
+    for key in [&local_key, &vendor_key] {
+        assert!(engine.state.completion_names.contains_key(key));
+        assert!(!engine.state.disk_index.contains_key(key));
+    }
+
+    engine
+        .open(
+            vendor.clone(),
+            "package v\nvar (lower, ÉtageOverlay = 1, 2)\n".into(),
+            1,
+        )
+        .unwrap();
+    assert_labels(
+        &items(&mut engine, &caller, position, &caps),
+        &["ÉtageOverlay"],
+        &["ÉtageDisk"],
+    );
+    assert!(!engine.state.disk_index.contains_key(&vendor_key));
+    std::fs::write(&vendor, "package v\ntype (ÉtageDisk int)\n").unwrap();
+    engine.close(&vendor);
+    assert!(!engine.state.completion_names.contains_key(&vendor_key));
+    assert_labels(
+        &items(&mut engine, &caller, position, &caps),
+        &["ÉtageDisk"],
+        &["ÉtageOverlay"],
+    );
+
+    std::fs::write(&local, "package lib\nvar (lower, ÉtageSaved = 1, 2)\n").unwrap();
+    engine.file_changed(&local, lsp_types::FileChangeType::CHANGED);
+    assert!(!engine.state.completion_names.contains_key(&local_key));
+    install(&mut engine, listing(&project, &packages, false), false);
+    assert_labels(
+        &items(&mut engine, &caller, position, &caps),
+        &["ÉtageSaved", "ÉtageDisk"],
+        &[],
+    );
+
+    engine.file_changed(&vendor, lsp_types::FileChangeType::DELETED);
+    install(&mut engine, listing(&project, &packages[..2], false), false);
+    assert!(!engine.state.completion_names.contains_key(&vendor_key));
+    assert_labels(
+        &items(&mut engine, &caller, position, &caps),
+        &["ÉtageSaved"],
+        &["ÉtageDisk"],
+    );
+}
+
+#[test]
+fn a_nonmatching_closed_sibling_still_shadows_an_auto_import_qualifier() {
+    let (project, mut engine, caller) = engine();
+    project.write("sibling.go", "package sample\nvar helper int\n");
+    let helper = project.write("helper/lib.go", "package helper\nfunc Magic() {}\n");
+    install(
+        &mut engine,
+        listing(
+            &project,
+            &[
+                pkg(
+                    &project.root,
+                    "example.test/sample",
+                    "sample",
+                    &["sample.go", "sibling.go"],
+                ),
+                pkg(
+                    helper.parent().unwrap(),
+                    "example.test/helper",
+                    "helper",
+                    &["lib.go"],
+                ),
+            ],
+            false,
+        ),
+        false,
+    );
+    let completion = complete(&mut engine, &caller, "package sample\nvar _ = Magi¦\n");
+    let magic = item(&completion, "Magic");
+    assert_eq!(edit(magic).new_text, "helper2.Magic()");
+    assert!(
+        magic
+            .additional_text_edits
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|edit| edit
+                .new_text
+                .contains("import helper2 \"example.test/helper\""))
+    );
+}
+
+#[test]
+fn parallel_scan_hands_off_text_and_keeps_the_graphs_first_declaration() {
+    let (project, mut engine, caller) = engine();
+    let first = project.write(
+        "dep/Z.go",
+        "package dep\nfunc MarkFirst() string { return \"\" }\n",
+    );
+    let second = project.write(
+        "dep/a.go",
+        "package dep\nfunc MarkFirst() int { return 0 }\n",
+    );
+    install(
+        &mut engine,
+        listing(
+            &project,
+            &[
+                pkg(
+                    &project.root,
+                    "example.test/sample",
+                    "sample",
+                    &["sample.go"],
+                ),
+                pkg(
+                    first.parent().unwrap(),
+                    "example.test/dep",
+                    "dep",
+                    &["a.go", "Z.go"],
+                ),
+            ],
+            false,
+        ),
+        false,
+    );
+    let (_, position) = open(&mut engine, &caller, "package sample\nvar _ = MarkF¦\n", 1);
+    let caps = CompletionClientCapabilities {
+        resolve_documentation: true,
+        ..Default::default()
+    };
+    let QueryProgress::Searching(mut task) =
+        engine.complete(&caller, position, None, &caps).unwrap()
+    else {
+        panic!("expected a batched import search");
+    };
+    assert!(!task.advance(&mut engine).unwrap());
+    while !task.ready(&engine) {
+        engine
+            .completion_wake()
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .unwrap();
+    }
+    // Both texts belong to the completed batch. Parsing can proceed from
+    // those bytes without opening the paths a second time.
+    std::fs::remove_file(&first).unwrap();
+    std::fs::remove_file(&second).unwrap();
+    while !task.advance(&mut engine).unwrap() {}
+    let CompletionResponse::Array(items) = task.finish() else {
+        panic!("expected completion items");
+    };
+    assert_eq!(
+        item(&items, "MarkFirst").detail.as_deref(),
+        Some("func MarkFirst() string")
+    );
+    assert_eq!(
+        items
+            .iter()
+            .filter(|item| item.label == "MarkFirst")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn declaration_parse_preserves_signatures_initializers_and_source_ranges() {
+    let (_, mut engine, path) = engine();
+    let text = concat!(
+        "package sample\n",
+        "// Doc for Étage.\n",
+        "func Étage[T any](x T) struct{ Field T } {\n",
+        "    _ = `foo { } // quote`\n",
+        "    return struct{ Field T }{x}\n",
+        "}\n",
+        "var Initial = func() int { return 7 }\n",
+        "func (Receiver) F(x int) { _ = x }\n",
+        "type Receiver int\n",
+    );
+    let names = super::sdk_names::scan_names(text).unwrap();
+    assert_eq!(names.bodies.len(), 2);
+    assert!(text[names.bodies[0].clone()].contains("return struct"));
+    assert!(!text[names.bodies[0].clone()].contains("Initial"));
+    let parser = &mut engine.state.parser;
+    let (indexed, elided) =
+        Source::parse_declarations(parser, path.clone(), text.into(), &names.bodies).unwrap();
+    let full = Source::parse(parser, path, text.into(), None).unwrap();
+    assert!(elided);
+    let make = |source: &Source| {
+        let symbols = crate::symbols::collect(
+            &source.tree,
+            &source.text,
+            |name| source.range(name),
+            |_, _, _| {},
+        );
+        let mut rows = symbols
+            .declarations()
+            .chain(symbols.members())
+            .map(|(name, sym)| {
+                let desc = super::render::describe(source, sym.range, name, Kind::VARIABLE, true);
+                (name.to_owned(), sym.range, desc.detail)
+            })
+            .collect::<Vec<_>>();
+        rows.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        rows
+    };
+    assert_eq!(make(&indexed), make(&full));
+    for bad in [
+        "package sample\nvar (Foo int\n",
+        "package sample\nfunc (Bad int] LooksLikeMethod() {}\n",
+        "package sample\nvar Text = `unclosed\n",
+        "package sample\nvar A = \"unclosed\n",
+    ] {
+        assert!(super::sdk_names::scan_names(bad).is_none());
+    }
+}
+
+#[test]
+fn a_completion_task_releases_request_sources_on_finish_cancel_or_stale() {
+    let (project, mut engine, caller) = engine();
+    let lib = project.write("dep/dep.go", "package dep\nfunc Export() {}\n");
+    install(
+        &mut engine,
+        listing(
+            &project,
+            &[
+                pkg(
+                    &project.root,
+                    "example.test/sample",
+                    "sample",
+                    &["sample.go"],
+                ),
+                pkg(
+                    lib.parent().unwrap(),
+                    "example.test/dep",
+                    "dep",
+                    &["dep.go"],
+                ),
+            ],
+            false,
+        ),
+        false,
+    );
+    let (_, position) = open(&mut engine, &caller, "package sample\nvar _ = Expor¦\n", 1);
+    for outcome in ["finish", "cancel", "stale"] {
+        engine.state.disk_index.remove(&path_key(&lib));
+        let QueryProgress::Searching(mut task) = engine
+            .complete(
+                &caller,
+                position,
+                None,
+                &CompletionClientCapabilities {
+                    resolve_documentation: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        else {
+            panic!("expected an import search");
+        };
+        let sources = loop {
+            assert!(!task.advance(&mut engine).unwrap());
+            let sources = task.request.retained_sources();
+            if !sources.is_empty() {
+                break sources;
+            }
+        };
+        assert!(sources.iter().all(|source| source.upgrade().is_some()));
+        match outcome {
+            "finish" => {
+                while !task.advance(&mut engine).unwrap() {}
+                let CompletionResponse::Array(items) = task.finish() else {
+                    panic!("expected completion");
+                };
+                assert_labels(&items, &["Export"], &[]);
+            }
+            "cancel" => {
+                task.discard(lsp_server::ErrorCode::RequestCanceled);
+                drop(task);
+            }
+            "stale" => {
+                engine
+                    .open(lib.clone(), "package dep\nfunc Updated() {}\n".into(), 2)
+                    .unwrap();
+                assert!(
+                    task.advance(&mut engine)
+                        .unwrap_err()
+                        .is::<StaleCompletion>()
+                );
+                drop(task);
+            }
+            _ => unreachable!(),
+        }
+        assert!(sources.iter().all(|source| source.upgrade().is_none()));
+    }
+}
+
+#[test]
+fn a_closed_query_keeps_its_disk_snapshot_and_rejects_an_external_change() {
+    let (project, mut engine, caller) = engine();
+    let (text, position) = marked("package sample\nvar _ = Export¦\n");
+    project.write("sample.go", &text);
+    let QueryProgress::Searching(mut task) = engine
+        .complete(
+            &caller,
+            position,
+            None,
+            &CompletionClientCapabilities::default(),
+        )
+        .unwrap()
+    else {
+        panic!("expected an import search");
+    };
+    let retained = std::rc::Rc::downgrade(&task.request.document.as_ref().unwrap().0);
+    project.write("sample.go", "package sample\n");
+    assert!(
+        task.advance(&mut engine)
+            .unwrap_err()
+            .is::<StaleCompletion>()
+    );
+    drop(task);
+    assert!(retained.upgrade().is_none());
+}
+
+#[test]
+fn lsp_save_invalidates_a_closed_dependency_name_prefilter() {
+    let project = TestProject::new();
+    let (text, position) = marked("package sample\nvar _ = NewlySaved¦\n");
+    let path = project.write("sample.go", &text);
+    let lib = project.write("dep/dep.go", "package dep\nfunc Other() {}\n");
+    let graph = || {
+        listing(
+            &project,
+            &[
+                pkg(
+                    &project.root,
+                    "example.test/sample",
+                    "sample",
+                    &["sample.go"],
+                ),
+                pkg(
+                    lib.parent().unwrap(),
+                    "example.test/dep",
+                    "dep",
+                    &["dep.go"],
+                ),
+            ],
+            false,
+        )
+    };
+    let mut lsp = LspSession::new(&path, json!({}));
+    lsp.open(&text);
+    install(&mut lsp.running().engine, graph(), false);
+    lsp.complete(1, position);
+    assert_labels(&lsp.complete_results(1), &[], &["NewlySaved"]);
+    let key = path_key(&lib);
+    assert!(
+        lsp.running()
+            .engine
+            .state
+            .completion_names
+            .contains_key(&key)
+    );
+    std::fs::write(&lib, "package dep\nfunc NewlySaved() {}\n").unwrap();
+    lsp.notify(
+        "textDocument/didSave",
+        json!({
+            "textDocument": {"uri": crate::protocol::path_uri(&lib).unwrap()},
+        }),
+    );
+    assert!(
+        !lsp.running()
+            .engine
+            .state
+            .completion_names
+            .contains_key(&key)
+    );
+    install(&mut lsp.running().engine, graph(), false);
+    lsp.complete(2, position);
+    assert_labels(&lsp.complete_results(2), &["NewlySaved"], &[]);
 }
 
 #[test]

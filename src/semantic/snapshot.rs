@@ -5,7 +5,10 @@ use anyhow::Result;
 use lsp_types::{Position, Range};
 use tree_sitter::{Node, Parser};
 
-use super::index::{DiskIndex, IndexReader, IndexedSource, active_package, draft_files};
+use super::completion::{InferredMemo, prefilter::FileNames};
+use super::index::{
+    CompletionRead, DiskIndex, IndexReader, IndexedSource, active_package, draft_files,
+};
 use super::query::QueryProgress;
 use super::resolver::{Resolver, TypeIdentity};
 use super::source::{Import, Source, is_test_source, node_text, raw_imports, read_source};
@@ -23,8 +26,11 @@ pub(crate) struct EngineSnapshot<'a> {
     documents: &'a HashMap<PathBuf, IndexedSource>,
     new_documents: &'a HashSet<PathBuf>,
     disk_index: &'a mut HashMap<PathBuf, DiskIndex>,
+    disk_names: &'a mut HashMap<PathBuf, FileNames>,
+    inferred_weights: &'a mut HashMap<InferredMemo, i32>,
     parser: &'a mut Parser,
     load: WorkspaceLoad,
+    completion_source_generation: u64,
 }
 
 pub(crate) struct DocumentSnapshot<'a> {
@@ -54,11 +60,14 @@ impl EngineState {
             documents: &self.documents,
             new_documents: &self.new_documents,
             disk_index: &mut self.disk_index,
+            disk_names: &mut self.completion_names,
+            inferred_weights: &mut self.completion_weights,
             parser: &mut self.parser,
             load: WorkspaceLoad {
                 generation: self.generation,
                 include_tests,
             },
+            completion_source_generation: self.completion_source_generation,
         }
     }
 }
@@ -151,6 +160,10 @@ impl<'a> EngineSnapshot<'a> {
         self.root
     }
 
+    pub(super) fn completion_source_generation(&self) -> u64 {
+        self.completion_source_generation
+    }
+
     pub(super) fn workspace(&self) -> Option<&'a Workspace> {
         self.workspace
     }
@@ -168,11 +181,23 @@ impl<'a> EngineSnapshot<'a> {
     }
 
     pub(super) fn resolver(&mut self, workspace: &'a Workspace) -> Resolver<'a, '_> {
+        self.resolver_with_completion(workspace, None)
+    }
+
+    pub(super) fn resolver_with_completion<'s>(
+        &'s mut self,
+        workspace: &'a Workspace,
+        completion: Option<&'s mut CompletionRead>,
+    ) -> Resolver<'a, 's> {
         let indexes = IndexReader {
+            workspace,
             parser: self.parser,
             documents: self.documents,
             disk_index: self.disk_index,
             drafts: draft_files(workspace, self.documents, self.new_documents),
+            disk_names: self.disk_names,
+            completion,
+            inferred_weights: self.inferred_weights,
         };
         Resolver { workspace, indexes }
     }
@@ -240,6 +265,13 @@ impl<'a> DocumentSnapshot<'a> {
         match &self.source {
             DocumentSource::Borrowed(source) => source,
             DocumentSource::Disk(source) => source,
+        }
+    }
+
+    pub(super) fn into_disk(self) -> Option<IndexedSource> {
+        match self.source {
+            DocumentSource::Disk(source) => Some(source),
+            DocumentSource::Borrowed(_) => None,
         }
     }
 }

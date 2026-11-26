@@ -8,8 +8,8 @@ use tree_sitter::Node;
 
 use super::index::IndexReader;
 use super::source::{
-    Import, ReferenceQuery, Source, function_at, is_declaration_name, is_type_declaration,
-    node_text, read_source,
+    Import, ReferenceQuery, Source, is_declaration_name, is_type_declaration, node_text,
+    read_source,
 };
 use crate::scope::{
     declaration_binding, lexical_binding, receiver_type_parameters, reference_binding,
@@ -162,6 +162,15 @@ fn package_identity(package: &Package) -> &str {
 }
 
 pub(super) type Substitutions<'w> = Vec<(String, Option<TypeIdentity<'w>>)>;
+
+enum DeclarationSelection<'a> {
+    All,
+    Exports(&'a dyn Fn(&str) -> bool),
+    Local {
+        matches: &'a dyn Fn(&str) -> bool,
+        skipped: &'a mut HashSet<String>,
+    },
+}
 
 pub(super) struct Resolver<'w, 'idx> {
     pub(super) workspace: &'w Workspace,
@@ -669,11 +678,67 @@ impl<'w> Resolver<'w, '_> {
         from: &Package,
         target: &'w Package,
     ) -> Result<Vec<(String, ResolvedSymbol<'w>)>> {
+        self.package_declarations_where(from, target, DeclarationSelection::All)
+    }
+
+    pub(super) fn matching_exports(
+        &mut self,
+        from: &Package,
+        target: &'w Package,
+        matches: impl Fn(&str) -> bool,
+    ) -> Result<Vec<(String, ResolvedSymbol<'w>)>> {
+        self.package_declarations_where(from, target, DeclarationSelection::Exports(&matches))
+    }
+
+    pub(super) fn local_declarations(
+        &mut self,
+        target: &'w Package,
+        matches: impl Fn(&str) -> bool,
+        skipped: &mut HashSet<String>,
+    ) -> Result<Vec<(String, ResolvedSymbol<'w>)>> {
+        self.package_declarations_where(
+            target,
+            target,
+            DeclarationSelection::Local {
+                matches: &matches,
+                skipped,
+            },
+        )
+    }
+
+    fn package_declarations_where(
+        &mut self,
+        from: &Package,
+        target: &'w Package,
+        mut selection: DeclarationSelection<'_>,
+    ) -> Result<Vec<(String, ResolvedSymbol<'w>)>> {
         let mut declarations = BTreeMap::new();
-        let local = package_identity(from) == package_identity(target);
+        let local = !matches!(selection, DeclarationSelection::Exports(_))
+            && package_identity(from) == package_identity(target);
+        let project = self.workspace.is_project_package(target);
+        let external = target.is_external();
+        let can_prefilter = self.indexes.completion.is_some() && !target.load_error;
         for file in self.indexes.files(target).iter() {
-            for (name, symbol) in self.indexes.file_index(file)?.symbols.declarations() {
-                if name != "init" && (local || is_exported(name)) {
+            let index = match &mut selection {
+                DeclarationSelection::Exports(matches) if can_prefilter => self
+                    .indexes
+                    .filtered_index(file, project, external, |names| names.may_export(*matches))?,
+                DeclarationSelection::Local { matches, skipped } if can_prefilter => {
+                    self.indexes
+                        .filtered_index(file, project, external, |names| {
+                            names.local_matches(*matches, skipped)
+                        })?
+                }
+                _ => Some(self.indexes.file_index(file)?),
+            };
+            let Some(index) = index else {
+                continue;
+            };
+            for (name, symbol) in index.symbols.declarations() {
+                if name != "init"
+                    && (local || is_exported(name))
+                    && !matches!(selection, DeclarationSelection::Exports(matches) if !matches(name))
+                {
                     declarations
                         .entry(name.to_owned())
                         .or_insert_with(|| ResolvedSymbol {
@@ -1039,13 +1104,8 @@ impl<'w> Resolver<'w, '_> {
         package: &Package,
         name: &str,
     ) -> Result<Option<(PathBuf, TypeDetails)>> {
-        for file in self.indexes.files(package).iter() {
-            let index = &self.indexes.file_index(file)?.symbols;
-            if let Some(details) = index.type_details(name) {
-                return Ok(Some((file.clone(), details.clone())));
-            }
-        }
-        Ok(None)
+        self.indexes
+            .type_details(package, name, self.workspace.is_project_package(package))
     }
 
     pub(super) fn container(
@@ -1103,7 +1163,20 @@ impl<'w> Resolver<'w, '_> {
         receiver: Option<&str>,
     ) -> Result<Option<ResolvedSymbol<'w>>> {
         for file in self.indexes.files(package).iter() {
-            let index = &self.indexes.file_index(file)?.symbols;
+            let index =
+                if receiver.is_none() && self.indexes.completion.is_some() && !package.load_error {
+                    self.indexes.filtered_index(
+                        file,
+                        self.workspace.is_project_package(package),
+                        package.is_external(),
+                        |names| names.may_declare(name),
+                    )?
+                } else {
+                    Some(self.indexes.file_index(file)?)
+                };
+            let Some(index) = index.map(|index| &index.symbols) else {
+                continue;
+            };
             let symbol = match receiver {
                 Some(ty) => index.member(ty, name),
                 None => index.declaration(name),
@@ -2116,10 +2189,17 @@ impl<'w> Resolver<'w, '_> {
             } => {
                 let documents = self.indexes.documents;
                 let disk_source;
+                let cached;
                 let source = if source.path == resolved.file {
                     source
                 } else if let Some(document) = documents.get(&path_key(&resolved.file)) {
                     document
+                } else if self.indexes.completion.is_some() {
+                    cached = self
+                        .indexes
+                        .declaration_source(&resolved.file)?
+                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+                    cached.as_ref()
                 } else {
                     disk_source = read_source(self.indexes.parser, &resolved.file)?;
                     &disk_source
@@ -2581,21 +2661,6 @@ impl<'w> Resolver<'w, '_> {
         else {
             return Ok(None);
         };
-        let parsed;
-        let parameters = if signature.parameters.is_empty()
-            && signature.origin.function_type().is_none()
-            && let Some(source) = self.indexes.reference_source(&file)?
-            && let Some(function) = function_at(source.as_ref(), signature.origin.range())
-            && let Some(list) = function.child_by_field_name("parameters")
-        {
-            let source = source.as_ref();
-            parsed = symbols::parameter_types(list, |node| {
-                symbols::type_ref(node, &source.text, &|node| source.range(node))
-            });
-            &parsed
-        } else {
-            &signature.parameters
-        };
         let imports = &self.indexes.file_index(&file)?.imports;
         let materialize = |reference: &Option<TypeRef>| {
             materialize_type(
@@ -2610,7 +2675,7 @@ impl<'w> Resolver<'w, '_> {
         let parameters = method_receiver
             .into_iter()
             .map(|receiver| Some(*receiver))
-            .chain(parameters.iter().map(materialize))
+            .chain(signature.parameters.iter().map(materialize))
             .collect::<Option<Vec<_>>>();
         let results = signature
             .results

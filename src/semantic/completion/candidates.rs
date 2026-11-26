@@ -124,6 +124,7 @@ pub(super) fn collect<'w>(
         bindings,
         items: Vec::new(),
         declared: HashSet::new(),
+        skipped_package_names: HashSet::new(),
         imports: Vec::new(),
         expected: None,
     };
@@ -150,6 +151,7 @@ struct Collector<'a> {
     bindings: Vec<VisibleBinding<'a>>,
     items: Vec<Candidate>,
     declared: HashSet<String>,
+    skipped_package_names: HashSet<String>,
     imports: Vec<FileImport>,
     expected: Option<Expected>,
 }
@@ -375,7 +377,11 @@ impl Collector<'_> {
             };
             self.add_package_symbol(resolver, package, name, &resolved, names)?;
         }
-        for (name, resolved) in resolver.package_declarations(package, package)? {
+        for (name, resolved) in resolver.local_declarations(
+            package,
+            |name| match_name(self.prefix, name).is_some(),
+            &mut self.skipped_package_names,
+        )? {
             if package_names.insert(name.clone())
                 && (is_test_source(self.document.path()) || !is_test_source(&resolved.file))
             {
@@ -548,7 +554,9 @@ impl Collector<'_> {
                 self.source
                     .imported_package(resolver.workspace, package, qualifier)
         {
-            for (name, resolved) in resolver.package_declarations(package, target)? {
+            for (name, resolved) in resolver.matching_exports(package, target, |name| {
+                match_name(self.prefix, name).is_some()
+            })? {
                 if (types_only && !matches!(resolved.symbol.kind, SymbolKind::Type))
                     || name == "_"
                     || !crate::semantic::resolver::is_exported(&name)
@@ -794,6 +802,7 @@ impl Collector<'_> {
             address_of: names.address_of,
             literal: names.literal,
             declared: std::mem::take(&mut self.declared),
+            skipped_package_names: std::mem::take(&mut self.skipped_package_names),
             imports: std::mem::take(&mut self.imports),
             expected: self.expected.take(),
         }
@@ -908,27 +917,40 @@ pub(super) fn resolved_candidate<'w>(
         file: resolved.file.clone(),
         range: symbol.range,
     });
-    let definition = if path_key(&source.path) == path_key(&resolved.file) {
-        None
-    } else {
-        resolver
-            .indexes
-            .reference_source(&resolved.file)
-            .ok()
-            .flatten()
-    };
-    let declaration_source: &Source = definition
-        .as_ref()
-        .map_or(source, |definition| definition.as_ref());
-    let mut has_parameters = false;
-    if definition.is_some() || path_key(&source.path) == path_key(&resolved.file) {
-        let description = describe(
-            declaration_source,
+    let same_file = path_key(&source.path) == path_key(&resolved.file);
+    let mut definition = None;
+    let description = if same_file {
+        Some(describe(
+            source,
             symbol.range,
             name,
             kind,
             caps.deprecated_support,
-        );
+        ))
+    } else if let Some(description) = resolver
+        .indexes
+        .known_index(&path_key(&resolved.file))
+        .and_then(|index| index.presentation.get(&symbol.range))
+    {
+        Some(description.clone().with_kind(kind, caps.deprecated_support))
+    } else {
+        definition = resolver
+            .indexes
+            .reference_source(&resolved.file)
+            .ok()
+            .flatten();
+        definition.as_ref().map(|source| {
+            describe(
+                source.as_ref(),
+                symbol.range,
+                name,
+                kind,
+                caps.deprecated_support,
+            )
+        })
+    };
+    let mut has_parameters = false;
+    if let Some(description) = description {
         candidate.kind = description.kind;
         candidate.detail = description.detail;
         candidate.label_suffix = description.label_suffix;
@@ -936,21 +958,16 @@ pub(super) fn resolved_candidate<'w>(
         has_parameters = description.has_parameters;
     }
     if matches!(symbol.kind, SymbolKind::Type) {
-        let ty = TypeIdentity::named(resolved.package, name);
-        if let Some(underlying) = resolver.underlying_type(ty)? {
-            if is_interface(resolver, &underlying)? {
-                candidate.kind = Kind::INTERFACE;
-            } else if composite_type(resolver, &underlying)? {
-                if !matches!(underlying.kind, TypeKind::Container(..)) {
-                    candidate.kind = Kind::STRUCT;
-                }
-                let generic = resolver
-                    .type_info(resolved.package, name)?
-                    .is_some_and(|(_, details)| !details.parameters.is_empty());
-                if literal && !generic {
-                    candidate.insert = Insert::Braces;
-                }
-            }
+        let _phase = resolver
+            .indexes
+            .trace()
+            .map(|trace| trace.phase("type_classification"));
+        let (kind, braces) = type_presentation(resolver, resolved.package, name)?;
+        if let Some(kind) = kind {
+            candidate.kind = kind;
+        }
+        if literal && braces {
+            candidate.insert = Insert::Braces;
         }
     }
     if let SymbolKind::Function(signature) = &symbol.kind {
@@ -961,7 +978,24 @@ pub(super) fn resolved_candidate<'w>(
         };
     }
     let want_type = kind == Kind::FIELD || kind == Kind::METHOD || expected.is_some();
+    if let Some(expected) = expected
+        && matches!(symbol.kind, SymbolKind::InferredValue { .. })
+    {
+        let _phase = resolver
+            .indexes
+            .trace()
+            .map(|trace| trace.phase("inferred_weight"));
+        candidate.weight.priority += expected.inferred_weight(resolver, source, resolved, name)?;
+        return Ok(candidate);
+    }
     let ty = if want_type {
+        let _phase = resolver
+            .indexes
+            .trace()
+            .map(|trace| trace.phase("symbol_type"));
+        let declaration_source = definition
+            .as_ref()
+            .map_or(&**source, |source| source.as_ref());
         resolver.symbol_type(declaration_source, resolved, name, 0)?
     } else {
         None
@@ -979,6 +1013,18 @@ pub(super) fn resolved_candidate<'w>(
             ..
         } = &ty.kind
             && (!substitutions.is_empty() || method_receiver.is_some())
+            && let Some(declaration_source) = if same_file {
+                Some(&**source)
+            } else {
+                if definition.is_none() {
+                    definition = resolver
+                        .indexes
+                        .declaration_source(&resolved.file)
+                        .ok()
+                        .flatten();
+                }
+                definition.as_ref().map(|source| &**source.as_ref())
+            }
             && let Some((detail, suffix)) = specialized_signature(
                 resolver,
                 from,
@@ -993,6 +1039,10 @@ pub(super) fn resolved_candidate<'w>(
             candidate.label_suffix = Some(suffix);
         }
         if let Some(expected) = expected {
+            let _phase = resolver
+                .indexes
+                .trace()
+                .map(|trace| trace.phase("expected_weight"));
             let weight = expected.weight(resolver, &ty)?;
             if let TypeKind::Function {
                 signature,
@@ -1018,22 +1068,46 @@ pub(super) fn resolved_candidate<'w>(
             }
             candidate.weight.priority += weight;
         }
-    } else if let Some(expected) = expected
-        && let SymbolKind::InferredValue {
-            initializer,
-            result_index: 0,
-        } = &symbol.kind
-        && let Some(value) = declaration_source
-            .tree
-            .root_node()
-            .named_descendant_for_byte_range(initializer.start, initializer.end)
-            .filter(|node| node.byte_range() == *initializer)
-            .and_then(untyped_default)
-    {
-        let value = super::expected::named_key("builtin", value);
-        candidate.weight.priority += expected.keys_weight(&value, Some(&value));
     }
     Ok(candidate)
+}
+
+fn type_presentation<'w>(
+    resolver: &mut Resolver<'w, '_>,
+    package: &'w Package,
+    name: &str,
+) -> Result<(Option<Kind>, bool)> {
+    let key = resolver
+        .indexes
+        .completion
+        .as_ref()
+        .map(|_| (package.id.clone(), name.to_owned()));
+    if let Some(cached) = key
+        .as_ref()
+        .and_then(|key| resolver.indexes.completion.as_ref()?.type_kinds.get(key))
+    {
+        return Ok(*cached);
+    }
+    let ty = TypeIdentity::named(package, name);
+    let mut presentation = (None, false);
+    if let Some(underlying) = resolver.underlying_type(ty)? {
+        if is_interface(resolver, &underlying)? {
+            presentation.0 = Some(Kind::INTERFACE);
+        } else if composite_type(resolver, &underlying)? {
+            if !matches!(underlying.kind, TypeKind::Container(..)) {
+                presentation.0 = Some(Kind::STRUCT);
+            }
+            presentation.1 = !resolver
+                .type_info(package, name)?
+                .is_some_and(|(_, details)| !details.parameters.is_empty());
+        }
+    }
+    if let Some(key) = key
+        && let Some(read) = &mut resolver.indexes.completion
+    {
+        read.type_kinds.insert(key, presentation);
+    }
+    Ok(presentation)
 }
 
 fn specialized_signature<'w>(

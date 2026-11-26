@@ -18,12 +18,13 @@ use crossbeam_channel::{bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, InitializeParams, InitializeResult,
-    NumberOrString, PositionEncodingKind, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    InitializeParams, InitializeResult, NumberOrString, PositionEncodingKind, ServerCapabilities,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    TextDocumentSyncSaveOptions,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
-        DidOpenTextDocument, Exit, Initialized, Notification as _,
+        DidOpenTextDocument, DidSaveTextDocument, Exit, Initialized, Notification as _,
     },
     request::{Initialize, Request as _, Shutdown},
 };
@@ -103,11 +104,16 @@ fn serve(connection: &Connection) -> Result<()> {
         .send(())
         .context("scheduling navigation searches")?;
     loop {
-        let search_receiver = if matches!(&state, State::Running(running) if !running.scheduler.searches.is_empty())
-        {
-            &search_ready
-        } else {
-            &search_idle
+        let (search_receiver, completion_wake) = match &state {
+            State::Running(running) => (
+                if running.scheduler.ready_search(&running.engine).is_some() {
+                    &search_ready
+                } else {
+                    &search_idle
+                },
+                running.engine.completion_wake(),
+            ),
+            _ => (&search_idle, &search_idle),
         };
         select_biased! {
             recv(connection.receiver) -> message => {
@@ -115,7 +121,13 @@ fn serve(connection: &Connection) -> Result<()> {
                     break;
                 };
                 match message {
-                    Message::Request(request) => handle_request(connection, &mut state, request)?,
+                    Message::Request(request) => {
+                        let initializing = matches!(state, State::Starting) && request.method == Initialize::METHOD;
+                        handle_request(connection, &mut state, request)?;
+                        if initializing && let State::Running(running) = &state {
+                            running.engine.prewarm_completion_sdk(false);
+                        }
+                    }
                     Message::Notification(notification) if notification.method == Exit::METHOD => {
                         ensure!(
                             matches!(state, State::Shutdown),
@@ -141,6 +153,7 @@ fn serve(connection: &Connection) -> Result<()> {
                     running.workspace_loaded(connection, update.context("receiving Go package metadata")?)?;
                 }
             }
+            recv(completion_wake) -> _ => {}
             recv(search_receiver) -> ready => {
                 ready.context("receiving navigation search work")?;
                 if let State::Running(running) = &mut state {
@@ -229,6 +242,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
             TextDocumentSyncOptions {
                 open_close: Some(true),
                 change: Some(TextDocumentSyncKind::INCREMENTAL),
+                save: Some(TextDocumentSyncSaveOptions::Supported(true)),
                 ..Default::default()
             },
         )),
@@ -345,6 +359,20 @@ fn handle_notification(
             let path = file_path(&params.text_document.uri)?;
             running.engine.close(&path);
             running.scheduler.document_modified(connection, &path)
+        }
+        DidSaveTextDocument::METHOD => {
+            let params: DidSaveTextDocumentParams = serde_json::from_value(params)?;
+            let path = file_path(&params.text_document.uri)?;
+            let before = running.engine.workspace_load();
+            running
+                .engine
+                .file_changed(&path, lsp_types::FileChangeType::CHANGED);
+            running.scheduler.document_modified(connection, &path)?;
+            let after = running.engine.workspace_load();
+            if after != before {
+                running.scheduler.workspace_modified(connection, after)?;
+            }
+            Ok(())
         }
         Cancel::METHOD => {
             let params: CancelParams = serde_json::from_value(params)?;

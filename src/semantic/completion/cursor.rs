@@ -11,6 +11,8 @@ use crate::semantic::{
     source::{Source, node_text},
 };
 
+use super::Trace;
+
 const PLACEHOLDER: &str = "__rs_gopls_completion__";
 
 #[derive(Clone)]
@@ -92,6 +94,7 @@ impl Probe {
         document: &DocumentSnapshot<'_>,
         parser: &mut Parser,
         position: Position,
+        trace: Option<&Trace>,
     ) -> Result<Option<Self>> {
         let Some(offset) = document.offset(position) else {
             return Ok(None);
@@ -124,7 +127,13 @@ impl Probe {
         let syntax = if usable {
             None
         } else {
-            repair(document.indexed(), parser, replace.clone(), after_dot)?
+            repair(
+                document.indexed(),
+                parser,
+                replace.clone(),
+                after_dot,
+                trace,
+            )?
         };
         Ok(Some(Self {
             edit: Edit { replace, offset },
@@ -447,6 +456,7 @@ fn repair(
     parser: &mut Parser,
     replace: Range<usize>,
     after_dot: bool,
+    trace: Option<&Trace>,
 ) -> Result<Option<Source>> {
     let follow = &source.text[replace.end..];
     // A newline after a complete identifier terminates the statement. The
@@ -492,6 +502,9 @@ fn repair(
         // another literal whose apparent type is the completion marker.
         let mut text = repaired.text;
         text.insert(replace.start + marker.len(), '}');
+        if let Some(trace) = trace {
+            trace.parse();
+        }
         repaired = Source::parse(parser, source.path.clone(), text, None)?;
     }
     let root = repaired.tree.root_node();
@@ -506,6 +519,9 @@ fn repair(
                 text.push('\n');
             }
             text.push_str(&closers);
+            if let Some(trace) = trace {
+                trace.parse();
+            }
             repaired = Source::parse(parser, source.path.clone(), text, None)?;
         }
     }

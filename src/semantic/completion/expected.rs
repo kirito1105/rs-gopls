@@ -1,23 +1,35 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::Arc;
+
 use anyhow::Result;
+use lsp_types::Range;
 use tree_sitter::Node;
 
 use crate::semantic::{
+    index::ContentIdentity,
     resolver::{
-        GenericCall, Resolver, Substitutions, TypeIdentity, TypeKind, TypeOrigin,
+        GenericCall, ResolvedSymbol, Resolver, Substitutions, TypeIdentity, TypeKind, TypeOrigin,
         explicit_type_arguments, is_exported, is_predeclared_type, materialize_type,
         untyped_default,
     },
-    source::{Source, function_at, node_text},
+    source::{Source, node_text},
 };
-use crate::symbols::{
-    Container, FunctionSignature, TypeRef, TypeRefKind, parameter_types, type_ref,
-};
-use crate::workspace::Package;
+use crate::symbols::{Container, FunctionSignature, InlineType, SymbolKind, TypeRef, TypeRefKind};
+use crate::workspace::{Package, path_key};
 
 use super::cursor::{ancestors, is_function};
 
-#[derive(Clone)]
 pub(super) struct Expected {
+    shape: Rc<ExpectedShape>,
+    weights: RefCell<HashMap<MemoType, i32>>,
+}
+
+#[derive(Eq, Hash, PartialEq)]
+struct ExpectedShape {
     exact: String,
     underlying: String,
     nil: bool,
@@ -25,9 +37,138 @@ pub(super) struct Expected {
     methods: Vec<(String, String)>,
 }
 
+#[derive(Eq, Hash, PartialEq)]
+pub(in crate::semantic) struct InferredMemo {
+    expected: Rc<ExpectedShape>,
+    package: String,
+    file: PathBuf,
+    range: Range,
+    content: ContentIdentity,
+}
+
+impl InferredMemo {
+    pub(in crate::semantic) fn package_id(&self) -> &str {
+        &self.package
+    }
+}
+
+#[derive(Eq, Hash, PartialEq)]
+struct MemoType {
+    package: String,
+    pointers: u8,
+    addressable: bool,
+    expression: bool,
+    kind: MemoKind,
+}
+
+#[derive(Eq, Hash, PartialEq)]
+enum MemoKind {
+    Named(String, Vec<Option<MemoType>>),
+    Container(Box<Container<MemoType>>, Option<(PathBuf, Range)>),
+    Function(
+        PathBuf,
+        SameArc<FunctionSignature>,
+        MemoSubstitutions,
+        Option<Box<MemoType>>,
+    ),
+    Inline(PathBuf, SameArc<InlineType>, MemoSubstitutions),
+    Parameter(usize),
+}
+
+type MemoSubstitutions = Vec<(String, Option<MemoType>)>;
+
+// Keep the signature/shape alive for the request, so separately synthesized
+// types with the same source range cannot share a memo entry.
+struct SameArc<T>(Arc<T>);
+
+impl<T> PartialEq for SameArc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T> Eq for SameArc<T> {}
+
+impl<T> Hash for SameArc<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
+    }
+}
+
+impl MemoType {
+    fn new(ty: &TypeIdentity<'_>) -> Self {
+        let substitutions = |values: &Substitutions<'_>| {
+            values
+                .iter()
+                .map(|(name, ty)| (name.clone(), ty.as_ref().map(Self::new)))
+                .collect()
+        };
+        let kind = match &ty.kind {
+            TypeKind::Named { name, arguments } => MemoKind::Named(
+                name.clone(),
+                arguments
+                    .iter()
+                    .map(|ty| ty.as_ref().map(Self::new))
+                    .collect(),
+            ),
+            TypeKind::Container(shape, origin) => {
+                let shape = match shape.as_ref() {
+                    Container::Slice(ty) => Container::Slice(Self::new(ty)),
+                    Container::Array { element, length } => Container::Array {
+                        element: Self::new(element),
+                        length: length.clone(),
+                    },
+                    Container::Map { key, value } => Container::Map {
+                        key: Self::new(key),
+                        value: Self::new(value),
+                    },
+                    Container::Channel {
+                        element,
+                        receive,
+                        send,
+                    } => Container::Channel {
+                        element: Self::new(element),
+                        receive: *receive,
+                        send: *send,
+                    },
+                };
+                MemoKind::Container(Box::new(shape), origin.clone())
+            }
+            TypeKind::Function {
+                file,
+                signature,
+                substitutions: values,
+                method_receiver,
+            } => MemoKind::Function(
+                path_key(file),
+                SameArc(Arc::clone(signature)),
+                substitutions(values),
+                method_receiver.as_deref().map(Self::new).map(Box::new),
+            ),
+            TypeKind::Inline {
+                file,
+                shape,
+                substitutions: values,
+            } => MemoKind::Inline(
+                path_key(file),
+                SameArc(Arc::clone(shape)),
+                substitutions(values),
+            ),
+            TypeKind::Parameter(index) => MemoKind::Parameter(*index),
+        };
+        Self {
+            package: ty.package.id.clone(),
+            pointers: ty.pointers,
+            addressable: ty.addressable,
+            expression: ty.type_expression,
+            kind,
+        }
+    }
+}
+
 impl Expected {
     pub(super) fn accepts_nil(&self) -> bool {
-        self.nil && !self.assertion
+        self.shape.nil && !self.shape.assertion
     }
 
     pub(super) fn from_cursor<'w>(
@@ -60,12 +201,87 @@ impl Expected {
             Vec::new()
         };
         Ok(Some(Self {
-            exact,
-            underlying,
-            nil,
-            assertion,
-            methods,
+            shape: Rc::new(ExpectedShape {
+                exact,
+                underlying,
+                nil,
+                assertion,
+                methods,
+            }),
+            weights: RefCell::new(HashMap::new()),
         }))
+    }
+
+    pub(super) fn inferred_weight<'w>(
+        &self,
+        resolver: &mut Resolver<'w, '_>,
+        source: &Source,
+        resolved: &ResolvedSymbol<'w>,
+        name: &str,
+    ) -> Result<i32> {
+        let SymbolKind::InferredValue {
+            initializer,
+            result_index,
+        } = &resolved.symbol.kind
+        else {
+            unreachable!("scoring an inferred initializer");
+        };
+        let file = path_key(&resolved.file);
+        let key = resolver
+            .indexes
+            .content_identity(&file)
+            .map(|content| InferredMemo {
+                expected: Rc::clone(&self.shape),
+                package: resolved.package.id.clone(),
+                file: file.clone(),
+                range: resolved.symbol.range,
+                content,
+            });
+        if let Some(weight) = key
+            .as_ref()
+            .and_then(|key| resolver.indexes.inferred_weights.get(key))
+        {
+            if let Some(trace) = resolver.indexes.trace() {
+                trace.expected_weight_hit();
+            }
+            return Ok(*weight);
+        }
+        let declaration;
+        let source = if file == path_key(&source.path) {
+            source
+        } else {
+            declaration = resolver
+                .indexes
+                .declaration_source(&resolved.file)
+                .ok()
+                .flatten();
+            declaration
+                .as_ref()
+                .map_or(source, |source| source.as_ref())
+        };
+        let weight = if let Some(ty) = resolver.symbol_type(source, resolved, name, 0)? {
+            self.weight(resolver, &ty)?
+        } else if *result_index == 0
+            && let Some(value) = source
+                .tree
+                .root_node()
+                .named_descendant_for_byte_range(initializer.start, initializer.end)
+                .filter(|node| node.byte_range() == *initializer)
+                .and_then(untyped_default)
+        {
+            let key = named_key("builtin", value);
+            self.keys_weight(&key, Some(&key))
+        } else {
+            0
+        };
+        if let Some(key) = key {
+            let weights = &mut resolver.indexes.inferred_weights;
+            if weights.len() >= 512 {
+                weights.clear();
+            }
+            weights.insert(key, weight);
+        }
+        Ok(weight)
     }
 
     pub(super) fn weight<'w>(
@@ -73,18 +289,51 @@ impl Expected {
         resolver: &mut Resolver<'w, '_>,
         ty: &TypeIdentity<'w>,
     ) -> Result<i32> {
+        // A function's parameter types cannot affect a score against a
+        // non-callable expected type with no required methods. Its single
+        // result, when present, is scored separately by the caller.
+        if matches!(ty.kind, TypeKind::Function { .. })
+            && self.shape.methods.is_empty()
+            && [&self.shape.exact, &self.shape.underlying]
+                .into_iter()
+                .all(|key| !key.trim_start_matches('*').starts_with("func("))
+        {
+            return Ok(0);
+        }
+        let key = MemoType::new(ty);
+        if let Some(weight) = self.weights.borrow().get(&key) {
+            if let Some(trace) = resolver.indexes.trace() {
+                trace.expected_weight_hit();
+            }
+            return Ok(*weight);
+        }
+        let weight = self.compute_weight(resolver, ty)?;
+        self.weights.borrow_mut().insert(key, weight);
+        Ok(weight)
+    }
+
+    fn compute_weight<'w>(
+        &self,
+        resolver: &mut Resolver<'w, '_>,
+        ty: &TypeIdentity<'w>,
+    ) -> Result<i32> {
         let Some(exact) = type_key(resolver, ty, 0)? else {
             return Ok(0);
         };
-        if self.exact == exact {
+        if self.shape.exact == exact {
             return Ok(5);
         }
-        if !self.methods.is_empty() {
+        if !self.shape.methods.is_empty() {
             let mut receiver = ty.clone();
             receiver.addressable = false;
             receiver.type_expression = false;
             let available = methods(resolver, &receiver)?;
-            if self.methods.iter().all(|method| available.contains(method)) {
+            if self
+                .shape
+                .methods
+                .iter()
+                .all(|method| available.contains(method))
+            {
                 return Ok(5);
             }
         }
@@ -96,12 +345,12 @@ impl Expected {
     }
 
     pub(super) fn keys_weight(&self, exact: &str, underlying: Option<&str>) -> i32 {
-        if self.exact == exact {
+        if self.shape.exact == exact {
             5
-        } else if !self.assertion
+        } else if !self.shape.assertion
             && underlying.is_some_and(|underlying| {
-                self.underlying == underlying
-                    || numeric_family(&self.underlying)
+                self.shape.underlying == underlying
+                    || numeric_family(&self.shape.underlying)
                         .is_some_and(|family| numeric_family(underlying) == Some(family))
             })
         {
@@ -240,7 +489,6 @@ fn type_key<'w>(
             substitutions,
             method_receiver,
         } => {
-            let parameter_refs = parameters(resolver, &file, &signature)?;
             let imports = &resolver.indexes.file_index(&file)?.imports;
             let parse = |reference: &Option<TypeRef>| {
                 materialize_type(
@@ -255,7 +503,7 @@ fn type_key<'w>(
             let parameters: Vec<_> = method_receiver
                 .into_iter()
                 .map(|receiver| Some(*receiver))
-                .chain(parameter_refs.iter().map(parse))
+                .chain(signature.parameters.iter().map(parse))
                 .collect();
             let results: Vec<_> = signature.results.iter().map(parse).collect();
             let mut labels = |types: Vec<Option<TypeIdentity<'w>>>| -> Result<Option<String>> {
@@ -496,36 +744,17 @@ fn call_arg_type<'w>(
             substitutions = inferred;
         }
     }
-    let params = parameters(resolver, &file, &signature)?;
-    let param = params
+    let param = signature
+        .parameters
         .get(index)
-        .or_else(|| signature.variadic.then(|| params.last()).flatten())
+        .or_else(|| {
+            signature
+                .variadic
+                .then(|| signature.parameters.last())
+                .flatten()
+        })
         .and_then(Option::as_ref);
     argument_or_result(resolver, ty.package, &file, &substitutions, param)
-}
-
-fn parameters(
-    resolver: &mut Resolver<'_, '_>,
-    file: &std::path::Path,
-    signature: &FunctionSignature,
-) -> Result<Vec<Option<TypeRef>>> {
-    if !signature.parameters.is_empty() {
-        return Ok(signature.parameters.clone());
-    }
-    // The index keeps result types for non-generic package functions.
-    // Read parameter types from the defining syntax only when requested.
-    let Some(source) = resolver.indexes.reference_source(file)? else {
-        return Ok(Vec::new());
-    };
-    let source = source.as_ref();
-    let Some(list) = function_at(source, signature.origin.range())
-        .and_then(|function| function.child_by_field_name("parameters"))
-    else {
-        return Ok(Vec::new());
-    };
-    Ok(parameter_types(list, |node| {
-        type_ref(node, &source.text, &|node| source.range(node))
-    }))
 }
 
 pub(super) fn literal_type<'w>(

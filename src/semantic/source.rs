@@ -86,8 +86,52 @@ impl Source {
         previous: Option<&Tree>,
     ) -> Result<Self> {
         let tree = parser.parse(&text, previous).context("parsing Go source")?;
+        Ok(Self::from_tree(path, text, lines, tree))
+    }
+
+    pub(super) fn parse_declarations(
+        parser: &mut Parser,
+        path: PathBuf,
+        text: String,
+        bodies: &[std::ops::Range<usize>],
+    ) -> Result<(Self, bool)> {
+        let lines = LineIndex::new(&text);
+        if !bodies.is_empty() {
+            // Keep both braces and all original byte/UTF-16 offsets. The
+            // declaration grammar and source text are otherwise unchanged.
+            let mut start = 0;
+            let mut included = Vec::with_capacity(bodies.len() + 1);
+            for body in bodies {
+                included.push(tree_sitter::Range {
+                    start_byte: start,
+                    end_byte: body.start,
+                    start_point: lines.point(start),
+                    end_point: lines.point(body.start),
+                });
+                start = body.end;
+            }
+            included.push(tree_sitter::Range {
+                start_byte: start,
+                end_byte: text.len(),
+                start_point: lines.point(start),
+                end_point: lines.point(text.len()),
+            });
+            if parser.set_included_ranges(&included).is_ok() {
+                let tree = parser.parse(&text, None);
+                parser
+                    .set_included_ranges(&[])
+                    .expect("resetting Tree-sitter input ranges");
+                if let Some(tree) = tree.filter(|tree| !tree.root_node().has_error()) {
+                    return Ok((Self::from_tree(path, text, lines, tree), true));
+                }
+            }
+        }
+        Self::parse_with_lines(parser, path, text, lines, None).map(|source| (source, false))
+    }
+
+    fn from_tree(path: PathBuf, text: String, lines: LineIndex, tree: Tree) -> Self {
         let imports = imports(tree.root_node(), &text, &lines);
-        Ok(Self {
+        Self {
             path,
             text,
             lines,
@@ -95,7 +139,7 @@ impl Source {
             imports,
             outline: OnceCell::new(),
             reference_names: OnceCell::new(),
-        })
+        }
     }
 
     // The observer sees each validated change against the current working copy.
@@ -280,7 +324,10 @@ impl Source {
             .then_some(ReferenceQuery::Name(leaf))
     }
     pub(super) fn range(&self, node: Node<'_>) -> Range {
-        self.byte_range(node.byte_range())
+        Range::new(
+            position_on_line(&self.text, node.start_position(), node.start_byte()),
+            position_on_line(&self.text, node.end_position(), node.end_byte()),
+        )
     }
 
     pub(super) fn byte_range(&self, range: std::ops::Range<usize>) -> Range {
@@ -508,15 +555,7 @@ impl LineIndex {
     }
 
     pub(super) fn position(&self, text: &str, offset: usize) -> Position {
-        let point = self.point(offset);
-        let prefix = &text[self.starts[point.row]..offset];
-        let prefix = if text.as_bytes().get(offset) == Some(&b'\n') {
-            prefix.strip_suffix('\r').unwrap_or(prefix)
-        } else {
-            prefix
-        };
-        let column = prefix.encode_utf16().count();
-        Position::new(point.row as u32, column as u32)
+        position_on_line(text, self.point(offset), offset)
     }
 
     pub(super) fn edit(&mut self, start: usize, end: usize, inserted: &str) {
@@ -532,6 +571,21 @@ impl LineIndex {
                 .map(|(index, _)| start + index + 1),
         );
     }
+}
+
+fn position_on_line(text: &str, point: Point, offset: usize) -> Position {
+    let prefix = &text[offset - point.column..offset];
+    let prefix = if text.as_bytes().get(offset) == Some(&b'\n') {
+        prefix.strip_suffix('\r').unwrap_or(prefix)
+    } else {
+        prefix
+    };
+    let column = if prefix.is_ascii() {
+        prefix.len()
+    } else {
+        prefix.encode_utf16().count()
+    };
+    Position::new(point.row as u32, column as u32)
 }
 
 pub(super) fn function_at(source: &Source, origin: Range) -> Option<Node<'_>> {

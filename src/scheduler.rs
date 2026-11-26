@@ -16,6 +16,12 @@ const SHUTTING_DOWN: &str = "the server is shutting down";
 pub(super) type RequestProgress = QueryProgress<RequestResult, Box<dyn SearchTask>>;
 
 pub(super) trait SearchTask {
+    fn ready(&self, _engine: &Engine) -> bool {
+        true
+    }
+
+    fn discard(&mut self, _code: ErrorCode) {}
+
     fn advance(&mut self, engine: &mut Engine) -> Result<bool>;
     fn finish(self: Box<Self>) -> RequestResult;
 }
@@ -30,6 +36,8 @@ pub(super) trait DeferredQuery {
     fn load_failed(&self, _engine: &mut Engine, message: &str) -> RequestResult {
         Err((ErrorCode::RequestFailed, message.to_owned()))
     }
+
+    fn discard(&mut self, _code: ErrorCode) {}
 }
 
 pub(super) struct Pending {
@@ -75,6 +83,7 @@ impl Scheduler {
         let Some(load) = self.requested.take() else {
             return Ok(());
         };
+        engine.prewarm_completion_sdk(true);
         let root = engine.root().to_owned();
         let results = results.clone();
         thread::Builder::new()
@@ -181,13 +190,15 @@ impl Scheduler {
         engine: &mut Engine,
         connection: &Connection,
     ) -> Result<()> {
-        let Some(mut search) = self.searches.pop_front() else {
+        let Some(next) = self.ready_search(engine) else {
             return Ok(());
         };
+        let mut search = self.searches.remove(next).unwrap();
         let current_generation = engine.workspace_load().generation;
         let result = if current_generation == search.generation {
             let progress = search.task.advance(engine);
             if engine.workspace_load().generation != search.generation {
+                search.task.discard(ErrorCode::ContentModified);
                 Err((ErrorCode::ContentModified, WORKSPACE_CHANGED.to_owned()))
             } else {
                 match progress {
@@ -196,13 +207,24 @@ impl Scheduler {
                         return Ok(());
                     }
                     Ok(true) => search.task.finish(),
-                    Err(error) => Err(internal_error(error)),
+                    Err(error) => {
+                        search.task.discard(ErrorCode::InternalError);
+                        Err(internal_error(error))
+                    }
                 }
             }
         } else {
+            search.task.discard(ErrorCode::ContentModified);
             Err((ErrorCode::ContentModified, WORKSPACE_CHANGED.to_owned()))
         };
         send_response(connection, search.id, result)
+    }
+
+    pub(super) fn ready_search(&self, engine: &Engine) -> Option<usize> {
+        let generation = engine.workspace_load().generation;
+        self.searches
+            .iter()
+            .position(|search| search.generation != generation || search.task.ready(engine))
     }
 
     fn cancel_searches(
@@ -212,8 +234,10 @@ impl Scheduler {
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
-        for search in std::mem::take(&mut self.searches) {
+        for mut search in std::mem::take(&mut self.searches) {
             if matches(&search.id) {
+                search.task.discard(code);
+                drop(search.task);
                 send_response(connection, search.id, Err((code, message.to_owned())))?;
             } else {
                 self.searches.push_back(search);
@@ -229,7 +253,9 @@ impl Scheduler {
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
-        for request in self.pending.extract_if(.., matches) {
+        for mut request in self.pending.extract_if(.., matches) {
+            request.query.discard(code);
+            drop(request.query);
             send_response(connection, request.id, Err((code, message.to_owned())))?;
         }
         Ok(())
@@ -930,7 +956,7 @@ mod tests {
             initialize["capabilities"],
             json!({
                 "positionEncoding": "utf-16",
-                "textDocumentSync": { "openClose": true, "change": 2 },
+                "textDocumentSync": { "openClose": true, "change": 2, "save": true },
                 "definitionProvider": true,
                 "typeDefinitionProvider": true,
                 "implementationProvider": true,
