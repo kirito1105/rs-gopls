@@ -13,8 +13,11 @@ use crate::symbols::{
 };
 use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 
+pub(crate) mod actions;
 mod definition;
+pub(crate) mod diagnostics;
 mod document_symbols;
+pub(crate) mod hierarchy;
 mod hover;
 mod implementation;
 mod index;
