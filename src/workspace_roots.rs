@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -7,7 +7,64 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
+use crate::workspace::path_key;
+
+pub(crate) fn folder_groups(folders: &[PathBuf]) -> Result<Vec<Vec<PathBuf>>> {
+    let mut folders = folders
+        .iter()
+        .map(std::path::absolute)
+        .collect::<std::io::Result<Vec<_>>>()?;
+    if folders.len() > 1 {
+        let mut seen = HashSet::new();
+        folders.retain(|folder| seen.insert(path_key(folder)));
+    }
+    match folders.len() {
+        0 => return Ok(Vec::new()),
+        1 => return Ok(vec![folders]),
+        _ => {}
+    }
+
+    let mut groups = BTreeMap::<PathBuf, Vec<PathBuf>>::new();
+    for folder in folders {
+        let environment: GoEnvironment =
+            go_json(&folder, &["env", "-json", "GO111MODULE", "GOWORK", "GOMOD"])?;
+        let work = Path::new(&environment.work_file);
+        let context = if environment.module_mode == "off" {
+            &folder
+        } else if work.is_absolute() {
+            work
+        } else if environment.module_file.is_absolute() && environment.module_file.is_file() {
+            &environment.module_file
+        } else {
+            &folder
+        };
+        groups.entry(path_key(context)).or_default().push(folder);
+    }
+    Ok(groups.into_values().collect())
+}
+
+pub(crate) fn list_roots_for_folders(folders: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    if let [folder] = folders {
+        return list_roots(folder);
+    }
+    let mut seen = HashSet::new();
+    let mut roots = Vec::new();
+    for folder in folders {
+        for root in list_roots(folder)? {
+            if seen.insert(path_key(&canonical_directory(&root)?)) {
+                roots.push(root);
+            }
+        }
+    }
+    Ok(roots)
+}
+
 pub(crate) fn list_roots(root: &Path) -> Result<Vec<PathBuf>> {
+    ensure!(
+        root.is_dir(),
+        "Go workspace root is not a directory: {}",
+        root.display()
+    );
     let single_root = || vec![root.to_owned()];
     let workspace_override = env::var_os("GOWORK").unwrap_or_default();
     if env::var_os("GO111MODULE").is_some_and(|mode| mode == "off") || workspace_override == "off" {
@@ -96,6 +153,8 @@ struct GoEnvironment {
     module_mode: String,
     #[serde(rename = "GOWORK")]
     work_file: String,
+    #[serde(default, rename = "GOMOD")]
+    module_file: PathBuf,
 }
 
 #[derive(Deserialize)]

@@ -11,19 +11,21 @@ mod test_support;
 mod workspace;
 mod workspace_roots;
 
-use std::{env, path::PathBuf};
+use std::{collections::HashSet, env, path::PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use crossbeam_channel::{bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, InitializeParams, InitializeResult,
-    NumberOrString, PositionEncodingKind, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    InitializeParams, InitializeResult, NumberOrString, OneOf, PositionEncodingKind,
+    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, WorkspaceFolder, WorkspaceFoldersServerCapabilities,
+    WorkspaceServerCapabilities,
     notification::{
-        Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
-        DidOpenTextDocument, Exit, Initialized, Notification as _,
+        Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+        DidCloseTextDocument, DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
     request::{Initialize, Request as _, Shutdown},
 };
@@ -32,6 +34,7 @@ use serde_json::Value;
 use protocol::{RequestResult, file_path, invalid_params, send_response};
 use scheduler::{Scheduler, WorkspaceResult};
 use semantic::Engine;
+use workspace::path_key;
 
 #[cfg(test)]
 use lsp_server::{RequestId, Response};
@@ -212,12 +215,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|document| document.document_symbol.as_ref())
         .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
-    let root = workspace_root(params)?;
-    ensure!(
-        root.is_dir(),
-        "workspace is not a directory: {}",
-        root.display()
-    );
+    let roots = workspace_roots(params)?;
 
     let mut capabilities = ServerCapabilities {
         position_encoding: Some(PositionEncodingKind::UTF16),
@@ -228,6 +226,13 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
                 ..Default::default()
             },
         )),
+        workspace: Some(WorkspaceServerCapabilities {
+            workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                supported: Some(true),
+                change_notifications: Some(OneOf::Left(true)),
+            }),
+            ..Default::default()
+        }),
         ..Default::default()
     };
     dispatch::write_capabilities(&mut capabilities);
@@ -242,7 +247,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         Running {
             watch_files,
             hierarchical_document_symbols,
-            engine: Engine::new(root),
+            engine: Engine::with_roots(roots),
             scheduler: Scheduler::default(),
         },
         result,
@@ -250,20 +255,39 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
 }
 
 #[allow(deprecated)]
-fn workspace_root(params: InitializeParams) -> Result<PathBuf> {
-    if let Some(folders) = params.workspace_folders {
-        ensure!(folders.len() <= 1, "only one workspace folder is supported");
-        if let Some(folder) = folders.first() {
-            return file_path(&folder.uri);
+fn workspace_roots(params: InitializeParams) -> Result<Vec<PathBuf>> {
+    let mut roots = Vec::new();
+    add_workspace_folders(&mut roots, params.workspace_folders.unwrap_or_default())?;
+    if roots.is_empty() {
+        let root = match (params.root_uri, params.root_path) {
+            (Some(uri), _) => file_path(&uri)?,
+            (None, Some(path)) => env::current_dir()?.join(path),
+            (None, None) => env::current_dir()
+                .context("getting the current directory for a client without a workspace")?,
+        };
+        roots.push(workspace_directory(root)?);
+    }
+    Ok(roots)
+}
+
+fn add_workspace_folders(roots: &mut Vec<PathBuf>, folders: Vec<WorkspaceFolder>) -> Result<()> {
+    let mut seen: HashSet<_> = roots.iter().map(|root| path_key(root)).collect();
+    for folder in folders {
+        let path = workspace_directory(file_path(&folder.uri)?)?;
+        if seen.insert(path_key(&path)) {
+            roots.push(path);
         }
     }
-    if let Some(uri) = params.root_uri {
-        return file_path(&uri);
-    }
-    if let Some(path) = params.root_path {
-        return Ok(env::current_dir()?.join(path));
-    }
-    env::current_dir().context("getting the current directory for a client without a workspace")
+    Ok(())
+}
+
+fn workspace_directory(path: PathBuf) -> Result<PathBuf> {
+    ensure!(
+        path.is_dir(),
+        "workspace is not a directory: {}",
+        path.display()
+    );
+    Ok(path)
 }
 
 fn register_file_watches(connection: &Connection) -> Result<()> {
@@ -301,6 +325,24 @@ fn handle_notification(
     params: Value,
 ) -> Result<()> {
     match method {
+        DidChangeWorkspaceFolders::METHOD => {
+            let params: DidChangeWorkspaceFoldersParams = serde_json::from_value(params)?;
+            let removed = params
+                .event
+                .removed
+                .iter()
+                .map(|folder| file_path(&folder.uri).map(|path| path_key(&path)))
+                .collect::<Result<HashSet<_>>>()?;
+            let mut roots = running.engine.roots().to_vec();
+            roots.retain(|root| !removed.contains(&path_key(root)));
+            add_workspace_folders(&mut roots, params.event.added)?;
+            if running.engine.update_roots(roots) {
+                running
+                    .scheduler
+                    .workspace_modified(connection, running.engine.workspace_load())?;
+            }
+            Ok(())
+        }
         DidChangeWatchedFiles::METHOD => {
             let params: DidChangeWatchedFilesParams = serde_json::from_value(params)?;
             let before = running.engine.workspace_load();

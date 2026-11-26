@@ -95,7 +95,7 @@ pub struct Engine {
 }
 
 struct EngineState {
-    root: PathBuf,
+    roots: Vec<PathBuf>,
     workspace: Option<Workspace>,
     graph_changes: GraphChanges,
     generation: u64,
@@ -106,14 +106,19 @@ struct EngineState {
 }
 
 impl Engine {
+    #[cfg_attr(not(test), allow(dead_code, reason = "single-folder constructor"))]
     pub fn new(root: PathBuf) -> Self {
+        Self::with_roots(vec![root])
+    }
+
+    pub(crate) fn with_roots(roots: Vec<PathBuf>) -> Self {
         let mut parser = Parser::new();
         parser
             .set_language(&tree_sitter_go::LANGUAGE.into())
             .expect("Go grammar must match the tree-sitter runtime");
         Self {
             state: EngineState {
-                root,
+                roots,
                 workspace: None,
                 graph_changes: GraphChanges::default(),
                 generation: 0,
@@ -157,7 +162,7 @@ impl Engine {
             }
             self.workspace_symbol_index.document_opened(
                 self.state.workspace.as_ref(),
-                &self.state.root,
+                &self.state.roots,
                 &key,
                 &source.path,
                 new_file,
@@ -215,8 +220,29 @@ impl Engine {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code, reason = "single-folder accessor"))]
     pub fn root(&self) -> &Path {
-        &self.state.root
+        self.roots()
+            .first()
+            .map_or(Path::new("."), PathBuf::as_path)
+    }
+
+    pub(crate) fn roots(&self) -> &[PathBuf] {
+        &self.state.roots
+    }
+
+    pub(crate) fn update_roots(&mut self, roots: Vec<PathBuf>) -> bool {
+        if self
+            .roots()
+            .iter()
+            .map(|root| path_key(root))
+            .eq(roots.iter().map(|root| path_key(root)))
+        {
+            return false;
+        }
+        self.state.roots = roots;
+        self.invalidate(None);
+        true
     }
 
     pub fn is_open(&self, path: &Path) -> bool {
