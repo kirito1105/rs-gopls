@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 进行中 |
+| 状态 | 已完成 |
 | 创建日期 | 2026-11-27 |
 | 用户确认 | 已确认（2026-11-27 确认 F + B + D 三线联合开工，Codex 使用 full-access 模式，严格路径脱敏） |
 | 更新日期 | 2026-11-27 |
-| 完成日期 | 待填写 |
+| 完成日期 | 2026-11-27 |
 
 ## 目标与范围
 
@@ -47,17 +47,17 @@
 ## 验收标准
 
 ### 基座与契约
-- [ ] **多 Workspace Folder 与动态变更**：初始化支持 0/1/多个 `workspaceFolders`；`workspace/didChangeWorkspaceFolders` 增删独立 Go 模块文件夹后，包图自动刷新，跨文件夹的声明/符号/诊断/层级查询准确反映最新根目录集合，移除目录后不再命中已移除模块。
-- [ ] **`F → B` 结构化包错误**：`Workspace::package_errors(&self) -> &[PackageLoadError]` 覆盖直接包错误（`Error`）与依赖错误（`DepsErrors`），正确保留测试包身份、`ImportStack`、文件路径与位置，且不退化既有 Go Modules / `go.work` / GOPATH / 测试包行为。
+- [x] **多 Workspace Folder 与动态变更**：初始化支持 0/1/多个 `workspaceFolders`；`workspace/didChangeWorkspaceFolders` 增删独立 Go 模块文件夹后，包图自动刷新，跨文件夹的声明/符号/诊断/层级查询准确反映最新根目录集合，移除目录后不再命中已移除模块。
+- [x] **`F → B` 结构化包错误**：`Workspace::package_errors(&self) -> &[PackageLoadError]` 覆盖直接包错误（`Error`）与依赖错误（`DepsErrors`），正确保留测试包身份、`ImportStack`、文件路径与位置，且不退化既有 Go Modules / `go.work` / GOPATH / 测试包行为。
 
 ### Call Hierarchy 与 Type Hierarchy
-- [ ] **Call Hierarchy 完整性**：初始化声明 `callHierarchyProvider`。覆盖函数/方法声明及调用处 `prepareCallHierarchy`、跨文件/跨包/测试包 `incomingCalls` 与 `outgoingCalls`（含多调用点聚合 `fromRanges`、未保存编辑即时更新、空结果、`$/cancelRequest` 返回 `-32800` 及编辑过期返回 `-32801`）。
-- [ ] **Type Hierarchy 完整性**：初始化声明 `typeHierarchyProvider`。覆盖接口/具体类型/嵌入结构体/嵌入接口/类型别名的 `prepareTypeHierarchy`、`supertypes` 与 `subtypes`，结果去重且顺序稳定，支持未保存编辑、关闭恢复与取消。
+- [x] **Call Hierarchy 完整性**：初始化声明 `callHierarchyProvider`。覆盖函数/方法声明及调用处 `prepareCallHierarchy`、跨文件/跨包/测试包 `incomingCalls` 与 `outgoingCalls`（含多调用点聚合 `fromRanges`、未保存编辑即时更新、空结果、`$/cancelRequest` 返回 `-32800` 及编辑过期返回 `-32801`）。
+- [x] **Type Hierarchy 完整性**：初始化声明 `typeHierarchyProvider`。覆盖接口/具体类型/嵌入结构体/嵌入接口/类型别名的 `prepareTypeHierarchy`、`supertypes` 与 `subtypes`，结果去重且顺序稳定，支持未保存编辑、关闭恢复与取消。
 
 ### 性能、GoLand 对照与回归
-- [ ] **Phase 4 冷反查优化验证**：在多包合成夹具与标准库对照下，先预热一个具体类型再首次反查另一具体类型的耗时显著下降，且既有 `implementation-navigation` 29/29 项与工作区实现回归全部通过。
-- [ ] **GoLand 基线与性能对照**：使用脱敏脚本 `tools/capture_goland_hierarchy.groovy` 在 GoLand `GO-263.7307.354` 上采集 `tools/fixtures/hierarchy/` 基线，归档至 `docs/goland-hierarchy-baseline.md`；`tools/check_goland_hierarchy.py` 与 `tools/compare_hierarchy.py` 按 [导航性能对照](../PLANS.md#导航性能对照) 完成正确性与 P50/P95 性能对照。
-- [ ] **全量构建与历史回归**：`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警；`tools/test_lsp_harness.py`、`tools/test_workspace_checks.py` 与 `tools/check_workspace_updates.py`（含新增 `hierarchy` 模块）全部通过，既有导航与符号功能无退化。
+- [x] **Phase 4 冷反查优化验证**：在多包合成夹具与标准库对照下，先预热一个具体类型再首次反查另一具体类型的耗时显著下降，且既有 `implementation-navigation` 29/29 项与工作区实现回归全部通过。
+- [x] **GoLand 基线与性能对照**：使用脱敏脚本 `tools/capture_goland_hierarchy.groovy` 在 GoLand `GO-263.7307.354` 上采集 `tools/fixtures/hierarchy/` 基线，归档至 `docs/goland-hierarchy-baseline.md`；`tools/check_goland_hierarchy.py` 与 `tools/compare_hierarchy.py` 按 [导航性能对照](../PLANS.md#导航性能对照) 完成正确性与 P50/P95 性能对照。
+- [x] **全量构建与历史回归**：`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警；`tools/test_lsp_harness.py`、`tools/test_workspace_checks.py` 与 `tools/check_workspace_updates.py`（含新增 `hierarchy` 模块）全部通过，既有导航与符号功能无退化。
 
 ## 实现依据
 
@@ -123,3 +123,4 @@ python -B .\tools\compare_hierarchy.py $server --workspace .\tools\fixtures\hier
 - 2026-11-27 完成 GoLand `GO-263.7307.354` 层级与基座相关类静态核查，确定与 Track B / Track D 的 `F → B → D` 协同架构，创建待确认计划。
 - 2026-11-27 验证 Wave 0 层级夹具与采集脚本。夹具通过 `go test ./...`，GoLand `GO-263.7307.354` 的 20 个查询各完成 30 次重复计时，结果一致。采集使用 GoLand 的 All 搜索范围，输出夹具内的相对路径。GoLand 略去递归自调用边，`Base` 的子类型结果为空。[层级夹具](../../tools/fixtures/hierarchy/) · [采集脚本](../../tools/capture_goland_hierarchy.groovy)
 - [x] 2026-11-27 验证 Wave 3 统一基准工具。GoLand `GO-263.7307.354` 和 Go `1.26.3` 的层级对照通过 20 项严格校验，其中 10 项可直接对照首查与热查耗时。rs-gopls 完成 600 次插入注释后的查询及回滚校验。三条线的 `--capture-goland` 均通过现场采集和工作集采样验证。共用辅助模块与 LSP harness 的 22 项单测通过。[共用辅助模块](../../tools/bench_common.py) · [层级校验](../../tools/check_goland_hierarchy.py) · [层级基准](../../tools/compare_hierarchy.py)
+- 2026-11-27 完成 F-WP1（`a17df2b`，多 Workspace Folder + `Workspace::package_errors`）、F-WP2（`32f0c8a`，Call/Type Hierarchy）、F-WP3（`97fc13d`，具体类型冷反查跨类型切换 P50 降 88.7% / P95 降 90.8%，99 包合成切换 59→24 ms，不相交方法集新增探测 0 次）与 Wave 3 统一 LSP 接线（`a5a8e45`）。最终发布版 SHA-256 `0A0532A807D96E98D0301E527CA2E082F6D08A356B43AC58A64690B98768C362`，通过 `cargo check/test --workspace --locked`（120/120，零告警）、32/32 Python 单测、29/29 工作区回归、20/20 层级严格对照及既有历史回归。归档基线文档 [GoLand 层级基线](../goland-hierarchy-baseline.md)，状态更新为「已完成」。

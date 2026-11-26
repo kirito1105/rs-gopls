@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 进行中 |
+| 状态 | 已完成 |
 | 创建日期 | 2026-11-27 |
 | 用户确认 | 已确认（2026-11-27 确认 F + B + D 三线联合开工，Codex 使用 full-access 模式，严格路径脱敏） |
 | 更新日期 | 2026-11-27 |
-| 完成日期 | 待填写 |
+| 完成日期 | 2026-11-27 |
 
 ## 目标与范围
 
@@ -61,24 +61,24 @@
 ## 验收标准
 
 ### 跨线契约与边界
-- [ ] **`F → B` 包错误契约**：`Workspace::package_errors(&self) -> &[PackageLoadError]` 正确解析 `go list -e` 的 `Error` 与 `DepsErrors`，保留包 ID、测试包身份、错误消息与可选位置；不破坏现有 `Workspace` 导航、测试包与草稿逻辑。
-- [ ] **`B → D` 诊断模型契约**：`Engine::diagnostics_for(&self, document: &DocumentSnapshot<'_>) -> Option<&DiagnosticReport>` 在快照匹配时返回结构化诊断（稳定 `DiagnosticCode`、UTF-16 范围与类型化 `DiagnosticFixData`），文档变更或包图换代后对旧快照返回 `None`。
-- [ ] **最小共享文件侵入**：核心诊断逻辑与单测全部位于 `src/semantic/diagnostics/`，工作区集成用例通过 `tools/workspace_checks/diagnostics.py` 自动发现，不修改其他功能线目录。
+- [x] **`F → B` 包错误契约**：`Workspace::package_errors(&self) -> &[PackageLoadError]` 正确解析 `go list -e` 的 `Error` 与 `DepsErrors`，保留包 ID、测试包身份、错误消息与可选位置；不破坏现有 `Workspace` 导航、测试包与草稿逻辑。
+- [x] **`B → D` 诊断模型契约**：`Engine::diagnostics_for(&self, document: &DocumentSnapshot<'_>) -> Option<&DiagnosticReport>` 在快照匹配时返回结构化诊断（稳定 `DiagnosticCode`、UTF-16 范围与类型化 `DiagnosticFixData`），文档变更或包图换代后对旧快照返回 `None`。
+- [x] **最小共享文件侵入**：核心诊断逻辑与单测全部位于 `src/semantic/diagnostics/`，工作区集成用例通过 `tools/workspace_checks/diagnostics.py` 自动发现，不修改其他功能线目录。
 
 ### 阶段一：语法、包错误与 LSP 协议
-- [ ] **语法诊断与编辑态响应**：覆盖缺括号、缺分号、非法表达式、缺包名、CRLF 与非 BMP UTF-16 位置。未保存 `didChange` 立即更新诊断，修复语法后清空；不产生大面积重复叠错。
-- [ ] **包加载错误与去重**：覆盖损坏的导入、构建约束冲突、`go.mod` 缺失依赖等 `go list` 错误，准确落位到目标文件或包声明；缓冲区已修复磁盘语法错时抑制过时磁盘包错误。
-- [ ] **Push 与 Pull 能力协商及一致性**：初始化声明 `diagnosticProvider`；`textDocument/diagnostic` 正确返回 `Full` 与 `Unchanged`（基于 `previousResultId`）并支持 `$/cancelRequest`；客户端声明 Pull 能力时不主动推送 `publishDiagnostics`（并在支持 `refreshSupport` 时于包图更新后发 `workspace/diagnostic/refresh`），仅声明 Push 能力时在打开、编辑、关闭（空数组清理）和包图安装后推送且携带正确文档 `version`；无诊断能力声明的最小客户端保持静默兼容。
+- [x] **语法诊断与编辑态响应**：覆盖缺括号、缺分号、非法表达式、缺包名、CRLF 与非 BMP UTF-16 位置。未保存 `didChange` 立即更新诊断，修复语法后清空；不产生大面积重复叠错。
+- [x] **包加载错误与去重**：覆盖损坏的导入、构建约束冲突、`go.mod` 缺失依赖等 `go list` 错误，准确落位到目标文件或包声明；缓冲区已修复磁盘语法错时抑制过时磁盘包错误。
+- [x] **Push 与 Pull 能力协商及一致性**：初始化声明 `diagnosticProvider`；`textDocument/diagnostic` 正确返回 `Full` 与 `Unchanged`（基于 `previousResultId`）并支持 `$/cancelRequest`；客户端声明 Pull 能力时不主动推送 `publishDiagnostics`（并在支持 `refreshSupport` 时于包图更新后发 `workspace/diagnostic/refresh`），仅声明 Push 能力时在打开、编辑、关闭（空数组清理）和包图安装后推送且携带正确文档 `version`；无诊断能力声明的最小客户端保持静默兼容。
 
 ### 阶段二：语义与类型诊断
-- [ ] **导入、名称、声明与未使用检查**：覆盖未解析导入/自导入/循环导入/未使用导入、未解析变量/类型/字段/方法及跨包未导出访问、重复声明与 `:=` 无新变量/常量重赋值、未使用局部变量（含 `Unnecessary` tag）。
-- [ ] **调用、返回与核心类型检查**：覆盖非函数调用、实参/返回数量不匹配（含变参、多值透传、方法表达式、内置函数）、确定性类型不匹配、接口未实现检查、复合字面量未知字段、重复 `switch case` 与 `_` 作值。
-- [ ] **低误报保证**：在干净的多包/泛型/测试包/接口嵌入/类型别名/闭包夹具与真实 Go 源码文件上保持 **0 误报**（无合理性存疑的假阳性错误）。
+- [x] **导入、名称、声明与未使用检查**：覆盖未解析导入/自导入/循环导入/未使用导入、未解析变量/类型/字段/方法及跨包未导出访问、重复声明与 `:=` 无新变量/常量重赋值、未使用局部变量（含 `Unnecessary` tag）。
+- [x] **调用、返回与核心类型检查**：覆盖非函数调用、实参/返回数量不匹配（含变参、多值透传、方法表达式、内置函数）、确定性类型不匹配、接口未实现检查、复合字面量未知字段、重复 `switch case` 与 `_` 作值。
+- [x] **低误报保证**：在干净的多包/泛型/测试包/接口嵌入/类型别名/闭包夹具与真实 Go 源码文件上保持 **0 误报**（无合理性存疑的假阳性错误）。
 
 ### GoLand 对照、性能与历史回归
-- [ ] **GoLand 基线可重放与路径脱敏**：在 GoLand `GO-263.7307.354` 上通过 `tools/capture_goland_diagnostics.groovy` 采集 `tools/fixtures/diagnostics/` 的 `GoAnnotator` 基线，归档至 `docs/goland-diagnostics-baseline.md`，`tools/check_goland_diagnostics.py` 严格核对共同错误集合与 UTF-16 范围，单列有意差异；新增脚本与文档不含硬编码个人路径或私有仓库路径。
-- [ ] **性能对照 GoLand**：按 [导航性能对照](../PLANS.md#导航性能对照) 固定主机、GoLand 构建号、Go SDK 与样本，记录索引就绪首查、重复查询与编辑后查询的 P50/P95、样本数与峰值工作集。
-- [ ] **全量构建与历史回归**：`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警通过；`tools/test_lsp_harness.py`、`tools/test_workspace_checks.py` 与 `tools/check_workspace_updates.py` 全部通过（原 23 项 + 新增 diagnostics 用例）；既有声明、类型定义、引用、实现、Hover、SignatureHelp、符号检查全部无退化。
+- [x] **GoLand 基线可重放与路径脱敏**：在 GoLand `GO-263.7307.354` 上通过 `tools/capture_goland_diagnostics.groovy` 采集 `tools/fixtures/diagnostics/` 的 `GoAnnotator` 基线，归档至 `docs/goland-diagnostics-baseline.md`，`tools/check_goland_diagnostics.py` 严格核对共同错误集合与 UTF-16 范围，单列有意差异；新增脚本与文档不含硬编码个人路径或私有仓库路径。
+- [x] **性能对照 GoLand**：按 [导航性能对照](../PLANS.md#导航性能对照) 固定主机、GoLand 构建号、Go SDK 与样本，记录索引就绪首查、重复查询与编辑后查询的 P50/P95、样本数与峰值工作集。
+- [x] **全量构建与历史回归**：`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警通过；`tools/test_lsp_harness.py`、`tools/test_workspace_checks.py` 与 `tools/check_workspace_updates.py` 全部通过（原 23 项 + 新增 diagnostics 用例）；既有声明、类型定义、引用、实现、Hover、SignatureHelp、符号检查全部无退化。
 
 ## 实现依据
 
@@ -184,3 +184,4 @@ python -B -m unittest discover -s tools -p 'test_workspace_checks.py'
 - 2026-11-27 完成本机 GoLand `2026.3.0.1`（`GO-263.7307.354`）插件清单与字节码静态分析（`GoAnnotator`、31 个 `SpecChecker`、29 个 `legacyErrorInspections`、`go-inspections.xml` 与 `GoListOutputParser`），核对 `lsp-types 0.97` 的 Push/Pull 协议类型与 Pre-PR 1/2 后的 Rust 模块边界，创建待确认计划并等待用户确认。
 - 2026-11-27 验证 Wave 0 诊断夹具与采集脚本。`go test ./clean/...` 通过。GoLand `GO-263.7307.354` 的 11 个文件各完成 30 次重复计时，结果一致。两份干净源文件均为零错误，语法错样例核对了非 BMP 字符后的 UTF-16 范围。[诊断夹具](../../tools/fixtures/diagnostics/) · [采集脚本](../../tools/capture_goland_diagnostics.groovy)
 - [x] 2026-11-27 验证 Wave 3 诊断工具。严格校验覆盖全部 11 个文件，两份干净文件均返回零诊断。11 次 `previousResultId` 验证返回 `unchanged`，两份语法错误文件均通过未保存修复与回滚验证。使用 GoLand `GO-263.7307.354` 和 Go `1.26.3` 对照 5 个结果一致的首查与热查样本，rs-gopls 完成 330 次编辑后查询。[诊断校验](../../tools/check_goland_diagnostics.py) · [诊断基准](../../tools/compare_diagnostics.py)
+- 2026-11-27 完成 B-WP0 契约（`29baf18`）、阶段一+二全量引擎（`d0d0f56`，19 项单测，Go 1.26.3 标准库 10 个包 57 个源文件 0 误报）及 Push/Pull 能力协商接线（`a5a8e45`）。发布版 SHA-256 `0A0532A807D96E98D0301E527CA2E082F6D08A356B43AC58A64690B98768C362`，暖态 Pull P50 `0.1588 ms` / P95 `0.2048 ms`，编辑后 P50 `0.4134 ms` / P95 `0.9804 ms`，主进程峰值工作集 `9.84 MiB`；全工作区 120/120 Rust 测试、32/32 Python 单测、29/29 工作区回归、11/11 诊断对照与历史回归全部通过。归档基线文档 [GoLand 诊断基线](../goland-diagnostics-baseline.md)，状态更新为「已完成」。

@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | 进行中 |
+| 状态 | 已完成 |
 | 创建日期 | 2026-11-27 |
 | 用户确认 | 已确认（2026-11-27 确认 F + B + D 三线联合开工，Codex 使用 full-access 模式，严格路径脱敏） |
 | 更新日期 | 2026-11-27 |
-| 完成日期 | 待填写 |
+| 完成日期 | 2026-11-27 |
 
 ## 目标与范围
 
@@ -49,16 +49,16 @@
 ## 验收标准
 
 ### `D → A` 导入编辑契约
-- [ ] **`import_edits` 行为完备**：单元测试覆盖无 import 块新增、单行 import 转分组块、已有分组按标准库/第三方/本地模块插入、重复导入返回空编辑、保留行上/行尾注释与 `_`/`.`/`"C"`（含紧邻 cgo 注释）、清理空 `import ()` 块、CRLF 与非 BMP UTF-16 范围、语法破坏时安全返回 `ImportEditError`。
+- [x] **`import_edits` 行为完备**：单元测试覆盖无 import 块新增、单行 import 转分组块、已有分组按标准库/第三方/本地模块插入、重复导入返回空编辑、保留行上/行尾注释与 `_`/`.`/`"C"`（含紧邻 cgo 注释）、清理空 `import ()` 块、CRLF 与非 BMP UTF-16 范围、语法破坏时安全返回 `ImportEditError`。
 
 ### 格式化与代码操作
-- [ ] **`textDocument/formatting`**：初始化声明 `documentFormattingProvider`。对未保存缓冲区的缩进、空行、结构体字段对齐与注释排版输出与 `gofmt` 一致的结果；已格式化文件返回空编辑；存在语法错误时不破坏内容；空结果防覆盖保护生效。
-- [ ] **`source.organizeImports`**：初始化声明 `codeActionProvider`（含 `codeActionKinds: ["quickfix", "source.organizeImports"]`）。请求 `only: ["source.organizeImports"]` 时正确删除未使用导入、去重、排序分组并保留注释与副作用/cgo 导入。
-- [ ] **`quickfix` 与 Track B 快照联动**：覆盖删除未使用导入、未解析限定符自动导入（单候选与多候选）、未使用局部变量改 `_`、`:=` 改 `=` 四类核心修复；当 `only` 过滤或快照无对应诊断时不返回无关操作；应用返回的 `WorkspaceEdit` 后重新拉取 Track B 诊断，对应错误消失。
+- [x] **`textDocument/formatting`**：初始化声明 `documentFormattingProvider`。对未保存缓冲区的缩进、空行、结构体字段对齐与注释排版输出与 `gofmt` 一致的结果；已格式化文件返回空编辑；存在语法错误时不破坏内容；空结果防覆盖保护生效。
+- [x] **`source.organizeImports`**：初始化声明 `codeActionProvider`（含 `codeActionKinds: ["quickfix", "source.organizeImports"]`）。请求 `only: ["source.organizeImports"]` 时正确删除未使用导入、去重、排序分组并保留注释与副作用/cgo 导入。
+- [x] **`quickfix` 与 Track B 快照联动**：覆盖删除未使用导入、未解析限定符自动导入（单候选与多候选）、未使用局部变量改 `_`（单变量短声明同步 `:=` 改 `=`）、`:=` 改 `=` 四类核心修复；当 `only` 过滤或快照无对应诊断时不返回无关操作；应用返回的 `WorkspaceEdit` 后重新拉取 Track B 诊断，对应错误消失。
 
 ### GoLand 对照、性能与回归
-- [ ] **GoLand 基线与脱敏**：在 GoLand `GO-263.7307.354` 上通过脱敏脚本 `tools/capture_goland_actions.groovy` 采集 `tools/fixtures/actions/` 的 `GoImportOptimizer` 与 `gofmt` / QuickFix 对照基线，归档至 `docs/goland-actions-baseline.md`，不含硬编码个人路径。
-- [ ] **性能与全量回归**：按 [导航性能对照](../PLANS.md#导航性能对照) 记录 `formatting`、`organizeImports` 与 `codeAction` 耗时；`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警；`tools/check_workspace_updates.py`（含新增 `actions` 模块）与既有全部回归通过。
+- [x] **GoLand 基线与脱敏**：在 GoLand `GO-263.7307.354` 上通过脱敏脚本 `tools/capture_goland_actions.groovy` 采集 `tools/fixtures/actions/` 的 `GoImportOptimizer` 与 `gofmt` / QuickFix 对照基线，归档至 `docs/goland-actions-baseline.md`，不含硬编码个人路径。
+- [x] **性能与全量回归**：按 [导航性能对照](../PLANS.md#导航性能对照) 记录 `formatting`、`organizeImports` 与 `codeAction` 耗时；`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警；`tools/check_workspace_updates.py`（含新增 `actions` 模块）与既有全部回归通过。
 
 ## 实现依据
 
@@ -114,3 +114,4 @@ python -B .\tools\check_goland_actions.py $server --workspace .\tools\fixtures\a
 - 2026-11-27 完成 GoLand `GO-263.7307.354` 格式化与导入优化器字节码静态核查，确定 `D → A` 导入编辑契约及与 Track B / F 的协同节奏，创建待确认计划。
 - 2026-11-27 验证 Wave 0 操作夹具与采集脚本。`go test ./helper/...` 通过。GoLand `GO-263.7307.354` 的格式化和导入整理共 4 个用例，各完成 30 次重复计时且结果一致。格式化正文与 Go SDK 的 `gofmt` 一致，导入整理保留两种导入注释与 cgo 前导注释及 `import "C"`。[操作夹具](../../tools/fixtures/actions/) · [采集脚本](../../tools/capture_goland_actions.groovy)
 - [x] 2026-11-27 验证 Wave 3 操作工具。格式化、导入整理和 QuickFix 共 9 项通过精确文本校验，导入整理的编辑范围避开 cgo 前导注释和 `import "C"`。使用 GoLand `GO-263.7307.354` 和 Go `1.26.3` 对照两项格式化的首查与热查耗时，rs-gopls 完成 270 次编辑后查询。[操作校验](../../tools/check_goland_actions.py) · [操作基准](../../tools/compare_actions.py)
+- 2026-11-27 完成 D-WP1（`4809672`，`import_edits` 19 项单测）、D-WP2+3（`f1e3054`，`formatting` + `code_action`）及 Wave 3 接线与单变量短声明 QuickFix 修复（`a5a8e45`）。发布版 SHA-256 `0A0532A807D96E98D0301E527CA2E082F6D08A356B43AC58A64690B98768C362`，`source.organizeImports` 暖态 P50 `0.1789 ms`、`quickfix` 暖态 P50 `0.3862 ms`、`formatting`（`gofmt`）P50 `106.6592 ms`，主进程峰值工作集 `10.44 MiB`；全工作区 120/120 Rust 测试、32/32 Python 单测、29/29 工作区回归与 9/9 操作严格对照全部通过。归档基线文档 [GoLand 操作基线](../goland-actions-baseline.md)，状态更新为「已完成」。
