@@ -134,20 +134,25 @@ class LspClient:
                     raise RuntimeError(f"{method} failed: {message['error']}")
                 return message["result"]
 
-    def initialize(self, *, watch_files=False):
+    def initialize(self, *, watch_files=False, hierarchical_document_symbols=None):
         workspace = {"workspaceFolders": True}
         if watch_files:
             workspace["didChangeWatchedFiles"] = {"dynamicRegistration": True}
+        capabilities = {
+            "general": {"positionEncodings": ["utf-16"]},
+            "workspace": workspace,
+        }
+        if hierarchical_document_symbols is not None:
+            capabilities["textDocument"] = {
+                "documentSymbol": {"hierarchicalDocumentSymbolSupport": hierarchical_document_symbols},
+            }
         init = self.request(
             "initialize",
             processId=os.getpid(),
             rootUri=self.folders[0]["uri"],
             workspaceFolders=self.folders,
             initializationOptions={"diagnosticsTrigger": "Save"},
-            capabilities={
-                "general": {"positionEncodings": ["utf-16"]},
-                "workspace": workspace,
-            },
+            capabilities=capabilities,
         )
         capabilities = init["capabilities"]
         if capabilities.get("definitionProvider") in (None, False):

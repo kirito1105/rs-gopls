@@ -4,7 +4,7 @@ Go language server prototype in Rust. It follows the GoLand Go plugin's separati
 
 - `src/workspace.rs` loads the package graph and active source files through `go list`, using the Go SDK and build environment on PATH.
 - `src/semantic.rs` parses Go into a Tree-sitter syntax tree, extracts lightweight per-file declaration indexes, and binds local and package names and resolves fields, methods, and call-result selectors. Open files use editor content. Ranged edits update the existing syntax tree and line index.
-- `src/main.rs` serves the resolver as `textDocument/definition` over stdio LSP with UTF-16 positions.
+- `src/main.rs` handles LSP requests over stdio with UTF-16 positions.
 
 ## Build and verify
 
@@ -57,6 +57,10 @@ Use Zed's **Go to Implementation** on a Go interface type or method to find impl
 ## Hover and signature help
 
 The server provides `textDocument/hover` and `textDocument/signatureHelp` (triggered on `(` and `,`). Hover renders Markdown Go signatures with inferred types, struct tags, generic parameters, package docs, and GoDoc comments (filtering compiler directives). Signature help resolves functions, methods, interface methods, generic instantiations, method expressions, function values, and builtins with expanded grouped parameters, variadic clamping, UTF-16 parameter highlight offsets, and unclosed-call editing tolerance. [GoLand hover and signature help baseline and benchmarks](docs/goland-hover-signature-baseline.md)
+
+## Document outline and workspace symbols
+
+`textDocument/documentSymbol` lists the current file's declarations in source order as a nested or flat outline, according to client capabilities. `workspace/symbol` searches active project and test packages by simple or qualified name and returns exact declaration locations. Both use unsaved editor buffers. [GoLand symbol baseline and benchmarks](docs/goland-symbols-baseline.md)
 
 ## Test in Zed on Windows
 

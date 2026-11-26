@@ -24,6 +24,7 @@ pub struct Package {
     directory: PathBuf,
     import_map: HashMap<String, String>,
     for_test: String,
+    external: bool,
 }
 
 pub struct Workspace {
@@ -54,7 +55,7 @@ impl Workspace {
             .args([
                 "list",
                 "-e",
-                "-json=Dir,ImportPath,Name,GoFiles,CgoFiles,Imports,ImportMap,Error,ForTest",
+                "-json=Dir,ImportPath,Name,GoFiles,CgoFiles,Imports,ImportMap,Error,ForTest,Goroot,Module",
                 "-deps",
             ])
             .args(include_tests.then_some("-test"))
@@ -87,19 +88,27 @@ impl Workspace {
                 stderr.trim()
             );
         }
+        // An empty listing still supplies the project roots for open drafts.
+        let listing =
+            packages.with_context(|| format!("reading Go packages in {}", root.display()))?;
+        let roots = roots
+            .iter()
+            .map(|directory| {
+                path_key(
+                    &directory
+                        .canonicalize()
+                        .unwrap_or_else(|_| directory.clone()),
+                )
+            })
+            .collect();
+        Ok(Self::from_listing(roots, listing, include_tests))
+    }
+
+    fn from_listing(roots: Vec<PathBuf>, listing: PackageListing, includes_tests: bool) -> Self {
         let PackageListing {
             packages,
             importers,
-            package_error,
-        } = packages.with_context(|| format!("reading Go packages in {}", root.display()))?;
-        if packages.is_empty() {
-            let detail = package_error.as_deref().unwrap_or_else(|| stderr.trim());
-            if detail.is_empty() {
-                bail!("no Go packages found in {}", root.display());
-            }
-            bail!("no Go packages found in {}: {detail}", root.display());
-        }
-
+        } = listing;
         let mut file_packages = HashMap::new();
         // Ordinary files belong to their normal package, even when the Go
         // command also reports an in-package test compilation of those files.
@@ -116,24 +125,27 @@ impl Workspace {
                     .or_insert_with(|| id.clone());
             }
         }
-        let roots = roots
-            .iter()
-            .map(|directory| {
-                path_key(
-                    &directory
-                        .canonicalize()
-                        .unwrap_or_else(|_| directory.clone()),
-                )
-            })
-            .collect();
-        Ok(Self {
+        Self {
             roots,
             packages,
             file_packages,
             importers,
-            includes_tests: include_tests,
+            includes_tests,
             builtin_source: OnceCell::new(),
-        })
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_listing(
+        roots: &[PathBuf],
+        listing: &str,
+        includes_tests: bool,
+    ) -> Self {
+        Self::from_listing(
+            roots.iter().map(|root| path_key(root)).collect(),
+            read_packages(listing.as_bytes()).unwrap(),
+            includes_tests,
+        )
     }
 
     pub(crate) fn builtin_source(&self, root: &Path) -> Result<&Path> {
@@ -188,9 +200,34 @@ impl Workspace {
     }
 
     pub(crate) fn is_project_package(&self, package: &Package) -> bool {
-        self.roots
-            .iter()
-            .any(|root| package.directory.starts_with(root))
+        self.contains_project_path(&package.directory)
+    }
+
+    pub(crate) fn contains_project_path(&self, key: &Path) -> bool {
+        self.roots.iter().any(|root| key.starts_with(root))
+    }
+
+    pub(crate) fn contains_external_symbol_path(&self, key: &Path) -> bool {
+        self.navigation_packages()
+            .any(|package| package.external && key.starts_with(&package.directory))
+    }
+
+    pub(crate) fn project_symbol_files(&self) -> HashMap<PathBuf, PathBuf> {
+        let mut files = HashMap::new();
+        for package in self
+            .navigation_packages()
+            .filter(|package| !package.external && self.is_project_package(package))
+        {
+            for path in &package.files {
+                let key = path_key(path);
+                // The synthetic test main may have an absolute Go build-cache
+                // path in GoFiles. A package's source files share its directory.
+                if key.parent() == Some(package.directory.as_path()) && is_symbol_source(&key) {
+                    files.entry(key).or_insert_with(|| path.clone());
+                }
+            }
+        }
+        files
     }
 
     pub(crate) fn direct_importers<'a>(
@@ -275,20 +312,29 @@ struct ListedPackage {
     cgo_files: Vec<PathBuf>,
     imports: Vec<String>,
     import_map: HashMap<String, String>,
-    error: Option<PackageError>,
+    error: Option<serde::de::IgnoredAny>,
+    goroot: bool,
+    module: Option<ListedModule>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "PascalCase")]
-struct PackageError {
-    err: String,
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct ListedModule {
+    main: bool,
+    version: String,
+    replace: Option<Box<ListedModule>>,
+}
+
+impl ListedModule {
+    fn in_module_cache(&self) -> bool {
+        !self.main && !self.replace.as_deref().unwrap_or(self).version.is_empty()
+    }
 }
 
 #[derive(Default)]
 struct PackageListing {
     packages: BTreeMap<String, Package>,
     importers: HashMap<String, Vec<String>>,
-    package_error: Option<String>,
 }
 
 fn read_packages(reader: impl Read) -> Result<PackageListing> {
@@ -297,9 +343,6 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
     for package in stream {
         let package = package.context("decoding go list package metadata")?;
         let load_error = package.error.is_some();
-        if listing.package_error.is_none() {
-            listing.package_error = package.error.map(|error| error.err);
-        }
         if package.dir.as_os_str().is_empty()
             || package.import_path.is_empty()
             || package.name.is_empty()
@@ -332,6 +375,10 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
             directory: path_key(&package.dir),
             import_map: package.import_map,
             for_test: package.for_test,
+            external: package.goroot
+                || package
+                    .module
+                    .is_some_and(|module| module.in_module_cache()),
         });
         for import in package.imports {
             let id = owner.import_id(&import);
@@ -347,6 +394,16 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
         }
     }
     Ok(listing)
+}
+
+pub(crate) fn is_symbol_source(key: &Path) -> bool {
+    key.extension().is_some_and(|extension| extension == "go")
+        && key
+            .file_name()
+            .is_some_and(|name| !name.to_string_lossy().starts_with(['.', '_']))
+        && !key
+            .components()
+            .any(|component| component.as_os_str() == "vendor")
 }
 
 pub(crate) fn path_key(path: &Path) -> PathBuf {

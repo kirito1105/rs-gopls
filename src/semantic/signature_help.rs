@@ -638,7 +638,7 @@ mod tests {
         let root = fixture_root();
         let path = root.join("main.go");
         let mut engine = Engine::new(root);
-        engine.open(path.clone(), text.into()).unwrap();
+        engine.open(path.clone(), text.into(), 1).unwrap();
         (engine, path)
     }
 
@@ -1027,8 +1027,8 @@ func run(callback Alias, holder Holder, table []Alias) {
         let offset = callers.find("helper.Join(").unwrap() + "helper.Join(".len();
         let position = LineIndex::new(&callers).position(&callers, offset);
         let mut engine = Engine::new(root);
-        engine.open(caller.clone(), callers).unwrap();
-        engine.open(helper.clone(), target.clone()).unwrap();
+        engine.open(caller.clone(), callers, 1).unwrap();
+        engine.open(helper.clone(), target.clone(), 1).unwrap();
         let original = lookup(&mut engine, &caller, position).unwrap();
         assert_call(&original, &["sep string", "parts ...string"], Some(0));
         engine
@@ -1042,6 +1042,7 @@ func run(callback Alias, holder Holder, table []Alias) {
                         "Join has edited docs.",
                     ),
                 }],
+                2,
             )
             .unwrap();
         let edited = lookup(&mut engine, &caller, position).unwrap();

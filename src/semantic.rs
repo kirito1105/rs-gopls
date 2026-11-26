@@ -9,22 +9,26 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
-use lsp_types::{FileChangeType, Position, Range, TextDocumentContentChangeEvent};
+use lsp_types::{
+    FileChangeType, Position, Range, SymbolInformation, TextDocumentContentChangeEvent,
+};
 use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use crate::scope::{
     declaration_binding, lexical_binding, receiver_type_parameters, reference_binding,
 };
 use crate::symbols::{
-    self, Container, FileSymbols, FunctionSignature, GenericParameter, InlineType, Symbol,
-    SymbolKind, TypeDetails, TypeRef, TypeRefKind,
+    self, Container, FileOutline, FileSymbols, FunctionSignature, GenericParameter, InlineType,
+    Symbol, SymbolKind, TypeDetails, TypeRef, TypeRefKind,
 };
 use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 
+mod document_symbols;
 mod hover;
 mod implementation;
 mod presentation;
 mod signature_help;
+mod workspace_symbols;
 
 struct FileIndex {
     symbols: FileSymbols,
@@ -94,13 +98,20 @@ pub enum QueryProgress<T> {
 pub enum Search {
     References(ReferenceSearch),
     Implementations(implementation::ImplementationSearch),
+    WorkspaceSymbols(workspace_symbols::WorkspaceSymbolSearch),
+}
+
+pub enum SearchResult {
+    Locations(Vec<(PathBuf, Range)>),
+    WorkspaceSymbols(Vec<SymbolInformation>),
 }
 
 impl Search {
-    pub fn into_matches(self) -> Vec<(PathBuf, Range)> {
+    pub fn into_result(self) -> SearchResult {
         match self {
-            Self::References(search) => search.matches,
-            Self::Implementations(search) => search.into_matches(),
+            Self::References(search) => SearchResult::Locations(search.matches),
+            Self::Implementations(search) => SearchResult::Locations(search.into_matches()),
+            Self::WorkspaceSymbols(search) => SearchResult::WorkspaceSymbols(search.into_matches()),
         }
     }
 }
@@ -188,6 +199,7 @@ pub struct Engine {
     disk_index: HashMap<PathBuf, DiskIndex>,
     implementation_cache: implementation::ImplementationCache,
     implementation_sources: implementation::InterfaceSources,
+    workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex,
     include_tests: bool,
 }
 
@@ -208,11 +220,12 @@ impl Engine {
             disk_index: HashMap::new(),
             implementation_cache: implementation::ImplementationCache::default(),
             implementation_sources: implementation::InterfaceSources::default(),
+            workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex::default(),
             include_tests: false,
         }
     }
 
-    pub fn open(&mut self, path: PathBuf, text: String) -> Result<()> {
+    pub fn open(&mut self, path: PathBuf, text: String, version: i32) -> Result<()> {
         if path.extension().is_some_and(|extension| extension == "go") {
             let key = path_key(&path);
             let new_file = !path.is_file();
@@ -231,24 +244,39 @@ impl Engine {
                     self.implementation_cache.clear();
                 }
             }
-            let source = Source::parse(&mut self.parser, path, text, None)?;
+            let mut source = Source::parse(&mut self.parser, path, text, None)?;
+            source.document_version = Some(version);
             if new_file {
                 self.new_documents.insert(key.clone());
             } else {
                 self.new_documents.remove(&key);
             }
+            self.workspace_symbol_index.document_opened(
+                self.workspace.as_ref(),
+                &self.root,
+                &key,
+                &source.path,
+                new_file,
+            );
             self.documents.insert(key, source);
         }
         Ok(())
     }
 
-    pub fn edit(&mut self, path: &Path, edits: &[TextDocumentContentChangeEvent]) -> Result<()> {
+    pub fn edit(
+        &mut self,
+        path: &Path,
+        edits: &[TextDocumentContentChangeEvent],
+        version: i32,
+    ) -> Result<()> {
         let key = path_key(path);
         if let Some(source) = self.documents.get_mut(&key)
             && !edits.is_empty()
         {
             let track_shifts = !self.implementation_cache.is_empty();
             let shifts = source.edit(&mut self.parser, edits, track_shifts)?;
+            source.document_version = Some(version);
+            self.workspace_symbol_index.document_edited(&key);
             if let Some(shifts) = shifts {
                 for shift in shifts {
                     self.implementation_cache.shift(&key, shift);
@@ -264,8 +292,14 @@ impl Engine {
         self.implementation_cache.clear();
         let key = path_key(path);
         self.implementation_sources.invalidate(&key);
-        self.documents.remove(&key);
-        self.new_documents.remove(&key);
+        if self.documents.remove(&key).is_some() {
+            self.workspace_symbol_index.document_closed(&key);
+        }
+        if self.new_documents.remove(&key) && path.is_file() {
+            // A new buffer can be saved by a client that does not send a
+            // watched-file notification. Refresh the build's file selection.
+            self.file_changed(path, FileChangeType::CREATED);
+        }
         if self
             .disk_index
             .get(&key)
@@ -298,6 +332,7 @@ impl Engine {
         self.workspace = Some(workspace);
         self.graph_changes = GraphChanges::Clean;
         self.implementation_cache.clear();
+        self.workspace_symbol_index.graph_changed();
         true
     }
 
@@ -322,6 +357,8 @@ impl Engine {
 
         self.implementation_cache.clear();
         let key = path_key(path);
+        self.workspace_symbol_index
+            .disk_changed(&key, self.documents.contains_key(&key));
         self.implementation_sources.invalidate(&key);
         if change == FileChangeType::CREATED && path.is_file() {
             self.new_documents.remove(&key);
@@ -415,6 +452,7 @@ impl Engine {
         match search {
             Search::References(search) => self.advance_reference_search(search),
             Search::Implementations(search) => self.advance_implementation_search(search),
+            Search::WorkspaceSymbols(search) => self.advance_workspace_symbol_search(search),
         }
     }
 
@@ -2999,6 +3037,8 @@ struct Source {
     lines: LineIndex,
     tree: Tree,
     imports: Vec<Import>,
+    document_version: Option<i32>,
+    outline: OnceCell<FileOutline>,
     declarations: OnceCell<FileIndex>,
     reference_names: OnceCell<HashMap<String, Vec<usize>>>,
 }
@@ -3029,6 +3069,8 @@ impl Source {
             lines,
             tree,
             imports,
+            document_version: None,
+            outline: OnceCell::new(),
             declarations: OnceCell::new(),
             reference_names: OnceCell::new(),
         })
@@ -3227,10 +3269,19 @@ impl Source {
     }
 
     fn range(&self, node: Node<'_>) -> Range {
+        self.byte_range(node.byte_range())
+    }
+
+    fn byte_range(&self, range: std::ops::Range<usize>) -> Range {
         Range::new(
-            self.lines.position(&self.text, node.start_byte()),
-            self.lines.position(&self.text, node.end_byte()),
+            self.lines.position(&self.text, range.start),
+            self.lines.position(&self.text, range.end),
         )
+    }
+
+    fn outline(&self) -> &FileOutline {
+        self.outline
+            .get_or_init(|| symbols::collect_outline(&self.tree, &self.text))
     }
 
     fn declarations(&self) -> &FileIndex {
@@ -3527,7 +3578,13 @@ impl LineIndex {
 
     fn position(&self, text: &str, offset: usize) -> Position {
         let point = self.point(offset);
-        let column = text[self.starts[point.row]..offset].encode_utf16().count();
+        let prefix = &text[self.starts[point.row]..offset];
+        let prefix = if text.as_bytes().get(offset) == Some(&b'\n') {
+            prefix.strip_suffix('\r').unwrap_or(prefix)
+        } else {
+            prefix
+        };
+        let column = prefix.encode_utf16().count();
         Position::new(point.row as u32, column as u32)
     }
 

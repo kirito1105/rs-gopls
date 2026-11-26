@@ -64,7 +64,9 @@ class WorkingSetSampler:
     def __init__(self, pid):
         self.pid = pid
         self.parent_peak = None
+        self.parent_sampled_peak = None
         self.tree_peak = None
+        self.children_seen = set()
         self.samples = 0
         self.stopped = threading.Event()
         self.thread = None
@@ -113,6 +115,7 @@ class WorkingSetSampler:
         if root is None:
             return
         self.parent_peak = max(self.parent_peak or 0, root[1])
+        self.parent_sampled_peak = max(self.parent_sampled_peak or 0, root[0])
 
         snapshot_processes = 0x00000002
         handle = self.snapshot(snapshot_processes, 0)
@@ -123,7 +126,7 @@ class WorkingSetSampler:
             entry = ProcessEntry(size=ctypes.sizeof(ProcessEntry))
             ok = self.first(handle, ctypes.byref(entry))
             while ok:
-                children[entry.parent_pid].append(entry.pid)
+                children[entry.parent_pid].append((entry.pid, entry.exe))
                 ok = self.next(handle, ctypes.byref(entry))
         finally:
             self.close(handle)
@@ -132,7 +135,7 @@ class WorkingSetSampler:
         visited = {self.pid}
         total = root[0]
         while pending:
-            for child in children[pending.pop()]:
+            for child, executable_name in children[pending.pop()]:
                 if child in visited:
                     continue
                 visited.add(child)
@@ -140,23 +143,27 @@ class WorkingSetSampler:
                 child_memory = self.working_set(child)
                 if child_memory is not None:
                     total += child_memory[0]
+                    self.children_seen.add(executable_name)
         self.samples += 1
         self.tree_peak = max(self.tree_peak or 0, total)
 
     def run(self):
         while not self.stopped.is_set():
+            started = time.monotonic()
             self.sample()
-            self.stopped.wait(MEMORY_INTERVAL_SECONDS)
+            self.stopped.wait(max(0, MEMORY_INTERVAL_SECONDS - (time.monotonic() - started)))
 
     def finish(self):
-        if self.thread is not None:
+        if self.thread is not None and not self.stopped.is_set():
             self.stopped.set()
             self.thread.join()
             self.sample()
         return {
             "parent_peak_working_set_bytes": self.parent_peak,
+            "parent_sampled_peak_working_set_bytes": self.parent_sampled_peak,
             "process_tree_sampled_peak_working_set_bytes": self.tree_peak,
             "process_tree_sample_count": self.samples,
+            "sampled_child_executables": sorted(self.children_seen),
         }
 
 

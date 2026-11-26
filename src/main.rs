@@ -1,6 +1,10 @@
 mod scope;
 mod semantic;
+#[cfg(test)]
+mod symbol_request_tests;
 mod symbols;
+#[cfg(test)]
+mod test_support;
 mod workspace;
 mod workspace_roots;
 
@@ -16,24 +20,25 @@ use crossbeam_channel::{Sender, bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, HoverProviderCapability,
-    InitializeParams, InitializeResult, Location, NumberOrString, OneOf, Position,
-    PositionEncodingKind, Range, ReferenceParams, ServerCapabilities, ServerInfo,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentSymbolParams,
+    HoverProviderCapability, InitializeParams, InitializeResult, Location, NumberOrString, OneOf,
+    Position, PositionEncodingKind, Range, ReferenceParams, ServerCapabilities, ServerInfo,
     SignatureHelpOptions, TextDocumentPositionParams, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
+    TextDocumentSyncKind, TextDocumentSyncOptions, Uri, WorkspaceSymbolParams,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
     request::{
-        GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, Initialize,
-        References, Request as _, Shutdown, SignatureHelpRequest,
+        DocumentSymbolRequest, GotoDefinition, GotoImplementation, GotoTypeDefinition,
+        HoverRequest, Initialize, References, Request as _, Shutdown, SignatureHelpRequest,
+        WorkspaceSymbolRequest,
     },
 };
 use serde_json::Value;
 use url::Url;
 
-use semantic::{DefinitionKind, Engine, QueryProgress, Search};
+use semantic::{DefinitionKind, Engine, QueryProgress, Search, SearchResult};
 use workspace::{Workspace, WorkspaceLoad, path_key};
 
 enum State {
@@ -50,11 +55,18 @@ enum NavigationKind {
     References { include_declaration: bool },
 }
 
-struct NavigationRequest {
+enum Query {
+    Navigation {
+        kind: NavigationKind,
+        path: PathBuf,
+        position: Position,
+    },
+    WorkspaceSymbols(String),
+}
+
+struct QueryRequest {
     id: RequestId,
-    kind: NavigationKind,
-    path: PathBuf,
-    position: Position,
+    query: Query,
 }
 
 struct ActiveSearch {
@@ -70,7 +82,8 @@ struct WorkspaceResult {
 struct Running {
     engine: Engine,
     watch_files: bool,
-    pending: Vec<NavigationRequest>,
+    hierarchical_document_symbols: bool,
+    pending: Vec<QueryRequest>,
     searches: VecDeque<ActiveSearch>,
     loading: Option<WorkspaceLoad>,
     requested: Option<WorkspaceLoad>,
@@ -110,7 +123,7 @@ impl Running {
             Ok(workspace) => {
                 if self.engine.install_workspace(update.load, workspace) {
                     for request in std::mem::take(&mut self.pending) {
-                        self.resolve_navigation(connection, request)?;
+                        self.resolve_query(connection, request)?;
                     }
                 }
             }
@@ -120,15 +133,23 @@ impl Running {
                     eprintln!("rs-gopls: loading Go packages: {message}");
                 }
                 for request in std::mem::take(&mut self.pending) {
-                    let result = match request.kind {
-                        NavigationKind::Hover => self
+                    let result = match request.query {
+                        Query::Navigation {
+                            kind: NavigationKind::Hover,
+                            path,
+                            position,
+                        } => self
                             .engine
-                            .hover_after_load_failure(&request.path, request.position)
+                            .hover_after_load_failure(&path, position)
                             .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
                             .and_then(serialize_query),
-                        NavigationKind::SignatureHelp => self
+                        Query::Navigation {
+                            kind: NavigationKind::SignatureHelp,
+                            path,
+                            position,
+                        } => self
                             .engine
-                            .signature_help_after_load_failure(&request.path, request.position)
+                            .signature_help_after_load_failure(&path, position)
                             .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
                             .and_then(serialize_query),
                         _ => Err((ErrorCode::RequestFailed, message.clone())),
@@ -144,34 +165,39 @@ impl Running {
         Ok(())
     }
 
-    fn resolve_navigation(
-        &mut self,
-        connection: &Connection,
-        request: NavigationRequest,
-    ) -> Result<()> {
-        let progress = match request.kind {
-            NavigationKind::Definition(kind) => self
-                .engine
-                .definition(&request.path, request.position, kind)
-                .map(|progress| progress.map(serialize_location)),
-            NavigationKind::Hover => self
-                .engine
-                .hover(&request.path, request.position)
-                .map(|progress| progress.map(serialize_query)),
-            NavigationKind::SignatureHelp => self
-                .engine
-                .signature_help(&request.path, request.position)
-                .map(|progress| progress.map(serialize_query)),
-            NavigationKind::Implementation => self
-                .engine
-                .implementations(&request.path, request.position)
-                .map(|progress| progress.map(serialize_locations)),
-            NavigationKind::References {
-                include_declaration,
-            } => self
-                .engine
-                .references(&request.path, request.position, include_declaration)
-                .map(|progress| progress.map(serialize_locations)),
+    fn resolve_query(&mut self, connection: &Connection, request: QueryRequest) -> Result<()> {
+        let progress = match &request.query {
+            Query::Navigation {
+                kind,
+                path,
+                position,
+            } => match *kind {
+                NavigationKind::Definition(kind) => self
+                    .engine
+                    .definition(path, *position, kind)
+                    .map(|progress| progress.map(serialize_location)),
+                NavigationKind::Hover => self
+                    .engine
+                    .hover(path, *position)
+                    .map(|progress| progress.map(serialize_query)),
+                NavigationKind::SignatureHelp => self
+                    .engine
+                    .signature_help(path, *position)
+                    .map(|progress| progress.map(serialize_query)),
+                NavigationKind::Implementation => self
+                    .engine
+                    .implementations(path, *position)
+                    .map(|progress| progress.map(serialize_locations)),
+                NavigationKind::References {
+                    include_declaration,
+                } => self
+                    .engine
+                    .references(path, *position, include_declaration)
+                    .map(|progress| progress.map(serialize_locations)),
+            },
+            Query::WorkspaceSymbols(query) => {
+                Ok(self.engine.workspace_symbols(query).map(serialize_query))
+            }
         };
         let result = match progress {
             Ok(QueryProgress::Pending(load)) => {
@@ -201,7 +227,10 @@ impl Running {
                 self.searches.push_back(active);
                 return Ok(());
             }
-            Ok(true) => serialize_locations(active.search.into_matches()),
+            Ok(true) => match active.search.into_result() {
+                SearchResult::Locations(locations) => serialize_locations(locations),
+                SearchResult::WorkspaceSymbols(symbols) => serialize_query(symbols),
+            },
             Err(error) => Err((ErrorCode::InternalError, format!("{error:#}"))),
         };
         send_response(connection, active.id, response)
@@ -227,7 +256,7 @@ impl Running {
     fn cancel_pending(
         &mut self,
         connection: &Connection,
-        matches: impl FnMut(&mut NavigationRequest) -> bool,
+        matches: impl FnMut(&mut QueryRequest) -> bool,
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
@@ -241,7 +270,7 @@ impl Running {
         let key = path_key(path);
         self.cancel_pending(
             connection,
-            |request| path_key(&request.path) == key,
+            |request| matches!(&request.query, Query::Navigation { path, .. } if path_key(path) == key),
             ErrorCode::ContentModified,
             "the document changed while loading Go packages",
         )?;
@@ -249,7 +278,7 @@ impl Running {
             connection,
             |_| true,
             ErrorCode::ContentModified,
-            "the document changed during navigation search",
+            "the document changed during search",
         )
     }
 }
@@ -329,15 +358,8 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
     let Request { id, method, params } = request;
     let result: RequestResult = match (state, method.as_str()) {
         (state @ State::Starting, Initialize::METHOD) => initialize(params)
-            .map(|(engine, capabilities, watch_files)| {
-                *state = State::Running(Box::new(Running {
-                    engine,
-                    watch_files,
-                    pending: Vec::new(),
-                    searches: VecDeque::new(),
-                    loading: None,
-                    requested: None,
-                }));
+            .map(|(running, capabilities)| {
+                *state = State::Running(Box::new(running));
                 capabilities
             })
             .map_err(|error| (ErrorCode::InvalidParams, format!("{error:#}"))),
@@ -371,6 +393,36 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
             *state = State::Shutdown;
             Ok(Value::Null)
         }
+        (State::Running(running), DocumentSymbolRequest::METHOD) => {
+            let document = serde_json::from_value::<DocumentSymbolParams>(params)
+                .map_err(anyhow::Error::from)
+                .and_then(|params| {
+                    let uri = params.text_document.uri;
+                    Ok((file_path(&uri)?, uri))
+                });
+            match document {
+                Ok((path, uri)) => running
+                    .engine
+                    .document_symbols(&path, &uri, running.hierarchical_document_symbols)
+                    .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
+                    .and_then(serialize_query),
+                Err(error) => Err((ErrorCode::InvalidParams, format!("{error:#}"))),
+            }
+        }
+        (State::Running(running), WorkspaceSymbolRequest::METHOD) => {
+            match serde_json::from_value::<WorkspaceSymbolParams>(params) {
+                Ok(params) => {
+                    return running.resolve_query(
+                        connection,
+                        QueryRequest {
+                            id,
+                            query: Query::WorkspaceSymbols(params.query),
+                        },
+                    );
+                }
+                Err(error) => Err((ErrorCode::InvalidParams, error.to_string())),
+            }
+        }
         (
             State::Running(running),
             GotoDefinition::METHOD
@@ -389,13 +441,15 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                     SignatureHelpRequest::METHOD => NavigationKind::SignatureHelp,
                     _ => NavigationKind::Implementation,
                 };
-                return running.resolve_navigation(
+                return running.resolve_query(
                     connection,
-                    NavigationRequest {
+                    QueryRequest {
                         id,
-                        kind,
-                        path,
-                        position,
+                        query: Query::Navigation {
+                            kind,
+                            path,
+                            position,
+                        },
                     },
                 );
             }
@@ -403,15 +457,17 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
         },
         (State::Running(running), References::METHOD) => match reference_position(params) {
             Ok((path, position, include_declaration)) => {
-                return running.resolve_navigation(
+                return running.resolve_query(
                     connection,
-                    NavigationRequest {
+                    QueryRequest {
                         id,
-                        kind: NavigationKind::References {
-                            include_declaration,
+                        query: Query::Navigation {
+                            kind: NavigationKind::References {
+                                include_declaration,
+                            },
+                            path,
+                            position,
                         },
-                        path,
-                        position,
                     },
                 );
             }
@@ -436,7 +492,7 @@ fn send_response(connection: &Connection, id: RequestId, result: RequestResult) 
         .send(response.into())
         .context("sending LSP response")
 }
-fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
+fn initialize(params: Value) -> Result<(Running, Value)> {
     let params = serde_json::from_value::<InitializeParams>(params)
         .context("invalid initialize parameters")?;
     let watch_files = params
@@ -445,6 +501,12 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
         .as_ref()
         .and_then(|workspace| workspace.did_change_watched_files.as_ref())
         .is_some_and(|watches| watches.dynamic_registration == Some(true));
+    let hierarchical_document_symbols = params
+        .capabilities
+        .text_document
+        .as_ref()
+        .and_then(|document| document.document_symbol.as_ref())
+        .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
     let root = workspace_root(params)?;
     ensure!(
         root.is_dir(),
@@ -471,6 +533,8 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
         type_definition_provider: Some(true.into()),
         implementation_provider: Some(true.into()),
         references_provider: Some(OneOf::Left(true)),
+        document_symbol_provider: Some(OneOf::Left(true)),
+        workspace_symbol_provider: Some(OneOf::Left(true)),
         ..Default::default()
     };
     let result = serde_json::to_value(InitializeResult {
@@ -480,7 +544,18 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
             version: Some(env!("CARGO_PKG_VERSION").into()),
         }),
     })?;
-    Ok((Engine::new(root), result, watch_files))
+    Ok((
+        Running {
+            engine: Engine::new(root),
+            watch_files,
+            hierarchical_document_symbols,
+            pending: Vec::new(),
+            searches: VecDeque::new(),
+            loading: None,
+            requested: None,
+        },
+        result,
+    ))
 }
 
 #[allow(deprecated)]
@@ -593,7 +668,7 @@ fn handle_notification(
                     connection,
                     |_| true,
                     ErrorCode::ContentModified,
-                    "the workspace changed during navigation search",
+                    "the workspace changed during search",
                 )?;
                 running.request_workspace(after);
             }
@@ -603,13 +678,17 @@ fn handle_notification(
             let params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
             let document = params.text_document;
             let path = file_path(&document.uri)?;
-            running.engine.open(path.clone(), document.text)?;
+            running
+                .engine
+                .open(path.clone(), document.text, document.version)?;
             running.document_modified(connection, &path)
         }
         DidChangeTextDocument::METHOD => {
             let params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
             let path = file_path(&params.text_document.uri)?;
-            running.engine.edit(&path, &params.content_changes)?;
+            running
+                .engine
+                .edit(&path, &params.content_changes, params.text_document.version)?;
             running.document_modified(connection, &path)
         }
         DidCloseTextDocument::METHOD => {
@@ -628,13 +707,13 @@ fn handle_notification(
                 connection,
                 |request| request.id == id,
                 ErrorCode::RequestCanceled,
-                "the client cancelled the navigation request",
+                "the client cancelled the request",
             )?;
             running.cancel_searches(
                 connection,
                 |request| request == &id,
                 ErrorCode::RequestCanceled,
-                "the client cancelled the navigation search",
+                "the client cancelled the search",
             )
         }
         _ => Ok(()),

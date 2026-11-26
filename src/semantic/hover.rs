@@ -652,7 +652,7 @@ mod tests {
         let root = fixture_root();
         let path = root.join("main.go");
         let mut engine = Engine::new(root);
-        engine.open(path.clone(), text.into()).unwrap();
+        engine.open(path.clone(), text.into(), 1).unwrap();
         (engine, path)
     }
 
@@ -1013,15 +1013,16 @@ func run(payload any) {
         let text = fs::read_to_string(&caller).unwrap();
         let disk = fs::read_to_string(&helper).unwrap();
         let mut engine = Engine::new(root);
-        engine.open(caller.clone(), text.clone()).unwrap();
-        engine.open(helper.clone(), disk.clone()).unwrap();
+        engine.open(caller.clone(), text.clone(), 1).unwrap();
+        engine.open(helper.clone(), disk.clone(), 1).unwrap();
         let get_map = |engine: &mut Engine| at(engine, &caller, &text, "helper.Map([]int", "Map");
         let initial = get_map(&mut engine);
         assert!(initial.contains("items []T, fn func(T) U"));
         assert!(initial.contains("Map transforms each element using fn."));
-        for (old, new) in [
-            ("items []T", "values []T"),
+        for (version, old, new) in [
+            (2, "items []T", "values []T"),
             (
+                3,
                 "Map transforms each element using fn.",
                 "Map documents the edited buffer.",
             ),
@@ -1034,6 +1035,7 @@ func run(payload any) {
                         range_length: None,
                         text: new.into(),
                     }],
+                    version,
                 )
                 .unwrap();
         }
@@ -1050,16 +1052,18 @@ func run(payload any) {
             .open(
                 docs.clone(),
                 "// Package helper has unsaved docs.\npackage helper\n".into(),
+                1,
             )
             .unwrap();
         assert!(get_import(&mut engine).contains("Package helper has unsaved docs."));
         engine
-            .open(docs.clone(), "package helper\n".into())
+            .open(docs.clone(), "package helper\n".into(), 2)
             .unwrap();
         engine
             .open(
                 helper.clone(),
                 format!("// Package helper has docs in helper.go.\n{disk}"),
+                4,
             )
             .unwrap();
         assert!(get_import(&mut engine).contains("Package helper has docs in helper.go."));

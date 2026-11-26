@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Verify navigation and documentation updates across Go workspace changes."""
+"""Verify navigation, symbol, and documentation updates across Go workspace changes."""
 
 import argparse
+from collections import Counter
 from contextlib import contextmanager
 import math
 import os
@@ -17,7 +18,8 @@ from check_definitions import Site, check_location
 from check_goland_definitions import normalize_locations
 from check_goland_implementations import METHOD as IMPLEMENTATION_METHOD
 from check_goland_references import Location
-from compare_definitions import LspClient, executable
+from check_goland_symbols import DOCUMENT, WORKSPACE, contains, lsp_span, request_document
+from compare_definitions import LspClient, executable, path_from_uri
 
 
 def write(path, text):
@@ -39,11 +41,11 @@ def site(path, anchor, text=None):
 
 
 @contextmanager
-def session(executable_path, root, timeout, *, watch_files=False, **env):
+def session(executable_path, root, timeout, *, watch_files=False, hierarchical=None, **env):
     environment = {**os.environ, "GO111MODULE": "on", "GOWORK": "off", "GOPROXY": "off", **env}
     client = LspClient([executable_path], root, timeout, environment=environment)
     try:
-        client.initialize(watch_files=watch_files)
+        client.initialize(watch_files=watch_files, hierarchical_document_symbols=hierarchical)
         if watch_files:
             acknowledge_file_watches(client)
         yield client
@@ -53,6 +55,104 @@ def session(executable_path, root, timeout, *, watch_files=False, **env):
         raise RuntimeError(f"{root}: {exc}" + (f"\n{log}" if log else "")) from exc
     finally:
         client.close()
+
+
+def expect_workspace_symbols(result, *targets, kind=13, container="symbols"):
+    if not isinstance(result, list):
+        raise RuntimeError(f"expected a workspace symbol list, got {result!r}")
+    expected = Counter(
+        (target.path, lsp_span(target.selection()), target.text[target.start:target.end], kind, container)
+        for target in targets
+    )
+    actual = Counter(
+        (path_from_uri(row["location"]["uri"]), lsp_span(row["location"]["range"]),
+         row["name"], row["kind"], row["containerName"])
+        for row in result
+    )
+    if actual != expected:
+        missing = list((expected - actual).elements())
+        extra = list((actual - expected).elements())
+        raise RuntimeError(
+            f"workspace symbols: {len(missing)} missing {missing[:3]!r}, {len(extra)} extra {extra[:3]!r}",
+        )
+
+
+def expect_outline(result, *members, parent=None):
+    if not isinstance(result, list) or len(result) != len(members):
+        raise RuntimeError(f"outline: expected {len(members)} symbols, got {result!r}")
+    for row, (kind, target, children) in zip(result, members):
+        expected = (target.text[target.start:target.end], kind, target.selection())
+        if (row["name"], row["kind"], row["selectionRange"]) != expected:
+            raise RuntimeError(f"outline: expected {expected!r}, got {row!r}")
+        span, selection = lsp_span(row["range"]), lsp_span(row["selectionRange"])
+        if span == selection or not contains(span, selection) or (parent and not contains(parent, span)):
+            raise RuntimeError(f"outline: invalid declaration range {span} for {row!r}")
+        expect_outline(row.get("children", []), *children, parent=span)
+
+
+def check_symbol_updates(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/symbols\n\ngo 1.22\n")
+    original = "package symbols\nvar StableToken int\nvar OldToken int\nvar RemovedToken int\n"
+    source = write(root / "symbols.go", original)
+    edited = "// shift the original declaration\npackage symbols\nvar StableToken int\n\n"
+    edited += 'var AddedToken = "🙂"; var RenamedToken int\n'
+    old = tuple(site(source, f"var [[{name}]]", original)
+                for name in ("StableToken", "OldToken", "RemovedToken"))
+    new = tuple(site(source, f"var [[{name}]]", edited)
+                for name in ("StableToken", "AddedToken", "RenamedToken"))
+
+    def compare(client, targets, *extra):
+        expect_outline(request_document(client, source), *((13, target, ()) for target in targets), *extra)
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), *targets)
+
+    with session(executable_path, root, timeout, watch_files=True, hierarchical=True) as client:
+        client.open_document(source, original)
+        compare(client, old)
+        client.change_document(source, 2, edited)
+        compare(client, new)
+
+        unfinished_function = edited + "func Broken() {\nvar LocalToken int\n"
+        client.change_document(source, 3, unfinished_function)
+        compare(client, new, (12, site(source, "func [[Broken]]", unfinished_function), ()))
+        unfinished_struct = edited + "type Unclosed struct {\nField int\n"
+        client.change_document(source, 4, unfinished_struct)
+        compare(client, new)
+        client.change_document(source, 5, edited)
+        compare(client, new)
+
+        disk = "// change on disk\n" + original.replace("OldToken", "DiskToken")
+        write(source, disk)
+        notify_changes(client, (source, 2))
+        compare(client, new)
+        client.close_document(source)
+        restored = tuple(site(source, f"var [[{name}]]", disk)
+                         for name in ("StableToken", "DiskToken", "RemovedToken"))
+        compare(client, restored)
+
+        draft = root / "draft.go"
+        draft_text = "package symbols\nvar DraftToken int\n"
+        draft_target = site(draft, "var [[DraftToken]]", draft_text)
+        client.open_document(draft, draft_text)
+        expect_outline(request_document(client, draft), (13, draft_target, ()))
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), *restored, draft_target)
+        client.close_document(draft)
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), *restored)
+        if draft.exists():
+            raise RuntimeError(f"unsaved draft unexpectedly exists on disk: {draft}")
+
+        watched = write(root / "watched.go", "package symbols\nvar WatchedToken int\n")
+        notify_changes(client, (watched, 1))
+        created = site(watched, "var [[WatchedToken]]")
+        expect_outline(request_document(client, watched), (13, created, ()))
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), *restored, created)
+        write(watched, "package symbols\n\nvar ChangedToken int\n")
+        notify_changes(client, (watched, 2))
+        changed = site(watched, "var [[ChangedToken]]")
+        expect_outline(request_document(client, watched), (13, changed, ()))
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), *restored, changed)
+        watched.unlink()
+        notify_changes(client, (watched, 3))
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), *restored)
 
 def notify_changes(client, *events):
     client.notify(
@@ -158,10 +258,12 @@ def check_go_work(executable_path, root, timeout):
         replacement = site(libraries[1], "func [[Run]]()")
         check_location(client, reference, first)
         check_references(client, reference, (reference, first), include_declaration=True)
+        expect_workspace_symbols(client.request(WORKSPACE, query="lib.Run"), first, kind=12, container="lib")
         write(work_file, workspace_config("replacement"))
         notify_changes(client, (work_file, 2))
         check_location(client, reference, replacement)
         check_references(client, reference, (reference, replacement), include_declaration=True)
+        expect_workspace_symbols(client.request(WORKSPACE, query="lib.Run"), replacement, kind=12, container="lib")
 
 
 def check_test_packages(executable_path, root, timeout):
@@ -405,6 +507,134 @@ def wait_for_snapshot(control, timeout):
         if time.monotonic() >= deadline:
             raise RuntimeError("go list relay did not capture a pending snapshot")
         time.sleep(0.01)
+
+
+def workspace_symbol_request(request_id, query):
+    return {"id": request_id, "method": WORKSPACE, "params": {"query": query}}
+
+
+def symbol_responses(client, *request_ids):
+    pending = set(request_ids)
+    responses = {}
+    deadline = time.monotonic() + client.timeout
+    while pending:
+        message = next_message(client, deadline)
+        if "method" in message:
+            if "id" in message:
+                client.reply(message)
+            continue
+        request_id = message.get("id")
+        if request_id not in pending:
+            raise RuntimeError(f"unexpected or duplicate response {message!r}")
+        pending.remove(request_id)
+        responses[request_id] = message
+    return responses
+
+
+def check_no_extra_symbol_responses(client):
+    deadline = time.monotonic() + 0.2
+    while time.monotonic() < deadline:
+        try:
+            message = client.inbox.get(timeout=max(0, deadline - time.monotonic()))
+        except Empty:
+            return
+        if isinstance(message, Exception) or "method" not in message:
+            raise RuntimeError(f"unexpected response after symbol requests completed: {message!r}")
+        if "id" in message:
+            client.reply(message)
+
+
+def check_symbols_waiting_for_graph(executable_path, root, timeout):
+    control = root / "control"
+    environment = go_list_relay(control, timeout)
+    project = root / "project"
+    module_text = "module example.test/symbols\n\ngo 1.22\n"
+    module = write(project / "go.mod", module_text)
+    disk = "package symbols\nvar BeforeToken int\n"
+    path = write(project / "symbols.go", disk)
+    latest = "// changed while the graph was loading\npackage symbols\nvar UpdatedToken int\n"
+    updated = site(path, "var [[UpdatedToken]]", latest)
+
+    with session(executable_path, project, timeout, watch_files=True, hierarchical=True, **environment) as client:
+        client.open_document(path, disk)
+        expect_workspace_symbols(client.request(WORKSPACE, query="Token"), site(path, "var [[BeforeToken]]"))
+
+        write(control / "arm", "")
+        write(module, module_text + "// refresh the test-inclusive package graph\n")
+        notify_changes(client, (module, 2))
+        client.send_batch(
+            workspace_symbol_request("wait-for-symbol-graph", "Token"),
+            workspace_symbol_request("cancel-symbol-graph", "Token"),
+        )
+        try:
+            wait_for_snapshot(control, min(timeout, 15))
+            client.notify("$/cancelRequest", id="cancel-symbol-graph")
+            expect_error(wait_for_response(client, "cancel-symbol-graph", min(timeout, 5)), -32800)
+            client.change_document(path, 2, latest)
+            client.send(id="outline-while-loading", method=DOCUMENT, params={"textDocument": {"uri": path.as_uri()}})
+            outline = wait_for_response(client, "outline-while-loading", min(timeout, 5))
+            expect_outline(outline.get("result"), (13, updated, ()))
+            client.send(**workspace_symbol_request("also-waiting", "Token"))
+            client.send(id="symbol-graph-barrier", method="rs-gopls/testUnknownMethod", params={})
+            expect_error(wait_for_response(client, "symbol-graph-barrier", min(timeout, 5)), -32601)
+        finally:
+            write(control / "release", "")
+
+        responses = symbol_responses(client, "wait-for-symbol-graph", "also-waiting")
+        for response in responses.values():
+            expect_workspace_symbols(response.get("result"), updated)
+        client.send(**workspace_symbol_request("retry-symbol-graph", "Token"))
+        expect_workspace_symbols(wait_for_response(client, "retry-symbol-graph").get("result"), updated)
+        check_no_extra_symbol_responses(client)
+
+
+def check_active_workspace_symbols(executable_path, root, timeout):
+    write(root / "go.mod", "module example.test/symbols\n\ngo 1.22\n")
+    targets = []
+    for number in range(512):
+        name = f"Token{number:03d}"
+        path = write(root / f"part{number:03d}.go", f"package symbols\nvar {name} int\n")
+        targets.append(site(path, f"var [[{name}]]"))
+    first = targets[0]
+    latest = "// edited during a multi-batch search\n" + first.text
+    shifted = site(first.path, "var [[Token000]]", latest)
+
+    def cancel_one(client, stage):
+        cancelled, waiting = f"cancel-{stage}", f"complete-{stage}"
+        client.send_batch(
+            workspace_symbol_request(cancelled, "Token"),
+            workspace_symbol_request(waiting, "Token"),
+            {"method": "$/cancelRequest", "params": {"id": cancelled}},
+        )
+        responses = symbol_responses(client, cancelled, waiting)
+        expect_error(responses[cancelled], -32800)
+        expect_workspace_symbols(responses[waiting].get("result"), *targets)
+
+    with session(executable_path, root, timeout) as client:
+        client.open_document(first.path, first.text)
+        # References settle the test-inclusive package graph without building the symbol index.
+        check_references(client, first, (first,), include_declaration=True)
+        cancel_one(client, "indexing")
+        cancel_one(client, "scanning")
+
+        # The barrier and edit follow dispatch of the active query in the same stdio batch.
+        client.send_batch(
+            workspace_symbol_request("edited-during-symbol-scan", "Token"),
+            {"id": "symbol-scan-barrier", "method": "rs-gopls/testUnknownMethod", "params": {}},
+            {"method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": first.path.as_uri(), "version": 2},
+                "contentChanges": [{"text": latest}],
+            }},
+        )
+        expect_error(wait_for_response(client, "symbol-scan-barrier"), -32601)
+        expect_error(wait_for_response(client, "edited-during-symbol-scan"), -32801)
+        client.send_batch(
+            workspace_symbol_request("retry-after-symbol-edit", "Token"),
+            workspace_symbol_request("concurrent-after-symbol-edit", "Token"),
+        )
+        for response in symbol_responses(client, "retry-after-symbol-edit", "concurrent-after-symbol-edit").values():
+            expect_workspace_symbols(response.get("result"), shifted, *targets[1:])
+        check_no_extra_symbol_responses(client)
 
 
 def check_async_refresh(executable_path, root, timeout):
@@ -1289,6 +1519,9 @@ CASES = {
     "type-overlay": check_type_overlay,
     "editor-help-overlays": check_editor_help_overlays,
     "editor-help-refresh": check_editor_help_refresh,
+    "symbol-updates": check_symbol_updates,
+    "symbol-waiting-for-graph": check_symbols_waiting_for_graph,
+    "symbol-active-search": check_active_workspace_symbols,
     "reference-locals": check_reference_locals,
     "reference-workspace": check_reference_workspace,
     "reference-cancel": check_reference_cancel,

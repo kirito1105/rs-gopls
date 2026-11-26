@@ -1,0 +1,4 @@
+## workspace
+# example.test/dependency v0.1.0
+## explicit; go 1.22
+example.test/dependency
