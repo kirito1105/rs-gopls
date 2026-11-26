@@ -171,6 +171,12 @@ impl FileSymbols {
         self.declarations.get(name)
     }
 
+    pub(crate) fn declarations(&self) -> impl Iterator<Item = (&str, &Symbol)> {
+        self.declarations
+            .iter()
+            .map(|(name, symbol)| (name.as_str(), symbol))
+    }
+
     pub(crate) fn member(&self, ty: &str, name: &str) -> Option<&Symbol> {
         self.members.get(ty)?.get(name)
     }
@@ -1269,6 +1275,43 @@ mod outline_tests {
             .set_language(&tree_sitter_go::LANGUAGE.into())
             .unwrap();
         parser.parse(text, None).unwrap()
+    }
+
+    #[test]
+    fn enumerates_only_indexed_package_declarations() {
+        let text = concat!(
+            "package p\nimport \"fmt\"\n",
+            "type Record struct{ Field int }\n",
+            "var Variable Record\nconst Constant = 1\nvar _ = fmt.Print\n",
+            "func Function() { var local int }\n",
+            "func (Record) Method() {}\n",
+        );
+        let symbols = collect(&parse(text), text, |node| {
+            let position = |point: tree_sitter::Point| {
+                lsp_types::Position::new(point.row as u32, point.column as u32)
+            };
+            Range::new(
+                position(node.start_position()),
+                position(node.end_position()),
+            )
+        });
+        let mut declarations: Vec<_> = symbols.declarations().collect();
+        declarations.sort_unstable_by_key(|(name, _)| *name);
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>(),
+            ["Constant", "Function", "Record", "Variable"]
+        );
+        for (name, symbol) in declarations {
+            assert!(std::ptr::eq(symbol, symbols.declaration(name).unwrap()));
+            let line = text.lines().nth(symbol.range.start.line as usize).unwrap();
+            assert_eq!(
+                &line[symbol.range.start.character as usize..symbol.range.end.character as usize],
+                name
+            );
+        }
     }
 
     fn labels(symbols: &[OutlineSymbol]) -> Vec<(&str, OutlineKind)> {

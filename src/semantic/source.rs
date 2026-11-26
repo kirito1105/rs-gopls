@@ -304,34 +304,114 @@ pub(super) fn import_path(literal: &str) -> Option<String> {
     }
 }
 
+pub(super) fn import_specs(declaration: Node<'_>) -> impl Iterator<Item = Node<'_>> {
+    let mut cursor = declaration.walk();
+    let container = declaration
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "import_spec_list")
+        .unwrap_or(declaration);
+    std::iter::successors(container.named_child(0), Node::next_named_sibling)
+        .filter(|child| child.kind() == "import_spec")
+}
+
+// String escapes in Go include byte escapes, which can encode one piece of a
+// UTF-8 character at a time. Decode before comparing import paths.
+pub(super) fn decoded_import_path(literal: &str) -> Option<String> {
+    if let Some(raw) = literal.strip_prefix('`').and_then(|s| s.strip_suffix('`')) {
+        return Some(raw.replace('\r', ""));
+    }
+    let mut contents = literal.strip_prefix('"')?.strip_suffix('"')?;
+    let mut decoded = Vec::with_capacity(contents.len());
+    while let Some((prefix, escape)) = contents.split_once('\\') {
+        decoded.extend_from_slice(prefix.as_bytes());
+        let (kind, rest) = escape.split_at_checked(1)?;
+        let (digits, unicode) = match kind.as_bytes()[0] {
+            b'x' => (2, false),
+            b'u' => (4, true),
+            b'U' => (8, true),
+            b'0'..=b'7' => {
+                let (digits, rest) = escape.split_at_checked(3)?;
+                decoded.push(u8::from_str_radix(digits, 8).ok()?);
+                contents = rest;
+                continue;
+            }
+            _ => {
+                decoded.push(match kind {
+                    "a" => 7,
+                    "b" => 8,
+                    "f" => 12,
+                    "n" => b'\n',
+                    "r" => b'\r',
+                    "t" => b'\t',
+                    "v" => 11,
+                    "\\" => b'\\',
+                    "\"" => b'"',
+                    _ => return None,
+                });
+                contents = rest;
+                continue;
+            }
+        };
+        let (digits, rest) = rest.split_at_checked(digits)?;
+        if !digits.bytes().all(|digit| digit.is_ascii_hexdigit()) {
+            return None;
+        }
+        let value = u32::from_str_radix(digits, 16).ok()?;
+        if unicode {
+            decoded.extend_from_slice(char::from_u32(value)?.encode_utf8(&mut [0; 4]).as_bytes());
+        } else {
+            decoded.push(u8::try_from(value).ok()?);
+        }
+        contents = rest;
+    }
+    decoded.extend_from_slice(contents.as_bytes());
+    String::from_utf8(decoded).ok()
+}
+
+pub(super) fn raw_imports<'a>(
+    root: Node<'a>,
+    text: &'a str,
+    lines: &'a LineIndex,
+) -> impl Iterator<Item = Import> + 'a {
+    std::iter::successors(root.named_child(0), Node::next_named_sibling)
+        .filter(|child| child.kind() == "import_declaration")
+        .flat_map(import_specs)
+        .filter(|spec| !spec.has_error())
+        .filter_map(move |spec| import_from_spec(spec, text, lines, decoded_import_path))
+}
+
+fn import_from_spec(
+    spec: Node<'_>,
+    text: &str,
+    lines: &LineIndex,
+    decode: fn(&str) -> Option<String>,
+) -> Option<Import> {
+    let path = spec.child_by_field_name("path")?;
+    let alias = spec.child_by_field_name("name");
+    let name = alias.unwrap_or(path);
+    Some(Import {
+        alias: alias.map(|node| node_text(node, text).to_owned()),
+        path: decode(node_text(path, text))?,
+        binding: Range::new(
+            lines.position(text, name.start_byte()),
+            lines.position(text, name.end_byte()),
+        ),
+    })
+}
+
 fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
     fn collect(node: Node<'_>, text: &str, lines: &LineIndex, result: &mut Vec<Import>) {
         match node.kind() {
             "import_declaration" | "import_spec_list" => {
-                let mut cursor = node.walk();
-                for child in node.named_children(&mut cursor) {
+                for child in node.named_children(&mut node.walk()) {
                     collect(child, text, lines, result);
                 }
             }
             "import_spec" => {
-                let Some(path) = node.child_by_field_name("path") else {
-                    return;
-                };
-                let alias = node.child_by_field_name("name");
-                let name = alias.unwrap_or(path);
-                let binding = Range::new(
-                    lines.position(text, name.start_byte()),
-                    lines.position(text, name.end_byte()),
-                );
-                let alias = alias.map(|node| node_text(node, text).to_owned());
-                if let Some(path) = import_path(node_text(path, text))
-                    && alias.as_deref() != Some("_")
+                if let Some(import) = import_from_spec(node, text, lines, import_path)
+                    && import.alias.as_deref() != Some("_")
                 {
-                    result.push(Import {
-                        alias,
-                        path,
-                        binding,
-                    });
+                    result.push(import);
                 }
             }
             _ => {}

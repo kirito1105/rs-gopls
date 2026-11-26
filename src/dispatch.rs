@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use lsp_server::{Connection, ErrorCode, Request, RequestId};
 use lsp_types::{
+    CompletionItem, CompletionOptions, CompletionOptionsCompletionItem, CompletionParams,
     DocumentSymbolParams, HoverProviderCapability, OneOf, Position, ReferenceParams,
     ServerCapabilities, SignatureHelpOptions, TextDocumentPositionParams, WorkspaceSymbolParams,
     request::{
-        DocumentSymbolRequest, GotoDefinition, GotoImplementation, GotoTypeDefinition,
-        HoverRequest, References, Request as _, SignatureHelpRequest, WorkspaceSymbolRequest,
+        Completion, DocumentSymbolRequest, GotoDefinition, GotoImplementation, GotoTypeDefinition,
+        HoverRequest, References, Request as _, ResolveCompletionItem, SignatureHelpRequest,
+        WorkspaceSymbolRequest,
     },
 };
 use serde_json::Value;
@@ -17,6 +19,9 @@ use crate::protocol::{
     serialize_locations, serialize_query,
 };
 use crate::scheduler::{DeferredQuery, RequestProgress, Scheduler, SearchTask};
+use crate::semantic::completion::{
+    CompletionClientCapabilities, ResolveCompletionResult, StaleCompletion,
+};
 use crate::semantic::{DefinitionKind, Engine, QueryProgress, SemanticTask};
 
 type Handler = fn(&mut RequestContext<'_>, RequestId, Value) -> Result<()>;
@@ -65,6 +70,22 @@ const FEATURES: &[Feature] = &[
             (WorkspaceSymbolRequest::METHOD, workspace_symbols),
         ],
     },
+    Feature {
+        capabilities: |caps| {
+            caps.completion_provider = Some(CompletionOptions {
+                resolve_provider: Some(true),
+                trigger_characters: Some(vec![".".into()]),
+                completion_item: Some(CompletionOptionsCompletionItem {
+                    label_details_support: Some(true),
+                }),
+                ..CompletionOptions::default()
+            });
+        },
+        methods: &[
+            (Completion::METHOD, completion),
+            (ResolveCompletionItem::METHOD, resolve_completion),
+        ],
+    },
 ];
 
 pub(super) fn write_capabilities(capabilities: &mut ServerCapabilities) {
@@ -78,6 +99,7 @@ pub(super) fn handle(
     engine: &mut Engine,
     scheduler: &mut Scheduler,
     hierarchical_document_symbols: bool,
+    completion_capabilities: CompletionClientCapabilities,
     request: Request,
 ) -> Result<()> {
     let Request { id, method, params } = request;
@@ -86,6 +108,7 @@ pub(super) fn handle(
         engine,
         scheduler,
         hierarchical_document_symbols,
+        completion_capabilities,
     };
     for &(name, handler) in FEATURES.iter().flat_map(|feature| feature.methods) {
         if method == name {
@@ -106,6 +129,7 @@ struct RequestContext<'a> {
     engine: &'a mut Engine,
     scheduler: &'a mut Scheduler,
     hierarchical_document_symbols: bool,
+    completion_capabilities: CompletionClientCapabilities,
 }
 
 impl RequestContext<'_> {
@@ -179,24 +203,37 @@ fn adapt<T: 'static, Task: SemanticTask<T> + 'static>(
     match progress {
         QueryProgress::Ready(result) => QueryProgress::Ready(encode(result)),
         QueryProgress::Pending(load) => QueryProgress::Pending(load),
-        QueryProgress::Searching(task) => {
-            QueryProgress::Searching(Box::new(EncodedTask { task, encode }))
-        }
+        QueryProgress::Searching(task) => QueryProgress::Searching(Box::new(EncodedTask {
+            task,
+            encode,
+            stale: false,
+        })),
     }
 }
 
 struct EncodedTask<T, Task> {
     task: Task,
     encode: fn(T) -> RequestResult,
+    stale: bool,
 }
 
 impl<T, Task: SemanticTask<T>> SearchTask for EncodedTask<T, Task> {
     fn advance(&mut self, engine: &mut Engine) -> Result<bool> {
-        self.task.advance(engine)
+        match self.task.advance(engine) {
+            Err(error) if error.is::<StaleCompletion>() => {
+                self.stale = true;
+                Ok(true)
+            }
+            progress => progress,
+        }
     }
 
     fn finish(self: Box<Self>) -> RequestResult {
-        (self.encode)(self.task.finish())
+        if self.stale {
+            Err((ErrorCode::ContentModified, StaleCompletion.to_string()))
+        } else {
+            (self.encode)(self.task.finish())
+        }
     }
 }
 
@@ -329,4 +366,58 @@ fn workspace_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Va
         ),
         Err(error) => context.respond(id, Err((ErrorCode::InvalidParams, error.to_string()))),
     }
+}
+
+fn completion(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let caps = context.completion_capabilities;
+    let params = (|| {
+        let params: CompletionParams = serde_json::from_value(params)?;
+        let document = params.text_document_position;
+        Ok((
+            file_path(&document.text_document.uri)?,
+            (document.position, params.context, caps),
+        ))
+    })();
+    context.document_query(
+        id,
+        params,
+        |engine, path, (position, context, caps)| {
+            Ok(adapt(
+                engine.complete(path, *position, context.clone(), caps)?,
+                serialize_query,
+            ))
+        },
+        Some(|engine, path, (position, _, caps)| {
+            engine
+                .complete_after_load_failure(path, *position, caps)
+                .map_err(internal_error)
+                .and_then(serialize_query)
+        }),
+    )
+}
+
+fn resolve_completion(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    let item = serde_json::from_value::<CompletionItem>(params)
+        .map_err(|error| invalid_params(error.into()));
+    let result = item.and_then(|item| {
+        match context
+            .engine
+            .resolve_completion_item(item, &context.completion_capabilities)
+            .map_err(internal_error)?
+        {
+            ResolveCompletionResult::Item(item) => serialize_query(item),
+            ResolveCompletionResult::ContentModified => {
+                Err((ErrorCode::ContentModified, StaleCompletion.to_string()))
+            }
+            ResolveCompletionResult::InvalidData => Err((
+                ErrorCode::InvalidParams,
+                "invalid completion item data".into(),
+            )),
+        }
+    });
+    context.respond(id, result)
 }

@@ -937,6 +937,11 @@ mod tests {
                 "referencesProvider": true,
                 "hoverProvider": true,
                 "signatureHelpProvider": { "triggerCharacters": ["(", ","], "retriggerCharacters": [","] },
+                "completionProvider": {
+                    "triggerCharacters": ["."],
+                    "resolveProvider": true,
+                    "completionItem": { "labelDetailsSupport": true }
+                },
                 "documentSymbolProvider": true,
                 "workspaceSymbolProvider": true,
             })

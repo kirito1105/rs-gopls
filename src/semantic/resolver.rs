@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashSet, btree_map::Entry};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -111,6 +112,53 @@ impl ResolvedSymbol<'_> {
     pub(super) fn location(self) -> (PathBuf, Range) {
         (self.file, self.symbol.range)
     }
+}
+
+#[allow(dead_code, reason = "consumed by completion in Wave 2")]
+pub(super) struct VisibleMember<'w> {
+    pub(super) name: String,
+    pub(super) resolved: ResolvedSymbol<'w>,
+    /// Embedded fields from the queried type to the owner. Empty for direct members.
+    pub(super) embedded_path: Vec<String>,
+}
+
+#[allow(dead_code, reason = "consumed by completion in Wave 2")]
+pub(super) struct StructField<'w> {
+    pub(super) member: VisibleMember<'w>,
+    /// Whether this entire path can be written as nested literal keys.
+    pub(super) visible: bool,
+    pub(super) ty: Option<TypeIdentity<'w>>,
+}
+
+struct MemberPath<'w> {
+    owner: TypeIdentity<'w>,
+    ancestors: Vec<TypeKey>,
+    embedded_path: Vec<String>,
+    indirect: bool,
+    fields_only: bool,
+}
+
+// Unexported names of different packages are independent selector names.
+type MemberKey<'w> = (String, Option<&'w str>);
+
+impl<'w> VisibleMember<'w> {
+    fn key(&self) -> MemberKey<'w> {
+        (
+            self.name.clone(),
+            (!is_exported(&self.name)).then(|| package_identity(self.resolved.package)),
+        )
+    }
+
+    fn visible_from(&self, from: &Package) -> bool {
+        is_exported(&self.name) || package_identity(self.resolved.package) == package_identity(from)
+    }
+}
+
+fn package_identity(package: &Package) -> &str {
+    package
+        .id
+        .split_once(" [")
+        .map_or(&package.id, |(id, _)| id)
 }
 
 pub(super) type Substitutions<'w> = Vec<(String, Option<TypeIdentity<'w>>)>;
@@ -610,6 +658,309 @@ impl<'w> Resolver<'w, '_> {
             frontier = next;
         }
         Ok(None)
+    }
+
+    /// Enumerates declarations in the supplied package view. An imported
+    /// package contributes exported names; a local package contributes its
+    /// package scope. The result is ordered by name.
+    #[allow(dead_code, reason = "consumed by completion in Wave 2")]
+    pub(super) fn package_declarations(
+        &mut self,
+        from: &Package,
+        target: &'w Package,
+    ) -> Result<Vec<(String, ResolvedSymbol<'w>)>> {
+        let mut declarations = BTreeMap::new();
+        let local = package_identity(from) == package_identity(target);
+        for file in self.indexes.files(target).iter() {
+            for (name, symbol) in self.indexes.file_index(file)?.symbols.declarations() {
+                if name != "init" && (local || is_exported(name)) {
+                    declarations
+                        .entry(name.to_owned())
+                        .or_insert_with(|| ResolvedSymbol {
+                            package: target,
+                            file: file.clone(),
+                            symbol: symbol.clone(),
+                            receiver: None,
+                            method_receiver: None,
+                        });
+                }
+            }
+        }
+        Ok(declarations.into_iter().collect())
+    }
+
+    /// Enumerates selectors at the shallowest embedding depth for each name.
+    /// A field or an unavailable pointer method can still shadow deeper names.
+    #[allow(dead_code, reason = "consumed by completion in Wave 2")]
+    pub(super) fn visible_members(
+        &mut self,
+        from: &Package,
+        ty: &TypeIdentity<'w>,
+    ) -> Result<Vec<VisibleMember<'w>>> {
+        let mut names = BTreeMap::new();
+        self.walk_member_paths(ty, false, |depth, mut member, pointer_allowed| {
+            if !member.visible_from(from) {
+                return;
+            }
+            match names.entry(member.key()) {
+                Entry::Vacant(entry) => {
+                    let method = matches!(member.resolved.symbol.kind, SymbolKind::Function(_));
+                    let eligible = (!ty.type_expression || method)
+                        && (!member.resolved.symbol.pointer_receiver || pointer_allowed);
+                    if ty.type_expression && eligible {
+                        member.resolved.method_receiver = Some(Box::new(ty.clone()));
+                    }
+                    entry.insert((depth, eligible.then_some(member)));
+                }
+                Entry::Occupied(mut entry) if entry.get().0 == depth => {
+                    entry.get_mut().1 = None;
+                }
+                Entry::Occupied(_) => {}
+            }
+        })?;
+        Ok(names
+            .into_values()
+            .filter_map(|(_, member)| member)
+            .collect())
+    }
+
+    /// Enumerates the individual paths to fields, starting with direct fields.
+    /// A caller can use the path to construct nested keyed literals and skip
+    /// descendants of an embedded field that is already assigned.
+    #[allow(dead_code, reason = "consumed by completion in Wave 2")]
+    pub(super) fn struct_fields(
+        &mut self,
+        from: &Package,
+        ty: &TypeIdentity<'w>,
+    ) -> Result<Vec<StructField<'w>>> {
+        let mut members = Vec::new();
+        self.walk_member_paths(ty, true, |_, member, _| members.push(member))?;
+        let mut hidden_paths = HashSet::new();
+        members
+            .into_iter()
+            .map(|member| {
+                let visible =
+                    member.visible_from(from) && !hidden_paths.contains(&member.embedded_path);
+                if !visible {
+                    let mut path = member.embedded_path.clone();
+                    path.push(member.name.clone());
+                    hidden_paths.insert(path);
+                }
+                let ty = match &member.resolved.symbol.kind {
+                    SymbolKind::Value(Some(reference)) => {
+                        self.type_from_symbol(&member.resolved, reference.clone(), false)?
+                    }
+                    _ => None,
+                };
+                Ok(StructField {
+                    member,
+                    visible,
+                    ty,
+                })
+            })
+            .collect()
+    }
+
+    fn walk_member_paths(
+        &mut self,
+        ty: &TypeIdentity<'w>,
+        fields_only: bool,
+        mut visit: impl FnMut(usize, VisibleMember<'w>, bool),
+    ) -> Result<()> {
+        let mut frontier = vec![MemberPath {
+            owner: ty.clone(),
+            ancestors: Vec::new(),
+            embedded_path: Vec::new(),
+            indirect: false,
+            fields_only,
+        }];
+        for depth in 0..MAX_TYPE_DEPTH {
+            if frontier.is_empty() {
+                break;
+            }
+            let mut next = Vec::new();
+            for path in frontier {
+                for (member, pointer_allowed) in self.members_at_path(path, &mut next)? {
+                    visit(depth, member, pointer_allowed);
+                }
+            }
+            frontier = next;
+        }
+        Ok(())
+    }
+
+    fn members_at_path(
+        &mut self,
+        path: MemberPath<'w>,
+        next: &mut Vec<MemberPath<'w>>,
+    ) -> Result<Vec<(VisibleMember<'w>, bool)>> {
+        let MemberPath {
+            mut owner,
+            mut ancestors,
+            embedded_path,
+            indirect,
+            mut fields_only,
+        } = path;
+        let mut members = BTreeMap::new();
+        let mut inherited = false;
+        while let Some(key) = owner.key() {
+            if owner.pointers > 1 || ancestors.len() >= MAX_TYPE_DEPTH || ancestors.contains(&key) {
+                break;
+            }
+            let Some((file, details, substitutions)) = self.type_context(&owner)? else {
+                break;
+            };
+            if details.interface {
+                if !fields_only && owner.pointers == 0 {
+                    self.interface_members(owner, &mut ancestors, &embedded_path, &mut members)?;
+                }
+                break;
+            }
+            ancestors.push(key);
+            let pointer_allowed =
+                indirect || owner.pointers == 1 || (!owner.type_expression && owner.addressable);
+            self.add_direct_members(
+                &owner,
+                &embedded_path,
+                inherited || fields_only,
+                pointer_allowed,
+                &mut members,
+            )?;
+
+            let imports = &self.indexes.file_index(&file)?.imports;
+            let resolve = |reference| {
+                materialize_type(
+                    self.workspace,
+                    owner.package,
+                    &file,
+                    imports,
+                    reference,
+                    &substitutions,
+                )
+            };
+            if let Some(base) = details.alias.or_else(|| {
+                inherited = true;
+                details.underlying
+            }) {
+                let Some(mut target) = resolve(base) else {
+                    break;
+                };
+                // A defined pointer permits field selectors through one
+                // dereference. It does not inherit pointer methods.
+                fields_only |= inherited && target.pointers != 0;
+                target.project_properties(&owner);
+                owner = target;
+                continue;
+            }
+
+            for embedded in details.embedded {
+                let TypeRefKind::Named(named) = &embedded.kind else {
+                    continue;
+                };
+                let mut member_path = embedded_path.clone();
+                member_path.push(named.name.clone());
+                let Some(mut target) = resolve(embedded) else {
+                    continue;
+                };
+                target.type_expression = owner.type_expression;
+                target.addressable = !owner.type_expression && pointer_allowed;
+                next.push(MemberPath {
+                    owner: target,
+                    ancestors: ancestors.clone(),
+                    embedded_path: member_path,
+                    indirect: indirect || owner.pointers == 1,
+                    fields_only,
+                });
+            }
+            break;
+        }
+        Ok(members.into_values().collect())
+    }
+
+    fn interface_members(
+        &mut self,
+        ty: TypeIdentity<'w>,
+        ancestors: &mut Vec<TypeKey>,
+        embedded_path: &[String],
+        members: &mut BTreeMap<MemberKey<'w>, (VisibleMember<'w>, bool)>,
+    ) -> Result<()> {
+        if ancestors.len() >= MAX_TYPE_DEPTH {
+            return Ok(());
+        }
+        let Some((owner, file, details, substitutions)) = self.constraint_interface(ty)? else {
+            return Ok(());
+        };
+        let Some(key) = owner.key().filter(|key| !ancestors.contains(key)) else {
+            return Ok(());
+        };
+        ancestors.push(key);
+        self.add_direct_members(&owner, embedded_path, false, false, members)?;
+        let imports = self.indexes.file_index(&file)?.imports.clone();
+        // Interface embedding contributes to one method set. The embedding
+        // depth for selectors counts struct fields, not interface elements.
+        for embedded in details.embedded {
+            let Some(embedded) = materialize_type(
+                self.workspace,
+                owner.package,
+                &file,
+                &imports,
+                embedded,
+                &substitutions,
+            ) else {
+                continue;
+            };
+            self.interface_members(embedded, ancestors, embedded_path, members)?;
+        }
+        ancestors.pop();
+        Ok(())
+    }
+
+    fn add_direct_members(
+        &mut self,
+        owner: &TypeIdentity<'w>,
+        embedded_path: &[String],
+        fields_only: bool,
+        pointer_allowed: bool,
+        members: &mut BTreeMap<MemberKey<'w>, (VisibleMember<'w>, bool)>,
+    ) -> Result<()> {
+        let mut add = |file: &Path, name: &str, symbol: &Symbol| {
+            if name.is_empty()
+                || name == "_"
+                || (fields_only && matches!(symbol.kind, SymbolKind::Function(_)))
+            {
+                return;
+            }
+            let member = VisibleMember {
+                name: name.to_owned(),
+                resolved: ResolvedSymbol {
+                    package: owner.package,
+                    file: file.to_owned(),
+                    symbol: symbol.clone(),
+                    receiver: Some(owner.clone()),
+                    method_receiver: None,
+                },
+                embedded_path: embedded_path.to_vec(),
+            };
+            members
+                .entry(member.key())
+                .or_insert((member, pointer_allowed));
+        };
+        match &owner.kind {
+            TypeKind::Named { name, .. } => {
+                for file in self.indexes.files(owner.package).iter() {
+                    for (name, symbol) in self.indexes.file_index(file)?.symbols.members_of(name) {
+                        add(file, name, symbol);
+                    }
+                }
+            }
+            TypeKind::Inline { file, shape, .. } => {
+                for (name, symbol) in &shape.members {
+                    add(file, name, symbol);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     pub(super) fn direct_member(
@@ -2280,4 +2631,332 @@ struct CallableComponents<'w> {
     parameters: Vec<TypeIdentity<'w>>,
     results: Vec<TypeIdentity<'w>>,
     variadic: bool,
+}
+
+#[cfg(test)]
+mod enumeration_tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::semantic::Engine;
+    use crate::semantic::snapshot::DocumentSnapshot;
+    use crate::test_support::TestProject;
+
+    fn with_resolver(
+        text: &str,
+        test: impl for<'w> FnOnce(&mut Resolver<'w, '_>, &'w Package, &DocumentSnapshot<'_>),
+    ) {
+        let project = TestProject::new();
+        let path = project.write("types.go", text);
+        let mut engine = Engine::new(project.root.clone());
+        assert!(engine.install_workspace(
+            engine.workspace_load(),
+            project.workspace(&["types.go"], false)
+        ));
+        let mut snapshot = engine.snapshot();
+        let workspace = snapshot.workspace().unwrap();
+        let package = workspace.package_of_file(&path).unwrap();
+        let document = snapshot.document(&path).unwrap().unwrap();
+        test(&mut snapshot.resolver(workspace), package, &document);
+    }
+
+    fn names<'a>(members: &'a [VisibleMember<'_>]) -> Vec<&'a str> {
+        members.iter().map(|member| member.name.as_str()).collect()
+    }
+
+    #[test]
+    fn enumerates_value_pointer_and_method_expression_selectors() {
+        with_resolver(
+            concat!(
+                "package sample\n",
+                "type T struct { Field int; Callback func() }\n",
+                "func (T) Value() {}\nfunc (*T) Pointer() {}\n",
+                "type Alias = T\ntype PtrAlias = *T\ntype Defined T\ntype DefinedPtr *T\n",
+                "type I interface { Invoke() }\ntype IAlias = I\ntype DerivedI I\n",
+                "type WithI struct { I }\n",
+                "type WithT struct { T }\ntype WithPtr struct { *T }\n",
+            ),
+            |resolver, package, source| {
+                for (name, pointers, addressable, type_expression, expected) in [
+                    ("T", 0, false, false, &["Callback", "Field", "Value"][..]),
+                    (
+                        "T",
+                        0,
+                        true,
+                        false,
+                        &["Callback", "Field", "Pointer", "Value"],
+                    ),
+                    (
+                        "T",
+                        1,
+                        false,
+                        false,
+                        &["Callback", "Field", "Pointer", "Value"],
+                    ),
+                    ("T", 2, true, false, &[]),
+                    ("T", 0, false, true, &["Value"]),
+                    ("T", 1, false, true, &["Pointer", "Value"]),
+                    ("Alias", 0, false, true, &["Value"]),
+                    ("PtrAlias", 0, false, true, &["Pointer", "Value"]),
+                    ("PtrAlias", 1, false, false, &[]),
+                    ("Defined", 0, true, false, &["Callback", "Field"]),
+                    ("DefinedPtr", 0, true, false, &["Callback", "Field"]),
+                    ("I", 0, false, false, &["Invoke"]),
+                    ("I", 1, true, false, &[]),
+                    ("IAlias", 1, false, true, &[]),
+                    ("DerivedI", 0, false, true, &["Invoke"]),
+                    ("WithI", 1, false, false, &["I", "Invoke"]),
+                    ("WithI", 1, false, true, &["Invoke"]),
+                    ("WithT", 0, false, true, &["Value"]),
+                    ("WithT", 1, false, true, &["Pointer", "Value"]),
+                    ("WithPtr", 0, false, true, &["Pointer", "Value"]),
+                ] {
+                    let ty = TypeIdentity {
+                        pointers,
+                        addressable,
+                        type_expression,
+                        ..TypeIdentity::named(package, name)
+                    };
+                    let members = resolver.visible_members(package, &ty).unwrap();
+                    assert_eq!(
+                        names(&members),
+                        expected,
+                        "{name}, {pointers}, {addressable}, {type_expression}"
+                    );
+                    if type_expression {
+                        for member in &members {
+                            let function = resolver
+                                .symbol_type(source.indexed(), &member.resolved, &member.name, 0)
+                                .unwrap()
+                                .unwrap();
+                            assert!(matches!(
+                                function.kind,
+                                TypeKind::Function { method_receiver: Some(receiver), .. }
+                                    if receiver.pointers == pointers
+                                        && matches!(&receiver.kind, TypeKind::Named { name: actual, .. } if actual == name)
+                            ));
+                        }
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn shadows_deeper_members_and_cancels_distinct_same_depth_paths() {
+        with_resolver(
+            concat!(
+                "package sample\n",
+                "type Shared struct { Collision int; Closest int }\n",
+                "func (Shared) Blocked() {}\nfunc (Shared) Ambiguous() {}\n",
+                "type Left struct{ Shared }\ntype Right struct{ Shared }\n",
+                "type Both struct { Left; Right; Closest bool }\n",
+                "type Block struct { Shared; Blocked bool }\n",
+                "type PointerBlock struct { Shared }\nfunc (*PointerBlock) Blocked() {}\n",
+                "type Cycle struct{ *Cycle; Own int }\n",
+            ),
+            |resolver, package, _| {
+                for (name, type_expression, expected) in [
+                    ("Both", false, &["Closest", "Left", "Right"][..]),
+                    (
+                        "Block",
+                        false,
+                        &["Ambiguous", "Blocked", "Closest", "Collision", "Shared"],
+                    ),
+                    ("Block", true, &["Ambiguous"]),
+                    (
+                        "PointerBlock",
+                        false,
+                        &["Ambiguous", "Closest", "Collision", "Shared"],
+                    ),
+                    ("Cycle", false, &["Cycle", "Own"]),
+                ] {
+                    let ty = TypeIdentity {
+                        type_expression,
+                        ..TypeIdentity::named(package, name)
+                    };
+                    let members = resolver.visible_members(package, &ty).unwrap();
+                    assert_eq!(names(&members), expected, "{name}");
+                    if let Some(member) = members.iter().find(|member| member.name == "Closest") {
+                        assert_eq!(member.embedded_path.is_empty(), name == "Both");
+                    }
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn combines_interface_methods_and_enumerates_type_parameter_constraints() {
+        with_resolver(
+            concat!(
+                "package sample\n",
+                "type Base interface { Shared(); BaseOnly() }\n",
+                "type Other interface { Shared(); OtherOnly() }\n",
+                "type Combined interface { Base; Other }\n",
+                "type Pair struct { Base; Other }\n",
+                "type Term struct { Field int }\nfunc (Term) TermOnly() {}\n",
+                "type Constraint interface { Term; Combined; Extra() }\n",
+                "func use[T Constraint](value T) { value.Probe() }\n",
+            ),
+            |resolver, package, document| {
+                for (ty, expected) in [
+                    ("Combined", &["BaseOnly", "OtherOnly", "Shared"][..]),
+                    ("Pair", &["Base", "BaseOnly", "Other", "OtherOnly"]),
+                ] {
+                    let members = resolver
+                        .visible_members(package, &TypeIdentity::named(package, ty))
+                        .unwrap();
+                    assert_eq!(names(&members), expected);
+                }
+                let start = document.text().find("value.Probe").unwrap();
+                let receiver = document
+                    .root_node()
+                    .named_descendant_for_byte_range(start, start + "value".len())
+                    .unwrap();
+                let ty = resolver
+                    .infer_type(package, document.indexed(), receiver, 0, 0)
+                    .unwrap()
+                    .unwrap();
+                let members = resolver.visible_members(package, &ty).unwrap();
+                assert_eq!(
+                    names(&members),
+                    ["BaseOnly", "Extra", "OtherOnly", "Shared"]
+                );
+                assert!(members.iter().all(|member| member.embedded_path.is_empty()));
+            },
+        );
+    }
+
+    #[test]
+    fn retains_generic_field_types_owners_paths_and_package_visibility() {
+        let project = TestProject::new();
+        let decl = project.write(
+            "sample.go",
+            concat!(
+                "package sample\nimport foreign \"example.test/foreign\"\n",
+                "type Wrap struct { foreign.Box[string]; Direct bool }\n",
+            ),
+        );
+        let dependency = project.write(
+            "foreign/types.go",
+            concat!(
+                "package foreign\n",
+                "type Leaf[T any] struct { Value T; private T }\n",
+                "type hidden struct{ Exported int }\n",
+                "type Box[T any] struct { Leaf[T]; Callback func(T); hidden }\n",
+                "func (Box[U]) Get() U { panic(\"stub\") }\n",
+                "func (Box[U]) privateMethod() {}\n",
+            ),
+        );
+        let listing = format!(
+            "{}\n{}",
+            json!({"Dir": project.root, "ImportPath": "example.test/sample", "Name": "sample", "GoFiles": ["sample.go"]}),
+            json!({"Dir": dependency.parent(), "ImportPath": "example.test/foreign", "Name": "foreign", "GoFiles": ["types.go"]})
+        );
+        let workspace =
+            Workspace::from_test_listing(std::slice::from_ref(&project.root), &listing, false);
+        let mut engine = Engine::new(project.root.clone());
+        assert!(engine.install_workspace(engine.workspace_load(), workspace));
+        let mut snapshot = engine.snapshot();
+        let workspace = snapshot.workspace().unwrap();
+        let package = workspace.package_of_file(&decl).unwrap();
+        let dependency = workspace.package_of_file(&dependency).unwrap();
+        let source = snapshot.document(&decl).unwrap().unwrap();
+        let mut resolver = snapshot.resolver(workspace);
+        let ty = TypeIdentity::named(package, "Wrap");
+        let members = resolver.visible_members(package, &ty).unwrap();
+        assert_eq!(
+            names(&members),
+            [
+                "Box", "Callback", "Direct", "Exported", "Get", "Leaf", "Value"
+            ]
+        );
+        let get = members.iter().find(|member| member.name == "Get").unwrap();
+        assert_eq!(get.embedded_path, ["Box"]);
+        let method_ty = resolver
+            .symbol_type(source.indexed(), &get.resolved, &get.name, 0)
+            .unwrap()
+            .unwrap();
+        let components = resolver.callable_components(method_ty).unwrap().unwrap();
+        assert!(
+            matches!(&components.results[0].kind, TypeKind::Named { name, .. } if name == "string")
+        );
+
+        let fields = resolver.struct_fields(package, &ty).unwrap();
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| field.member.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Box", "Direct", "Callback", "Leaf", "hidden", "Value", "private", "Exported"
+            ]
+        );
+        let value = &fields[5];
+        assert_eq!(value.member.embedded_path, ["Box", "Leaf"]);
+        assert!(value.visible);
+        assert!(!fields[6].visible);
+        assert_eq!(fields[7].member.embedded_path, ["Box", "hidden"]);
+        assert!(!fields[7].visible);
+        let owner = value.member.resolved.receiver.as_ref().unwrap();
+        assert!(std::ptr::eq(owner.package, dependency));
+        assert!(matches!(&owner.kind, TypeKind::Named { name, .. } if name == "Leaf"));
+        assert!(
+            matches!(&value.ty.as_ref().unwrap().kind, TypeKind::Named { name, .. } if name == "string")
+        );
+    }
+
+    #[test]
+    fn enumerates_package_declarations_from_the_selected_test_view_and_overlay() {
+        let project = TestProject::new();
+        let regular = project.write("sample.go", "package sample\nvar Disk int\n");
+        let internal = project.write("sample_test.go", "package sample\nvar InternalTest int\n");
+        let external = project.write(
+            "external_test.go",
+            "package sample_test\nvar ExternalTest int\n",
+        );
+        let listing = [
+            json!({"Dir": project.root, "Name": "sample", "ImportPath": "example.test/sample", "GoFiles": ["sample.go"]}),
+            json!({"Dir": project.root, "Name": "sample", "ImportPath": "example.test/sample [example.test/sample.test]", "ForTest": "example.test/sample", "GoFiles": ["sample.go", "sample_test.go"]}),
+            json!({"Dir": project.root, "Name": "sample_test", "ImportPath": "example.test/sample_test [example.test/sample.test]", "ForTest": "example.test/sample", "GoFiles": ["external_test.go"]}),
+        ].into_iter().map(|value| value.to_string()).collect::<Vec<_>>().join("\n");
+        let mut engine = Engine::new(project.root.clone());
+        engine
+            .open(
+                regular.clone(),
+                "package sample\nvar Overlay int\nvar private int\nfunc init() {}\n".into(),
+                1,
+            )
+            .unwrap();
+        assert!(engine.install_workspace(
+            engine.workspace_load(),
+            Workspace::from_test_listing(std::slice::from_ref(&project.root), &listing, true)
+        ));
+        let mut snapshot = engine.snapshot();
+        let workspace = snapshot.workspace().unwrap();
+        let regular = workspace.package_of_file(&regular).unwrap();
+        let internal = workspace.package_of_file(&internal).unwrap();
+        let external = workspace.package_of_file(&external).unwrap();
+        let mut resolver = snapshot.resolver(workspace);
+        for (from, target, expected) in [
+            (regular, regular, &["Overlay", "private"][..]),
+            (internal, internal, &["InternalTest", "Overlay", "private"]),
+            (external, external, &["ExternalTest"]),
+            (external, regular, &["Overlay"]),
+        ] {
+            let declarations = resolver.package_declarations(from, target).unwrap();
+            assert_eq!(
+                declarations
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert!(
+                declarations
+                    .iter()
+                    .all(|(_, declaration)| std::ptr::eq(declaration.package, target))
+            );
+        }
+    }
 }

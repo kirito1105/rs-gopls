@@ -25,6 +25,9 @@ pub struct Package {
     import_map: HashMap<String, String>,
     for_test: String,
     external: bool,
+    standard: bool,
+    module_path: Option<String>,
+    direct_dependency: bool,
 }
 
 pub struct Workspace {
@@ -270,6 +273,26 @@ impl Package {
         (&self.directory, &self.name)
     }
 
+    pub(crate) fn import_path(&self) -> &str {
+        self.id.split_once(" [").map_or(&self.id, |(path, _)| path)
+    }
+
+    pub(crate) fn is_production(&self) -> bool {
+        self.for_test.is_empty()
+    }
+
+    pub(crate) fn is_standard(&self) -> bool {
+        self.standard
+    }
+
+    pub(crate) fn module_path(&self) -> Option<&str> {
+        self.module_path.as_deref()
+    }
+
+    pub(crate) fn is_direct_dependency(&self) -> bool {
+        self.direct_dependency
+    }
+
     fn import_id<'a>(&'a self, path: &'a str) -> &'a str {
         self.import_map
             .get(path)
@@ -320,7 +343,9 @@ struct ListedPackage {
 #[derive(Default, Deserialize)]
 #[serde(default, rename_all = "PascalCase")]
 struct ListedModule {
+    path: String,
     main: bool,
+    indirect: bool,
     version: String,
     replace: Option<Box<ListedModule>>,
 }
@@ -378,7 +403,17 @@ fn read_packages(reader: impl Read) -> Result<PackageListing> {
             external: package.goroot
                 || package
                     .module
-                    .is_some_and(|module| module.in_module_cache()),
+                    .as_ref()
+                    .is_some_and(ListedModule::in_module_cache),
+            standard: package.goroot,
+            direct_dependency: package
+                .module
+                .as_ref()
+                .is_some_and(|module| !module.main && !module.indirect),
+            module_path: package
+                .module
+                .map(|module| module.path)
+                .filter(|path| !path.is_empty()),
         });
         for import in package.imports {
             let id = owner.import_id(&import);

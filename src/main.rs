@@ -32,6 +32,7 @@ use serde_json::Value;
 use protocol::{RequestResult, file_path, invalid_params, send_response};
 use scheduler::{Scheduler, WorkspaceResult};
 use semantic::Engine;
+use semantic::completion::CompletionClientCapabilities;
 
 #[cfg(test)]
 use lsp_server::{RequestId, Response};
@@ -53,6 +54,7 @@ struct Running {
     engine: Engine,
     watch_files: bool,
     hierarchical_document_symbols: bool,
+    completion_capabilities: CompletionClientCapabilities,
     scheduler: Scheduler,
 }
 
@@ -190,6 +192,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 &mut running.engine,
                 &mut running.scheduler,
                 running.hierarchical_document_symbols,
+                running.completion_capabilities,
                 Request { id, method, params },
             );
         }
@@ -212,6 +215,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|document| document.document_symbol.as_ref())
         .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
+    let completion_capabilities = CompletionClientCapabilities::from_initialize(&params);
     let root = workspace_root(params)?;
     ensure!(
         root.is_dir(),
@@ -242,6 +246,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         Running {
             watch_files,
             hierarchical_document_symbols,
+            completion_capabilities,
             engine: Engine::new(root),
             scheduler: Scheduler::default(),
         },

@@ -13,6 +13,8 @@ use crate::symbols::{
 };
 use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 
+pub(crate) mod actions;
+pub(crate) mod completion;
 mod definition;
 mod document_symbols;
 mod hover;
@@ -88,6 +90,7 @@ pub struct Engine {
     implementation_cache: implementation::ImplementationCache,
     implementation_sources: implementation::InterfaceSources,
     workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex,
+    completion_imports: completion::ImportCache,
     include_tests: bool,
 }
 
@@ -96,6 +99,7 @@ struct EngineState {
     workspace: Option<Workspace>,
     graph_changes: GraphChanges,
     generation: u64,
+    completion_graph_generation: u64,
     parser: Parser,
     documents: HashMap<PathBuf, IndexedSource>,
     new_documents: HashSet<PathBuf>,
@@ -114,6 +118,7 @@ impl Engine {
                 workspace: None,
                 graph_changes: GraphChanges::default(),
                 generation: 0,
+                completion_graph_generation: 0,
                 parser,
                 documents: HashMap::new(),
                 new_documents: HashSet::new(),
@@ -122,6 +127,7 @@ impl Engine {
             implementation_cache: implementation::ImplementationCache::default(),
             implementation_sources: implementation::InterfaceSources::default(),
             workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex::default(),
+            completion_imports: completion::ImportCache::default(),
             include_tests: false,
         }
     }
@@ -233,6 +239,7 @@ impl Engine {
         }
         self.implementation_sources.retain_workspace(&workspace);
         self.state.workspace = Some(workspace);
+        self.state.completion_graph_generation += 1;
         self.state.graph_changes = GraphChanges::Clean;
         self.implementation_cache.clear();
         self.workspace_symbol_index.graph_changed();
@@ -242,6 +249,7 @@ impl Engine {
     fn invalidate(&mut self, affected: Option<HashSet<String>>) {
         self.implementation_cache.clear();
         self.state.generation += 1;
+        self.state.completion_graph_generation += 1;
         self.state.graph_changes.include(affected);
     }
 
@@ -260,6 +268,7 @@ impl Engine {
 
         self.implementation_cache.clear();
         let key = path_key(path);
+        self.completion_imports.source_changed(&key);
         self.workspace_symbol_index
             .disk_changed(&key, self.state.documents.contains_key(&key));
         self.implementation_sources.invalidate(&key);

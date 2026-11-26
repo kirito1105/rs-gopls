@@ -1,0 +1,2443 @@
+{
+  "schemaVersion": 1,
+  "build": "GO-263.7307.354",
+  "sdkHome": "C:/Users/rick/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.windows-amd64",
+  "sdkVersion": "1.27.4",
+  "completionType": "BASIC",
+  "projects": [
+    {
+      "id": "fixture",
+      "root": ".",
+      "revision": null,
+      "goWork": "off",
+      "queries": [
+        {
+          "id": "selector-eof",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A selector ends the incomplete file with no closing brace or newline.",
+          "line": 89,
+          "character": 9,
+          "lineText": "\t_ = foo.",
+          "edits": [
+            {
+              "range": [
+                88,
+                0,
+                93,
+                0
+              ],
+              "expectedText": "func suppression() {\n\t// normal comment Moon\n\t_ = \"normal string Moon\"\n\t_ = 123\n}\n",
+              "text": "func eof(foo embedded.Outer) {\n\t_ = foo."
+            }
+          ]
+        },
+        {
+          "id": "selector-newline",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A bare selector before a newline and a following closing brace.",
+          "line": 30,
+          "character": 9,
+          "lineText": "\t_ = foo.",
+          "edits": [
+            {
+              "range": [
+                30,
+                1,
+                30,
+                33
+              ],
+              "expectedText": "_ = (*interfacePointer).Invoke()",
+              "text": "_ = foo.\n}\n\nfunc remaining() {"
+            }
+          ]
+        },
+        {
+          "id": "selector-before-paren",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A bare selector inside a call, immediately before ).",
+          "line": 34,
+          "character": 16,
+          "lineText": "\t_ = useInt(foo.)",
+          "edits": [
+            {
+              "range": [
+                34,
+                5,
+                34,
+                22
+              ],
+              "expectedText": "useInt(foo.Basic)",
+              "text": "useInt(foo.)"
+            }
+          ]
+        },
+        {
+          "id": "selector-next-statement",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A bare selector before a separate statement on the next line.",
+          "line": 23,
+          "character": 9,
+          "lineText": "\t_ = foo.",
+          "edits": [
+            {
+              "range": [
+                23,
+                1,
+                24,
+                17
+              ],
+              "expectedText": "_ = foo.Basic\n\t_ = foo.LeftOnly",
+              "text": "_ = foo.\n\t_ = foo.LeftOnly"
+            }
+          ]
+        },
+        {
+          "id": "selector-partial",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A partially typed field in an otherwise incomplete call.",
+          "line": 34,
+          "character": 18,
+          "lineText": "\t_ = useInt(foo.Ba)",
+          "edits": [
+            {
+              "range": [
+                34,
+                5,
+                34,
+                22
+              ],
+              "expectedText": "useInt(foo.Basic)",
+              "text": "useInt(foo.Ba)"
+            }
+          ],
+          "accept": {
+            "lookupString": "Basic"
+          }
+        },
+        {
+          "id": "literal-open-brace",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "An opened S literal with no closing brace on this line.",
+          "line": 46,
+          "character": 7,
+          "lineText": "\t_ = S{",
+          "edits": [
+            {
+              "range": [
+                46,
+                1,
+                46,
+                8
+              ],
+              "expectedText": "_ = S{}",
+              "text": "_ = S{"
+            }
+          ]
+        },
+        {
+          "id": "literal-partial-key",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "An unresolved partial field key with an existing colon and value.",
+          "line": 47,
+          "character": 9,
+          "lineText": "\t_ = S{Fi: 1}",
+          "edits": [
+            {
+              "range": [
+                47,
+                5,
+                47,
+                31
+              ],
+              "expectedText": "S{A: 1, Field: localValue}",
+              "text": "S{Fi: 1}"
+            }
+          ],
+          "accept": {
+            "lookupString": "Field"
+          }
+        },
+        {
+          "id": "literal-mid-key",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "Tab replaces the remaining key suffix while preserving the colon.",
+          "line": 47,
+          "character": 15,
+          "lineText": "\t_ = S{A: 1, Field: localValue}",
+          "accept": {
+            "lookupString": "Field",
+            "select": "replace"
+          }
+        },
+        {
+          "id": "parameter-type-recovery",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "An incomplete single named parameter after a space.",
+          "line": 42,
+          "character": 9,
+          "lineText": "func f(a ",
+          "edits": [
+            {
+              "range": [
+                42,
+                0,
+                42,
+                44
+              ],
+              "expectedText": "func parameterTarget(a int) int { return a }",
+              "text": "func f(a "
+            }
+          ]
+        },
+        {
+          "id": "qualified-type-recovery",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A missing qualified type after var and an imported package.",
+          "line": 55,
+          "character": 14,
+          "lineText": "\tvar t helper.",
+          "edits": [
+            {
+              "range": [
+                55,
+                1,
+                55,
+                24
+              ],
+              "expectedText": "var value helper.Record",
+              "text": "var t helper."
+            }
+          ]
+        },
+        {
+          "id": "goto-recovery",
+          "kind": "recovery",
+          "path": "main.go",
+          "description": "A goto statement with no label before the next label.",
+          "line": 76,
+          "character": 6,
+          "lineText": "\tgoto ",
+          "edits": [
+            {
+              "range": [
+                76,
+                1,
+                77,
+                0
+              ],
+              "expectedText": "goto ExitPoint\n",
+              "text": "goto \n"
+            }
+          ]
+        },
+        {
+          "id": "line-comment",
+          "kind": "suppression",
+          "path": "main.go",
+          "description": "The caret is inside an ordinary line comment.",
+          "line": 89,
+          "character": 21,
+          "lineText": "\t// normal comment Moon"
+        },
+        {
+          "id": "normal-string",
+          "kind": "suppression",
+          "path": "main.go",
+          "description": "The caret is inside a regular string literal.",
+          "line": 90,
+          "character": 22,
+          "lineText": "\t_ = \"normal string Moon\""
+        },
+        {
+          "id": "number-literal",
+          "kind": "suppression",
+          "path": "main.go",
+          "description": "The caret follows the final digit of an integer literal.",
+          "line": 91,
+          "character": 8,
+          "lineText": "\t_ = 123"
+        },
+        {
+          "id": "scope-all",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "An empty expression with local, parameter, receiver, and named result in scope.",
+          "line": 18,
+          "character": 5,
+          "lineText": "\t_ = ",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = \n"
+            }
+          ]
+        },
+        {
+          "id": "scope-local",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "A local variable.",
+          "line": 18,
+          "character": 11,
+          "lineText": "\t_ = localV",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = localV\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-parameter",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "A parameter of the generic receiver method.",
+          "line": 18,
+          "character": 9,
+          "lineText": "\t_ = para",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = para\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-receiver",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "The method receiver.",
+          "line": 18,
+          "character": 9,
+          "lineText": "\t_ = rece",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = rece\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-result",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "The named result of the method.",
+          "line": 18,
+          "character": 8,
+          "lineText": "\t_ = res",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = res\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-sibling-public",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "An exported declaration from sibling.go.",
+          "line": 18,
+          "character": 13,
+          "lineText": "\t_ = SiblingP",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = SiblingP\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-sibling-private",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "An unexported declaration from sibling.go.",
+          "line": 18,
+          "character": 13,
+          "lineText": "\t_ = siblingP",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = siblingP\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-production-test-only",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "An internal test declaration must be hidden from production.",
+          "line": 18,
+          "character": 18,
+          "lineText": "\t_ = InternalTestO",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = InternalTestO\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-init",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "A Go init declaration has no referable binding.",
+          "line": 18,
+          "character": 8,
+          "lineText": "\t_ = ini",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "_ = ini\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-type-parameter",
+          "kind": "type",
+          "path": "main.go",
+          "description": "A receiver type parameter in a local variable type position.",
+          "line": 18,
+          "character": 20,
+          "lineText": "\tvar candidate TypeP",
+          "edits": [
+            {
+              "range": [
+                18,
+                1,
+                19,
+                0
+              ],
+              "expectedText": "_ = localValue\n",
+              "text": "var candidate TypeP\n\t_ = candidate\n"
+            }
+          ]
+        },
+        {
+          "id": "scope-iota-const",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "Predeclared iota inside a constant specification.",
+          "line": 84,
+          "character": 19,
+          "lineText": "const sequence = iota"
+        },
+        {
+          "id": "scope-iota-outside",
+          "kind": "scope",
+          "path": "main.go",
+          "description": "A variable initializer outside any const declaration.",
+          "line": 86,
+          "character": 21,
+          "lineText": "var outsideConst = io",
+          "edits": [
+            {
+              "range": [
+                86,
+                0,
+                86,
+                27
+              ],
+              "expectedText": "var outsideConst = sequence",
+              "text": "var outsideConst = io"
+            }
+          ]
+        },
+        {
+          "id": "internal-test-production",
+          "kind": "testScope",
+          "path": "main_test.go",
+          "description": "Internal tests see unexported production declarations.",
+          "line": 8,
+          "character": 13,
+          "lineText": "\t_ = siblingPrivate"
+        },
+        {
+          "id": "internal-test-own",
+          "kind": "testScope",
+          "path": "main_test.go",
+          "description": "Internal tests see their own test-only declaration.",
+          "line": 9,
+          "character": 18,
+          "lineText": "\t_ = InternalTestOnly"
+        },
+        {
+          "id": "external-test-own",
+          "kind": "testScope",
+          "path": "external_test.go",
+          "description": "External tests see declarations in their own package.",
+          "line": 13,
+          "character": 18,
+          "lineText": "\t_ = ExternalTestOnly"
+        },
+        {
+          "id": "external-unqualified-production",
+          "kind": "testScope",
+          "path": "external_test.go",
+          "description": "Production names require a qualifier in the external test package.",
+          "line": 11,
+          "character": 13,
+          "lineText": "\t_ = SiblingP",
+          "edits": [
+            {
+              "range": [
+                11,
+                1,
+                11,
+                29
+              ],
+              "expectedText": "_ = production.SiblingPublic",
+              "text": "_ = SiblingP"
+            }
+          ]
+        },
+        {
+          "id": "external-qualified-production",
+          "kind": "testScope",
+          "path": "external_test.go",
+          "description": "Qualified production declarations through the external test alias.",
+          "line": 11,
+          "character": 16,
+          "lineText": "\t_ = production.SiblingPublic"
+        },
+        {
+          "id": "external-qualified-private",
+          "kind": "testScope",
+          "path": "external_test.go",
+          "description": "An unexported production member through the external test alias.",
+          "line": 11,
+          "character": 24,
+          "lineText": "\t_ = production.siblingP",
+          "edits": [
+            {
+              "range": [
+                11,
+                1,
+                11,
+                29
+              ],
+              "expectedText": "_ = production.SiblingPublic",
+              "text": "_ = production.siblingP"
+            }
+          ]
+        },
+        {
+          "id": "external-qualified-internal-test",
+          "kind": "testScope",
+          "path": "external_test.go",
+          "description": "Probe whether GoLand exposes exported internal test declarations.",
+          "line": 11,
+          "character": 29,
+          "lineText": "\t_ = production.InternalTestO",
+          "edits": [
+            {
+              "range": [
+                11,
+                1,
+                11,
+                29
+              ],
+              "expectedText": "_ = production.SiblingPublic",
+              "text": "_ = production.InternalTestO"
+            }
+          ]
+        },
+        {
+          "id": "external-unresolved-production",
+          "kind": "autoImport",
+          "path": "external_test.go",
+          "description": "Remove the production import and complete it through its package name.",
+          "line": 10,
+          "character": 27,
+          "lineText": "\t_ = completion.ProductionO()",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                6,
+                0
+              ],
+              "expectedText": "\n\tproduction \"example.test/completion\"\n",
+              "text": "\n"
+            },
+            {
+              "range": [
+                10,
+                1,
+                10,
+                29
+              ],
+              "expectedText": "_ = production.SiblingPublic",
+              "text": "_ = completion.ProductionO()"
+            }
+          ],
+          "accept": {
+            "lookupString": "completion.ProductionOnly",
+            "sourcePackage": "example.test/completion"
+          }
+        },
+        {
+          "id": "shadow-builtin",
+          "kind": "shadow",
+          "path": "imports_edit/builtin.go",
+          "description": "Predeclared append with no same-name binding.",
+          "line": 3,
+          "character": 8,
+          "lineText": "\t_ = append([]int{}, 1)"
+        },
+        {
+          "id": "shadow-package",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "Package append shadows the universe builtin.",
+          "line": 7,
+          "character": 8,
+          "lineText": "\t_ = append.PackageField"
+        },
+        {
+          "id": "shadow-package-selector",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "Type provenance of the package binding.",
+          "line": 7,
+          "character": 12,
+          "lineText": "\t_ = append.PackageField"
+        },
+        {
+          "id": "shadow-local-package",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "Local append shadows same-name package and universe bindings.",
+          "line": 12,
+          "character": 8,
+          "lineText": "\t_ = append.LocalField"
+        },
+        {
+          "id": "shadow-local-package-selector",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "Type provenance of the local binding.",
+          "line": 12,
+          "character": 12,
+          "lineText": "\t_ = append.LocalField"
+        },
+        {
+          "id": "shadow-import",
+          "kind": "shadow",
+          "path": "imports_edit/shadow.go",
+          "description": "A file-scope strings alias shadows the universe builtin.",
+          "line": 5,
+          "character": 8,
+          "lineText": "\t_ = append.TrimSpace"
+        },
+        {
+          "id": "shadow-import-selector",
+          "kind": "shadow",
+          "path": "imports_edit/shadow.go",
+          "description": "Members resolve through the strings import alias.",
+          "line": 5,
+          "character": 12,
+          "lineText": "\t_ = append.TrimSpace"
+        },
+        {
+          "id": "shadow-local-import",
+          "kind": "shadow",
+          "path": "imports_edit/shadow.go",
+          "description": "Local append shadows the file import alias and universe builtin.",
+          "line": 10,
+          "character": 8,
+          "lineText": "\t_ = append.LocalField"
+        },
+        {
+          "id": "shadow-local-import-selector",
+          "kind": "shadow",
+          "path": "imports_edit/shadow.go",
+          "description": "A local field wins over the shadowed package selector.",
+          "line": 10,
+          "character": 12,
+          "lineText": "\t_ = append.LocalField"
+        },
+        {
+          "id": "shadow-import-package-error",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "An import alias collides with a same-name package declaration in erroneous code.",
+          "line": 9,
+          "character": 8,
+          "lineText": "\t_ = app",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                1,
+                0
+              ],
+              "expectedText": "package completion\n",
+              "text": "package completion\n\nimport append \"strings\"\n"
+            },
+            {
+              "range": [
+                9,
+                1,
+                9,
+                24
+              ],
+              "expectedText": "_ = append.PackageField",
+              "text": "_ = app"
+            }
+          ]
+        },
+        {
+          "id": "shadow-import-package-error-selector",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "Selector provenance under the illegal import/package duplicate.",
+          "line": 9,
+          "character": 12,
+          "lineText": "\t_ = append.",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                1,
+                0
+              ],
+              "expectedText": "package completion\n",
+              "text": "package completion\n\nimport append \"strings\"\n"
+            },
+            {
+              "range": [
+                9,
+                1,
+                9,
+                24
+              ],
+              "expectedText": "_ = append.PackageField",
+              "text": "_ = append."
+            }
+          ]
+        },
+        {
+          "id": "shadow-local-import-package-error",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "A local declaration in a file with the same illegal import/package duplicate.",
+          "line": 14,
+          "character": 8,
+          "lineText": "\t_ = app",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                1,
+                0
+              ],
+              "expectedText": "package completion\n",
+              "text": "package completion\n\nimport append \"strings\"\n"
+            },
+            {
+              "range": [
+                14,
+                1,
+                14,
+                22
+              ],
+              "expectedText": "_ = append.LocalField",
+              "text": "_ = app"
+            }
+          ]
+        },
+        {
+          "id": "shadow-local-package-bare",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "An unqualified expression prefix after declaring a local append.",
+          "line": 12,
+          "character": 8,
+          "lineText": "\t_ = app",
+          "edits": [
+            {
+              "range": [
+                12,
+                1,
+                12,
+                22
+              ],
+              "expectedText": "_ = append.LocalField",
+              "text": "_ = app"
+            }
+          ]
+        },
+        {
+          "id": "shadow-local-import-bare",
+          "kind": "shadow",
+          "path": "imports_edit/shadow.go",
+          "description": "An unqualified expression prefix under both a local name and file import alias.",
+          "line": 10,
+          "character": 8,
+          "lineText": "\t_ = app",
+          "edits": [
+            {
+              "range": [
+                10,
+                1,
+                10,
+                22
+              ],
+              "expectedText": "_ = append.LocalField",
+              "text": "_ = app"
+            }
+          ]
+        },
+        {
+          "id": "shadow-local-import-package-error-selector",
+          "kind": "shadow",
+          "path": "shadow_package.go",
+          "description": "A local field selector in a file containing an illegal import/package duplicate.",
+          "line": 14,
+          "character": 12,
+          "lineText": "\t_ = append.",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                1,
+                0
+              ],
+              "expectedText": "package completion\n",
+              "text": "package completion\n\nimport append \"strings\"\n"
+            },
+            {
+              "range": [
+                14,
+                1,
+                14,
+                22
+              ],
+              "expectedText": "_ = append.LocalField",
+              "text": "_ = append."
+            }
+          ]
+        },
+        {
+          "id": "scope-dot-import",
+          "kind": "scope",
+          "path": "imports_edit/blank_dot.go",
+          "description": "A dot import exposes math.Sqrt directly.",
+          "line": 8,
+          "character": 7,
+          "lineText": "\t_ = Sqrt(Pi)"
+        },
+        {
+          "id": "scope-blank-import",
+          "kind": "scope",
+          "path": "imports_edit/blank_dot.go",
+          "description": "The blank jpeg import creates no ordinary qualifier.",
+          "line": 8,
+          "character": 7,
+          "lineText": "\t_ = jp",
+          "edits": [
+            {
+              "range": [
+                8,
+                1,
+                8,
+                13
+              ],
+              "expectedText": "_ = Sqrt(Pi)",
+              "text": "_ = jp"
+            }
+          ]
+        },
+        {
+          "id": "selector-direct-promoted",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Direct and promoted members, with same-depth Shared and Collision declarations.",
+          "line": 24,
+          "character": 9,
+          "lineText": "\t_ = foo.LeftOnly"
+        },
+        {
+          "id": "selector-pointer",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Members through one implicit pointer dereference.",
+          "line": 27,
+          "character": 13,
+          "lineText": "\t_ = pointer.Basic"
+        },
+        {
+          "id": "selector-interface",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "An interface method set.",
+          "line": 29,
+          "character": 11,
+          "lineText": "\t_ = iface.Invoke()"
+        },
+        {
+          "id": "selector-embedded-interface",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "A method promoted from an embedded interface.",
+          "line": 37,
+          "character": 19,
+          "lineText": "\t_ = withInterface.Invoke()"
+        },
+        {
+          "id": "selector-type-method",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Method expressions on the non-pointer type.",
+          "line": 31,
+          "character": 20,
+          "lineText": "\t_ = embedded.Outer.Direct"
+        },
+        {
+          "id": "selector-pointer-method-expression",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Method expressions on the pointer type.",
+          "line": 32,
+          "character": 23,
+          "lineText": "\t_ = (*embedded.Outer).PointerMethod"
+        },
+        {
+          "id": "selector-nonaddressable",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "A non-addressable value returned by a call.",
+          "line": 33,
+          "character": 25,
+          "lineText": "\t_ = embedded.NewOuter().Direct()"
+        },
+        {
+          "id": "selector-generic",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Generic receiver field and method presentation after substituting string.",
+          "line": 59,
+          "character": 18,
+          "lineText": "\t_ = instantiated.Value"
+        },
+        {
+          "id": "selector-imported-package",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Exported functions, types, values and deprecated declarations from a package.",
+          "line": 61,
+          "character": 12,
+          "lineText": "\t_ = helper.Map([]int{1}, useInt)"
+        },
+        {
+          "id": "selector-ambiguous-field",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Same-depth Shared fields differ in type; type text identifies any winner.",
+          "line": 24,
+          "character": 12,
+          "lineText": "\t_ = foo.Sha",
+          "edits": [
+            {
+              "range": [
+                24,
+                1,
+                24,
+                17
+              ],
+              "expectedText": "_ = foo.LeftOnly",
+              "text": "_ = foo.Sha"
+            }
+          ]
+        },
+        {
+          "id": "selector-ambiguous-method",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Same-depth Collision methods have distinguishable result types.",
+          "line": 26,
+          "character": 13,
+          "lineText": "\t_ = foo.Coll()",
+          "edits": [
+            {
+              "range": [
+                26,
+                1,
+                26,
+                21
+              ],
+              "expectedText": "_ = foo.LeftMethod()",
+              "text": "_ = foo.Coll()"
+            }
+          ]
+        },
+        {
+          "id": "selector-double-pointer",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "No explicit dereference of a double pointer.",
+          "line": 28,
+          "character": 12,
+          "lineText": "\t_ = double.",
+          "edits": [
+            {
+              "range": [
+                28,
+                1,
+                28,
+                20
+              ],
+              "expectedText": "_ = (*double).Basic",
+              "text": "_ = double."
+            }
+          ]
+        },
+        {
+          "id": "selector-interface-pointer",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "No explicit dereference of an interface pointer.",
+          "line": 30,
+          "character": 22,
+          "lineText": "\t_ = interfacePointer.",
+          "edits": [
+            {
+              "range": [
+                30,
+                1,
+                30,
+                33
+              ],
+              "expectedText": "_ = (*interfacePointer).Invoke()",
+              "text": "_ = interfacePointer."
+            }
+          ]
+        },
+        {
+          "id": "selector-call-parens",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Accept a function without a call suffix in the buffer.",
+          "line": 61,
+          "character": 18,
+          "lineText": "\t_ = helper.NewRec",
+          "edits": [
+            {
+              "range": [
+                61,
+                1,
+                61,
+                33
+              ],
+              "expectedText": "_ = helper.Map([]int{1}, useInt)",
+              "text": "_ = helper.NewRec"
+            }
+          ],
+          "accept": {
+            "lookupString": "NewRecord"
+          }
+        },
+        {
+          "id": "selector-call-existing-parens",
+          "kind": "selector",
+          "path": "main.go",
+          "description": "Accept a method immediately before parentheses already present.",
+          "line": 26,
+          "character": 16,
+          "lineText": "\t_ = foo.LeftMet()",
+          "edits": [
+            {
+              "range": [
+                26,
+                1,
+                26,
+                21
+              ],
+              "expectedText": "_ = foo.LeftMethod()",
+              "text": "_ = foo.LeftMet()"
+            }
+          ],
+          "accept": {
+            "lookupString": "LeftMethod"
+          }
+        },
+        {
+          "id": "type-unqualified",
+          "kind": "type",
+          "path": "main.go",
+          "description": "An empty type-only parameter position.",
+          "line": 54,
+          "character": 15,
+          "lineText": "func types(arg ) {",
+          "edits": [
+            {
+              "range": [
+                54,
+                0,
+                54,
+                29
+              ],
+              "expectedText": "func types(arg helper.Record)",
+              "text": "func types(arg )"
+            }
+          ]
+        },
+        {
+          "id": "receiver-type",
+          "kind": "type",
+          "path": "main.go",
+          "description": "Receiver type completion in the current package.",
+          "line": 64,
+          "character": 8,
+          "lineText": "func (s ) ReceiverTarget() {}",
+          "edits": [
+            {
+              "range": [
+                64,
+                0,
+                64,
+                27
+              ],
+              "expectedText": "func (s S) ReceiverTarget()",
+              "text": "func (s ) ReceiverTarget()"
+            }
+          ]
+        },
+        {
+          "id": "literal-empty",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "An empty composite literal can offer keys and expressions.",
+          "line": 46,
+          "character": 7,
+          "lineText": "\t_ = S{}"
+        },
+        {
+          "id": "literal-keyed",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "A keyed literal already contains A; accept the other field key.",
+          "line": 47,
+          "character": 13,
+          "lineText": "\t_ = S{A: 1, }",
+          "edits": [
+            {
+              "range": [
+                47,
+                5,
+                47,
+                31
+              ],
+              "expectedText": "S{A: 1, Field: localValue}",
+              "text": "S{A: 1, }"
+            }
+          ],
+          "accept": {
+            "lookupString": "Field"
+          }
+        },
+        {
+          "id": "literal-value",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "The value side of a keyed element uses expression completion.",
+          "line": 47,
+          "character": 26,
+          "lineText": "\t_ = S{A: 1, Field: localValue}"
+        },
+        {
+          "id": "literal-unkeyed",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "An unkeyed literal already contains a positional value.",
+          "line": 48,
+          "character": 10,
+          "lineText": "\t_ = S{1, }",
+          "edits": [
+            {
+              "range": [
+                48,
+                1,
+                48,
+                12
+              ],
+              "expectedText": "_ = S{1, 2}",
+              "text": "_ = S{1, }"
+            }
+          ]
+        },
+        {
+          "id": "literal-mixed",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "A transient mixed literal, with both a key and a positional value.",
+          "line": 47,
+          "character": 16,
+          "lineText": "\t_ = S{A: 1, 2, }",
+          "edits": [
+            {
+              "range": [
+                47,
+                5,
+                47,
+                31
+              ],
+              "expectedText": "S{A: 1, Field: localValue}",
+              "text": "S{A: 1, 2, }"
+            }
+          ]
+        },
+        {
+          "id": "literal-promoted",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "A promoted field of a value-embedded struct, with an existing top-level key.",
+          "line": 49,
+          "character": 35,
+          "lineText": "\t_ = embedded.Outer{Basic: 1, LeftO}",
+          "edits": [
+            {
+              "range": [
+                49,
+                5,
+                49,
+                53
+              ],
+              "expectedText": "embedded.Outer{Left: embedded.Left{LeftOnly: 1}}",
+              "text": "embedded.Outer{Basic: 1, LeftO}"
+            }
+          ],
+          "accept": {
+            "lookupString": "LeftOnly"
+          }
+        },
+        {
+          "id": "literal-promoted-pointer",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "A promoted field of a pointer-embedded struct.",
+          "line": 49,
+          "character": 36,
+          "lineText": "\t_ = embedded.Outer{Basic: 1, RightO}",
+          "edits": [
+            {
+              "range": [
+                49,
+                5,
+                49,
+                53
+              ],
+              "expectedText": "embedded.Outer{Left: embedded.Left{LeftOnly: 1}}",
+              "text": "embedded.Outer{Basic: 1, RightO}"
+            }
+          ],
+          "accept": {
+            "lookupString": "RightOnly"
+          }
+        },
+        {
+          "id": "literal-filled-embedded",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "Probe already-filled embedded Left and its promoted descendants.",
+          "line": 50,
+          "character": 53,
+          "lineText": "\t_ = embedded.Outer{Basic: 1, Left: embedded.Left{}, }",
+          "edits": [
+            {
+              "range": [
+                50,
+                5,
+                50,
+                52
+              ],
+              "expectedText": "embedded.Outer{Basic: 1, Left: embedded.Left{}}",
+              "text": "embedded.Outer{Basic: 1, Left: embedded.Left{}, }"
+            }
+          ]
+        },
+        {
+          "id": "literal-external",
+          "kind": "literal",
+          "path": "main.go",
+          "description": "An external struct with exported Public and unexported private.",
+          "line": 51,
+          "character": 19,
+          "lineText": "\t_ = helper.Record{}",
+          "edits": [
+            {
+              "range": [
+                51,
+                5,
+                51,
+                29
+              ],
+              "expectedText": "helper.Record{Public: 1}",
+              "text": "helper.Record{}"
+            }
+          ]
+        },
+        {
+          "id": "keyword-file",
+          "kind": "keyword",
+          "path": "main.go",
+          "description": "Top-level declaration keyword prefix.",
+          "line": 88,
+          "character": 2,
+          "lineText": "fu",
+          "edits": [
+            {
+              "range": [
+                86,
+                0,
+                86,
+                27
+              ],
+              "expectedText": "var outsideConst = sequence",
+              "text": "var outsideConst = sequence\n\nfu"
+            }
+          ]
+        },
+        {
+          "id": "keyword-statement",
+          "kind": "keyword",
+          "path": "main.go",
+          "description": "Statement keywords in a function body.",
+          "line": 91,
+          "character": 4,
+          "lineText": "\tret",
+          "edits": [
+            {
+              "range": [
+                91,
+                1,
+                91,
+                8
+              ],
+              "expectedText": "_ = 123",
+              "text": "ret"
+            }
+          ]
+        },
+        {
+          "id": "keyword-range",
+          "kind": "keyword",
+          "path": "main.go",
+          "description": "Range keyword after for.",
+          "line": 68,
+          "character": 7,
+          "lineText": "\tfor ra []int{1} {",
+          "edits": [
+            {
+              "range": [
+                68,
+                1,
+                68,
+                21
+              ],
+              "expectedText": "for range []int{1} {",
+              "text": "for ra []int{1} {"
+            }
+          ]
+        },
+        {
+          "id": "keyword-switch",
+          "kind": "keyword",
+          "path": "main.go",
+          "description": "Unfinished case/default clause in a type switch.",
+          "line": 70,
+          "character": 4,
+          "lineText": "\t\tca",
+          "edits": [
+            {
+              "range": [
+                70,
+                2,
+                70,
+                11
+              ],
+              "expectedText": "case int:",
+              "text": "ca"
+            }
+          ]
+        },
+        {
+          "id": "keyword-type-switch",
+          "kind": "keyword",
+          "path": "main.go",
+          "description": "The type assertion keyword in a type switch.",
+          "line": 69,
+          "character": 18,
+          "lineText": "\t\tswitch input.(ty) {",
+          "edits": [
+            {
+              "range": [
+                69,
+                2,
+                69,
+                21
+              ],
+              "expectedText": "switch input.(type)",
+              "text": "switch input.(ty)"
+            }
+          ]
+        },
+        {
+          "id": "label-break",
+          "kind": "label",
+          "path": "main.go",
+          "description": "A break label in nested switch and loop scopes.",
+          "line": 71,
+          "character": 9,
+          "lineText": "\t\t\tbreak ",
+          "edits": [
+            {
+              "range": [
+                71,
+                3,
+                71,
+                18
+              ],
+              "expectedText": "break OuterLoop",
+              "text": "break "
+            }
+          ]
+        },
+        {
+          "id": "label-continue",
+          "kind": "label",
+          "path": "main.go",
+          "description": "A continue label targets the enclosing loop.",
+          "line": 73,
+          "character": 12,
+          "lineText": "\t\t\tcontinue ",
+          "edits": [
+            {
+              "range": [
+                73,
+                3,
+                73,
+                21
+              ],
+              "expectedText": "continue OuterLoop",
+              "text": "continue "
+            }
+          ]
+        },
+        {
+          "id": "label-closure",
+          "kind": "label",
+          "path": "main.go",
+          "description": "Goto inside a nested function should only see its inner label.",
+          "line": 79,
+          "character": 7,
+          "lineText": "\t\tgoto ",
+          "edits": [
+            {
+              "range": [
+                79,
+                2,
+                79,
+                17
+              ],
+              "expectedText": "goto InnerPoint",
+              "text": "goto "
+            }
+          ]
+        },
+        {
+          "id": "package-production",
+          "kind": "package",
+          "path": "main.go",
+          "description": "An empty production package clause in a directory with siblings.",
+          "line": 0,
+          "character": 8,
+          "lineText": "package ",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                0,
+                18
+              ],
+              "expectedText": "package completion",
+              "text": "package "
+            }
+          ]
+        },
+        {
+          "id": "package-test",
+          "kind": "package",
+          "path": "external_test.go",
+          "description": "An empty package clause in a test file.",
+          "line": 0,
+          "character": 8,
+          "lineText": "package ",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                0,
+                23
+              ],
+              "expectedText": "package completion_test",
+              "text": "package "
+            }
+          ]
+        },
+        {
+          "id": "package-directory-fallback",
+          "kind": "package",
+          "path": "pkg/sibling_caller/caller.go",
+          "description": "No other package clause exists in this directory.",
+          "line": 0,
+          "character": 8,
+          "lineText": "package ",
+          "edits": [
+            {
+              "range": [
+                0,
+                0,
+                0,
+                14
+              ],
+              "expectedText": "package caller",
+              "text": "package "
+            }
+          ]
+        },
+        {
+          "id": "import-empty-quote",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "An opening import quote without a closing quote.",
+          "line": 4,
+          "character": 8,
+          "lineText": "import \"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \""
+            }
+          ]
+        },
+        {
+          "id": "import-workspace",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "Workspace subpaths after an unterminated module prefix.",
+          "line": 4,
+          "character": 32,
+          "lineText": "import \"example.test/completion/",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/"
+            }
+          ]
+        },
+        {
+          "id": "import-workspace-closed",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "Workspace subpaths with the closing quote present.",
+          "line": 4,
+          "character": 32,
+          "lineText": "import \"example.test/completion/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/\""
+            }
+          ]
+        },
+        {
+          "id": "import-stdlib",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "An existing closing quote with a stdlib path prefix.",
+          "line": 4,
+          "character": 13,
+          "lineText": "import \"net/h\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"net/h\""
+            }
+          ],
+          "accept": {
+            "lookupString": "net/http"
+          }
+        },
+        {
+          "id": "import-raw-aliased",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "A raw-string import path with an explicit alias and inline comment.",
+          "line": 4,
+          "character": 29,
+          "lineText": "import formatting `encoding/j` // Keep this inline comment with fmt.",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import formatting `encoding/j` // Keep this inline comment with fmt."
+            }
+          ],
+          "accept": {
+            "lookupString": "encoding/json"
+          }
+        },
+        {
+          "id": "import-internal-outside",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "The file is outside the parent tree of pkg/internal.",
+          "line": 4,
+          "character": 45,
+          "lineText": "import \"example.test/completion/pkg/internal/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/pkg/internal/\""
+            }
+          ]
+        },
+        {
+          "id": "import-internal-inside",
+          "kind": "importPath",
+          "path": "pkg/sibling_caller/caller.go",
+          "description": "The sibling caller is inside the parent tree of pkg/internal.",
+          "line": 5,
+          "character": 39,
+          "lineText": "\t\"example.test/completion/pkg/internal/\"",
+          "edits": [
+            {
+              "range": [
+                5,
+                1,
+                5,
+                46
+              ],
+              "expectedText": "\"example.test/completion/pkg/internal/secret\"",
+              "text": "\"example.test/completion/pkg/internal/\""
+            }
+          ]
+        },
+        {
+          "id": "import-main",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "An import prefix targeting a main package.",
+          "line": 4,
+          "character": 36,
+          "lineText": "import \"example.test/completion/cmd/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/cmd/\""
+            }
+          ]
+        },
+        {
+          "id": "import-fixture-testdata",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "A workspace testdata package.",
+          "line": 4,
+          "character": 45,
+          "lineText": "import \"example.test/completion/pkg/testdata/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/pkg/testdata/\""
+            }
+          ]
+        },
+        {
+          "id": "import-ignored-dirs",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "Package names beneath pkg, including underscore and dot directory controls.",
+          "line": 4,
+          "character": 36,
+          "lineText": "import \"example.test/completion/pkg/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/pkg/\""
+            }
+          ]
+        },
+        {
+          "id": "import-vendor",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "The canonical import path of the vendored dependency.",
+          "line": 4,
+          "character": 31,
+          "lineText": "import \"example.test/vendordep/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/vendordep/\""
+            }
+          ]
+        },
+        {
+          "id": "import-vendor-physical",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "The physical vendor directory exposed as a workspace import prefix.",
+          "line": 4,
+          "character": 62,
+          "lineText": "import \"example.test/completion/vendor/example.test/vendordep/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"example.test/completion/vendor/example.test/vendordep/\""
+            }
+          ]
+        },
+        {
+          "id": "import-sdk-testdata",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "A concrete Go SDK testdata directory containing package file.",
+          "line": 4,
+          "character": 32,
+          "lineText": "import \"go/build/testdata/other/\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"go/build/testdata/other/\""
+            }
+          ]
+        },
+        {
+          "id": "import-sdk-testdata-parent",
+          "kind": "importPath",
+          "path": "imports_edit/single.go",
+          "description": "Probe whether a standard library package exposes its testdata directory.",
+          "line": 4,
+          "character": 19,
+          "lineText": "import \"go/build/te\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                4,
+                61
+              ],
+              "expectedText": "import formatting `fmt` // Keep this inline comment with fmt.",
+              "text": "import \"go/build/te\""
+            }
+          ]
+        },
+        {
+          "id": "import-production-self",
+          "kind": "importPath",
+          "path": "main.go",
+          "description": "The production package cannot import itself.",
+          "line": 4,
+          "character": 22,
+          "lineText": "\t\"example.test/complet\"",
+          "edits": [
+            {
+              "range": [
+                4,
+                1,
+                4,
+                37
+              ],
+              "expectedText": "\"example.test/completion/pkg/helper\"",
+              "text": "\"example.test/complet\""
+            }
+          ]
+        },
+        {
+          "id": "import-external-test-self",
+          "kind": "importPath",
+          "path": "external_test.go",
+          "description": "An external test may import the corresponding production package.",
+          "line": 5,
+          "character": 33,
+          "lineText": "\tproduction \"example.test/complet\"",
+          "edits": [
+            {
+              "range": [
+                5,
+                12,
+                5,
+                37
+              ],
+              "expectedText": "\"example.test/completion\"",
+              "text": "\"example.test/complet\""
+            }
+          ]
+        },
+        {
+          "id": "auto-marshal",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "Unqualified standard library symbol auto-import.",
+          "line": 8,
+          "character": 8,
+          "lineText": "\t_ = Mar",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-json-qualifier",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "An unresolved stdlib qualifier without a member prefix.",
+          "line": 8,
+          "character": 10,
+          "lineText": "\t_ = json.",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "json."
+            }
+          ]
+        },
+        {
+          "id": "auto-single-comment",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "Accept Marshal and observe a single raw aliased import, leading comment and inline comment.",
+          "line": 8,
+          "character": 13,
+          "lineText": "\t_ = json.Mar",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "json.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-existing-reuse",
+          "kind": "autoImport",
+          "path": "imports_edit/existing.go",
+          "description": "Compare reused j import against newly imported same-name symbols.",
+          "line": 9,
+          "character": 8,
+          "lineText": "\t_ = Mar",
+          "edits": [
+            {
+              "range": [
+                9,
+                5,
+                9,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "j.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-existing-qualified",
+          "kind": "autoImport",
+          "path": "imports_edit/existing.go",
+          "description": "Complete through an explicit alias for an already-imported package.",
+          "line": 9,
+          "character": 10,
+          "lineText": "\t_ = j.Mar",
+          "edits": [
+            {
+              "range": [
+                9,
+                5,
+                9,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "j.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-existing-block",
+          "kind": "autoImport",
+          "path": "imports_edit/multiple.go",
+          "description": "Find the insertion anchor among two import blocks with comments, blank and dot imports.",
+          "line": 15,
+          "character": 13,
+          "lineText": "\t_ = json.Mar",
+          "edits": [
+            {
+              "range": [
+                15,
+                5,
+                15,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "json.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-cgo",
+          "kind": "autoImport",
+          "path": "imports_edit/cgo.go",
+          "description": "Accept with import C and its preamble as the only import.",
+          "line": 10,
+          "character": 13,
+          "lineText": "\t_ = json.Mar",
+          "edits": [
+            {
+              "range": [
+                10,
+                5,
+                10,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "json.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-cgo-block",
+          "kind": "autoImport",
+          "path": "imports_edit/cgo_block.go",
+          "description": "Accept with import C and an existing ordinary block.",
+          "line": 13,
+          "character": 13,
+          "lineText": "\t_ = json.Mar",
+          "edits": [
+            {
+              "range": [
+                13,
+                5,
+                13,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "json.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-crlf-utf16",
+          "kind": "autoImport",
+          "path": "imports_edit/crlf.go",
+          "description": "CRLF source with an emoji and CJK text before the completion column.",
+          "line": 5,
+          "character": 44,
+          "lineText": "\t_ = fmt.Sprint(\"😀中文\", /* 字段 😀 */ json.Mar)",
+          "edits": [
+            {
+              "range": [
+                5,
+                36,
+                5,
+                47
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "json.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "auto-local-alias-collision",
+          "kind": "autoImport",
+          "path": "imports_edit/collision_local.go",
+          "description": "The natural qualifier conflicts with a local variable.",
+          "line": 5,
+          "character": 16,
+          "lineText": "\t_ = ConflictWid",
+          "edits": [
+            {
+              "range": [
+                5,
+                5,
+                5,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "ConflictWid"
+            }
+          ],
+          "accept": {
+            "lookupString": "conflict2.ConflictWidget"
+          }
+        },
+        {
+          "id": "auto-import-alias-collision",
+          "kind": "autoImport",
+          "path": "imports_edit/collision_import.go",
+          "description": "The natural qualifier conflicts with an existing import alias.",
+          "line": 6,
+          "character": 16,
+          "lineText": "\t_ = ConflictWid",
+          "edits": [
+            {
+              "range": [
+                6,
+                5,
+                6,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "ConflictWid"
+            }
+          ],
+          "accept": {
+            "lookupString": "conflict2.ConflictWidget"
+          }
+        },
+        {
+          "id": "auto-double-alias-collision",
+          "kind": "autoImport",
+          "path": "imports_edit/collision_next.go",
+          "description": "The natural qualifier and its numeric suffix are both occupied.",
+          "line": 10,
+          "character": 16,
+          "lineText": "\t_ = ConflictWid",
+          "edits": [
+            {
+              "range": [
+                10,
+                5,
+                10,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "ConflictWid"
+            }
+          ],
+          "accept": {
+            "lookupString": "conflict3.ConflictWidget"
+          }
+        },
+        {
+          "id": "auto-versioned",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "A /v2 module-like path whose assumed name is the parent segment.",
+          "line": 8,
+          "character": 17,
+          "lineText": "\t_ = VersionedWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "VersionedWit"
+            }
+          ],
+          "accept": {
+            "lookupString": "versioned.VersionedWitness"
+          }
+        },
+        {
+          "id": "auto-go-prefix",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "The go- path prefix versus the declared util package name.",
+          "line": 8,
+          "character": 14,
+          "lineText": "\t_ = GoUtilWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "GoUtilWit"
+            }
+          ],
+          "accept": {
+            "lookupString": "util.GoUtilWitness"
+          }
+        },
+        {
+          "id": "auto-odd-path",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "An illegal identifier path segment versus the declared oddname.",
+          "line": 8,
+          "character": 15,
+          "lineText": "\t_ = OddNameWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "OddNameWit"
+            }
+          ],
+          "accept": {
+            "lookupString": "oddname.OddNameWitness"
+          }
+        },
+        {
+          "id": "auto-internal-outside",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "A unique internal member outside its valid importer tree.",
+          "line": 8,
+          "character": 16,
+          "lineText": "\t_ = InternalWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "InternalWit"
+            }
+          ]
+        },
+        {
+          "id": "auto-internal-inside",
+          "kind": "autoImport",
+          "path": "pkg/sibling_caller/caller.go",
+          "description": "The same unique internal member inside the allowed importer tree.",
+          "line": 8,
+          "character": 16,
+          "lineText": "\t_ = InternalWit",
+          "edits": [
+            {
+              "range": [
+                4,
+                0,
+                6,
+                0
+              ],
+              "expectedText": "\n\t\"example.test/completion/pkg/internal/secret\"\n",
+              "text": "\n"
+            },
+            {
+              "range": [
+                8,
+                1,
+                8,
+                29
+              ],
+              "expectedText": "_ = secret.InternalWitness()",
+              "text": "_ = InternalWit"
+            }
+          ],
+          "accept": {
+            "lookupString": "secret.InternalWitness"
+          }
+        },
+        {
+          "id": "auto-vendor",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "The vendored package's unique export; record candidate provenance.",
+          "line": 8,
+          "character": 14,
+          "lineText": "\t_ = VendorWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "VendorWit"
+            }
+          ],
+          "accept": {
+            "lookupString": "visible.VendorWitness",
+            "sourcePath": "vendor/example.test/vendordep/visible/visible.go"
+          }
+        },
+        {
+          "id": "vendor-qualified",
+          "kind": "selector",
+          "path": "sibling.go",
+          "description": "Resolve the existing canonical vendor import and inspect the declaration path.",
+          "line": 4,
+          "character": 35,
+          "lineText": "var SiblingPublic = visible.VendorWitness()"
+        },
+        {
+          "id": "auto-main",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "The unique export in a package main.",
+          "line": 8,
+          "character": 19,
+          "lineText": "\t_ = MainPackageWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "MainPackageWit"
+            }
+          ]
+        },
+        {
+          "id": "auto-fixture-testdata",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "The unique export in the fixture's testdata package.",
+          "line": 8,
+          "character": 23,
+          "lineText": "\t_ = FixtureTestdataWit",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "FixtureTestdataWit"
+            }
+          ]
+        },
+        {
+          "id": "auto-sdk-testdata",
+          "kind": "autoImport",
+          "path": "imports_edit/single.go",
+          "description": "Qualified auto-import witness for go/build/testdata/other/file.F.",
+          "line": 8,
+          "character": 11,
+          "lineText": "\t_ = file.F",
+          "edits": [
+            {
+              "range": [
+                8,
+                5,
+                8,
+                16
+              ],
+              "expectedText": "[]byte(nil)",
+              "text": "file.F"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
