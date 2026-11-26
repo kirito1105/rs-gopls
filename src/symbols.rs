@@ -98,12 +98,33 @@ pub(crate) enum SymbolKind {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FunctionSignature {
-    pub(crate) function_type: Option<Range>,
+    pub(crate) origin: FunctionOrigin,
     pub(crate) result_tuple: Option<Range>,
     pub(crate) results: Arc<[Option<TypeRef>]>,
     pub(crate) parameters: Vec<Option<TypeRef>>,
     pub(crate) variadic: bool,
     pub(crate) type_parameters: Vec<GenericParameter>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum FunctionOrigin {
+    Name(Range),
+    FuncKeyword(Range),
+}
+
+impl FunctionOrigin {
+    pub(crate) fn range(self) -> Range {
+        match self {
+            Self::Name(range) | Self::FuncKeyword(range) => range,
+        }
+    }
+
+    pub(crate) fn function_type(self) -> Option<Range> {
+        match self {
+            Self::FuncKeyword(range) => Some(range),
+            Self::Name(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -737,7 +758,7 @@ fn function_signature(
     // signatures retain their parameters for method-set comparison.
     let parameters = if matches!(
         function.kind(),
-        "method_declaration" | "method_elem" | "function_type"
+        "method_declaration" | "method_elem" | "function_type" | "func_literal"
     ) || !type_parameters.is_empty()
     {
         parameters.map_or_else(Vec::new, |list| {
@@ -746,19 +767,20 @@ fn function_signature(
     } else {
         Vec::new()
     };
-    let function_type = function
-        .child(0)
-        .filter(|node| {
-            matches!(function.kind(), "function_type" | "func_literal") && node.kind() == "func"
-        })
-        .map(range);
+    let origin = if matches!(function.kind(), "function_type" | "func_literal") {
+        FunctionOrigin::FuncKeyword(range(function.child(0).unwrap_or(function)))
+    } else {
+        FunctionOrigin::Name(range(
+            function.child_by_field_name("name").unwrap_or(function),
+        ))
+    };
     let result_tuple = function
         .child_by_field_name("result")
         .filter(|node| node.kind() == "parameter_list")
         .and_then(|node| node.child(0))
         .map(range);
     Arc::new(FunctionSignature {
-        function_type,
+        origin,
         result_tuple,
         results: function_results(function, text, range),
         parameters,
@@ -796,7 +818,7 @@ fn function_results(
     parameter_types(result, parse).into()
 }
 
-fn parameter_types<'tree>(
+pub(crate) fn parameter_types<'tree>(
     list: Node<'tree>,
     parse: impl Fn(Node<'tree>) -> Option<TypeRef>,
 ) -> Vec<Option<TypeRef>> {

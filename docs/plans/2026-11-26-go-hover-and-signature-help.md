@@ -40,10 +40,10 @@
 
 - [x] **GoLand 基线可重放**：在运行中的 GoLand（`GO-263.7307.354`）采集 `E:\Code\localchat\server`（修订 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`）与补充夹具的 Hover（`GoDocumentationProvider`）及 ParameterInfo（`GoParameterInfoHandler`）基线，提交可重放的 Groovy 采集脚本与结构化基线语料，记录实际 Go SDK 版本。
 - [x] **Hover 能力与准确性**：LSP 初始化声明 `hoverProvider`。发布版在真实项目与补充夹具上覆盖函数、方法、接口方法、结构体、接口、类型别名、字段（含 tag 与嵌入）、包/局部变量、常量、参数/接收者、泛型、导入/包名、内置符号与空结果；签名要素、类型信息、GoDoc 注释（含指令过滤、尾注释、分组声明回退）及 UTF-16 `range` 按基线与下方完成记录中的预期通过检查。
-- [ ] **SignatureHelp 能力与准确性**：LSP 初始化声明 `signatureHelpProvider`（触发字符 `(`、`,`）。发布版在真实项目与补充夹具上覆盖函数/方法/接口方法/函数值/方法表达式/泛型调用/内置函数、嵌套调用、分组参数展开、变参钳位、光标在未闭合括号与逗号后的编辑态输入，以及函数字面量/复合字面量边界不误触发；签名文本、参数列表偏移、`activeParameter` 与 GoDoc 一致。
-- [ ] **未保存编辑与工作区一致性**：未保存缓冲区修改函数签名、变量类型或注释后，Hover 与 SignatureHelp 立即反映最新内容；关闭覆盖缓冲区后恢复磁盘结果；后台包图加载期间保持本地解析可用，包图刷新后自动更新跨包结果；不破坏现有声明、类型定义、引用、实现跳转与工作区回归。
+- [x] **SignatureHelp 能力与准确性**：LSP 初始化声明 `signatureHelpProvider`（触发字符 `(`、`,`）。发布版在真实项目与补充夹具上覆盖函数/方法/接口方法/函数值/方法表达式/泛型调用/内置函数、嵌套调用、分组参数展开、变参钳位、光标在未闭合括号与逗号后的编辑态输入，以及函数字面量/复合字面量边界不误触发；签名文本、参数列表偏移、`activeParameter` 与 GoDoc 按基线和完成记录中的预期通过检查。
+- [x] **未保存编辑与工作区一致性**：未保存缓冲区修改函数签名、变量类型或注释后，Hover 与 SignatureHelp 立即反映最新内容；关闭覆盖缓冲区后恢复磁盘结果；后台包图加载期间保持本地解析可用，包图刷新后自动更新跨包结果；不破坏现有声明、类型定义、引用、实现跳转与工作区回归。
 - [ ] **性能对照 GoLand**：按 [导航性能对照](../PLANS.md#导航性能对照) 固定主机、GoLand 构建号、项目修订、Go SDK 与样本集合，分别对比已索引暖态新查询、重复查询与编辑后查询的 P50/P95 及峰值工作集，并将结果归档到基线文档。
-- [x] **既有回归全部通过**：`cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`、发布版构建以及 `check_definitions.py --stage 6`、`check_goland_definitions.py`、`check_goland_references.py`、`check_goland_implementations.py`、`check_workspace_updates.py` 在步骤 2 交付时全部通过。
+- [x] **既有回归全部通过**：`cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`、发布版构建以及 `check_definitions.py --stage 6`、`check_goland_definitions.py`、`check_goland_references.py`、`check_goland_implementations.py`、`check_workspace_updates.py` 在步骤 2 和步骤 3 交付时全部通过。
 
 ## 实现依据
 
@@ -71,8 +71,8 @@
 1. **模块拆分**（尽量保持 `src/semantic.rs` 精简，新增独立子模块）：
    - [`src/semantic/hover.rs`](../../src/semantic/hover.rs) 负责目标解析、包文档、内置符号和 Hover 组装。[`src/semantic/hover/values.rs`](../../src/semantic/hover/values.rs) 复用语义解析器推断变量类型并展示初始化表达式。
    - [`src/semantic/presentation.rs`](../../src/semantic/presentation.rs) 提供共享的 GoDoc 清理、Go 签名和类型渲染。参数名、返回值名和接收者从声明的语法树按需读取，供 SignatureHelp 复用。
-   - [`src/semantic/signature_help.rs`](../../src/semantic/signature_help.rs)：活跃调用点与逗号计数定位（含未闭合括号的 Tree-sitter ERROR 节点容错）、被调函数签名解析（普通函数、方法、接口方法、函数值、方法表达式、泛型实参替换、内置函数）、参数展开与偏移计算。
-   - [`src/semantic.rs`](../../src/semantic.rs) 提供共享的声明解析和 `QueryProgress::Pending` 后台包图等待机制。导航索引继续使用既有 `FunctionSignature` 数据结构。
+   - [`src/semantic/signature_help.rs`](../../src/semantic/signature_help.rs) 负责解析被调函数、生成签名、计算参数偏移并附加 GoDoc。[`src/semantic/signature_help/cursor.rs`](../../src/semantic/signature_help/cursor.rs) 用语法树定位最内层调用并数顶层逗号。遇到未闭合调用时使用 Tree-sitter 的缺失标记，必要时在临时语法树补齐括号。
+   - [`src/semantic.rs`](../../src/semantic.rs) 提供共享的声明解析、泛型推断和 `QueryProgress::Pending` 后台包图等待机制。`FunctionSignature` 用同一个来源字段记录函数声明名或函数类型的 `func` 标记，以便按需读取形参名。
    - [`src/main.rs`](../../src/main.rs)：声明 `hover_provider` 与 `signature_help_provider`，接入 `textDocument/hover` 与 `textDocument/signatureHelp` 请求分派及取消处理。
 2. **签名与类型渲染策略**：
    - 对已知源码位置的声明（同文件、同包、跨包、SDK 源码），优先直接结合 AST 节点与解析后的类型/泛型实参生成清晰的单行或多行 Go 签名；跨包类型按上下文保留必要包限定名。
@@ -114,3 +114,7 @@
 - `cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`（14 个测试）和 `cargo build -p rs-gopls --release --locked` 通过。按 Cargo 元数据定位发布版，运行 [`tools/check_goland_hover.py`](../../tools/check_goland_hover.py)，`localchat/server` 通过 21/21（Go 1.25.0），补充夹具通过 14/14（Go 1.24.3）。
 - 三处 GoLand 采集值为 `null` 的已解析位置按 Hover 规格产生内容，分别为 `model` 限定符、补充模块的 `helper` 导入和 `StatusOK` 引用。检查器以实际 `net/http` 导入路径和 `SqlUserStore` 的嵌入字段声明为准，并核对 Go 1.25.0 与采集所用 Go 1.27.4 共有的 `TrimSpace` 文档片段。
 - 使用 Go 1.27.4 通过 `check_definitions.py --stage 6`（124 个合成位置及 16 个真实位置）、GoLand 声明和类型定义对照、34 组引用、49 组实现及反向查询，以及 `check_workspace_updates.py` 的 18 组用例。
+- 2026-11-26 完成步骤 3 和步骤 4 的工作区动态更新覆盖。SignatureHelp 支持 `(` 与 `,` 触发及 `,` 重触发，复用后台加载与取消。语法树定位覆盖嵌套调用、字面量和索引边界，以及 `foo(`、`foo(a, `、`s.Method(x, ` 等编辑态位置。
+- `cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`（24 个测试）和 `cargo build -p rs-gopls --release --locked` 通过。发布版 [`check_goland_signature_help.py`](../../tools/check_goland_signature_help.py) 在 `localchat/server`（Go 1.25.0）通过 13/13，在补充夹具（Go 1.24.3）通过 19/19。两次均通过未闭合调用、取消、未保存编辑、Unicode 参数偏移和关闭恢复的 stdio 检查。Hover 对照仍通过 21/21 和 14/14。移除服务进程 PATH 中的 Go 后，内置签名回退也通过 stdio 验证。
+- 变参用例按 GoLand 记录的高亮区间核对 LSP 钳位后的参数索引。两条方法表达式样本按实际调用呈现 `*helper.Box[int], v int`，GoLand 采集的形参文本为 `*Box[T], int`。
+- [`check_workspace_updates.py`](../../tools/check_workspace_updates.py) 通过 20/20。新增覆盖跨包签名和 GoDoc、局部函数变量类型的未保存编辑与关闭恢复，并用暂停的 `go list` 核对本地请求可用、等待中的跨包 Hover 与 SignatureHelp 使用最新包图。Go 1.27.4 下复跑阶段 6 声明检查（124 个合成位置及 16 个真实位置）、GoLand 声明、类型定义、引用和实现对照，全部通过。

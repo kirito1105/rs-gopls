@@ -204,23 +204,43 @@ fn write_parameter_and_result_lists(signature: &mut String, function: Node<'_>, 
     if let Some(parameters) = function.child_by_field_name("parameters") {
         signature.push_str(&parameter_list(parameters, text));
     }
-    if let Some(result) = function.child_by_field_name("result") {
-        signature.push(' ');
-        if result.kind() == "parameter_list" {
-            signature.push_str(&parameter_list(result, text));
-        } else {
-            signature.push_str(&syntax_text(result, text));
-        }
+    if let Some(result) = result_label_with(function, text, |ty| syntax_text(ty, text)) {
+        let _ = write!(signature, " {result}");
     }
 }
 
 pub(super) fn parameter_labels(list: Node<'_>, text: &str) -> Vec<String> {
+    parameter_labels_with(list, text, |ty| syntax_text(ty, text))
+}
+
+pub(super) fn result_label_with<'tree>(
+    function: Node<'tree>,
+    text: &str,
+    render: impl FnMut(Node<'tree>) -> String,
+) -> Option<String> {
+    let result = function.child_by_field_name("result")?;
+    let mut render = render;
+    Some(if result.kind() == "parameter_list" {
+        format!(
+            "({})",
+            parameter_labels_with(result, text, render).join(", ")
+        )
+    } else {
+        render(result)
+    })
+}
+
+pub(super) fn parameter_labels_with<'tree>(
+    list: Node<'tree>,
+    text: &str,
+    mut render: impl FnMut(Node<'tree>) -> String,
+) -> Vec<String> {
     let mut labels = Vec::new();
     for parameter in list.named_children(&mut list.walk()) {
         let Some(ty) = parameter.child_by_field_name("type") else {
             continue;
         };
-        let ty = syntax_text(ty, text);
+        let ty = render(ty);
         let prefix = if parameter.kind() == "variadic_parameter_declaration" {
             "..."
         } else {
@@ -247,8 +267,16 @@ fn parameter_list(list: Node<'_>, text: &str) -> String {
 /// Omit comment nodes from a displayed Go declaration or expression, while
 /// preserving literal text (including struct tags) and Go's line breaks.
 pub(super) fn syntax_text(node: Node<'_>, text: &str) -> String {
+    syntax_text_with(node, text, &[])
+}
+
+pub(super) fn syntax_text_with(
+    node: Node<'_>,
+    text: &str,
+    substitutions: &[(String, String)],
+) -> String {
     let raw = node_text(node, text);
-    if !raw.contains("//") && !raw.contains("/*") {
+    if substitutions.is_empty() && !raw.contains("//") && !raw.contains("/*") {
         return raw.trim().to_owned();
     }
 
@@ -280,6 +308,17 @@ pub(super) fn syntax_text(node: Node<'_>, text: &str) -> String {
                 }
                 start = child.end_byte();
             }
+        } else if child.kind() == "type_identifier"
+            && child
+                .parent()
+                .is_none_or(|parent| parent.kind() != "qualified_type")
+            && let Some((_, ty)) = substitutions
+                .iter()
+                .find(|(parameter, _)| parameter == node_text(child, text))
+        {
+            syntax.push_str(&text[start..child.start_byte()]);
+            syntax.push_str(ty);
+            start = child.end_byte();
         } else if cursor.goto_first_child() {
             continue;
         }
@@ -372,7 +411,7 @@ impl<'w> Resolver<'w, '_> {
             TypeKind::Function {
                 file, signature, ..
             } => {
-                let Some(origin) = signature.function_type else {
+                let Some(origin) = signature.origin.function_type() else {
                     return Ok(None);
                 };
                 let Some(signature) = self.source_type_text(file, origin, source, function_type)?
@@ -414,4 +453,28 @@ impl<'w> Resolver<'w, '_> {
             .and_then(|token| token.parent())
             .map(|node| format(node, &source.text)))
     }
+}
+
+pub(super) fn builtin_function(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "append" => "func append(slice []Type, elems ...Type) []Type",
+        "cap" => "func cap(v Type) int",
+        "clear" => "func clear[T ~[]Type | ~map[Type]Type1](t T)",
+        "close" => "func close(c chan<- Type)",
+        "complex" => "func complex(r FloatType, i FloatType) ComplexType",
+        "copy" => "func copy(dst []Type, src []Type) int",
+        "delete" => "func delete(m map[Type]Type1, key Type)",
+        "imag" => "func imag(c ComplexType) FloatType",
+        "len" => "func len(v Type) int",
+        "make" => "func make(t Type, size ...IntegerType) Type",
+        "max" => "func max[T cmp.Ordered](x T, y ...T) T",
+        "min" => "func min[T cmp.Ordered](x T, y ...T) T",
+        "new" => "func new(Type) *Type",
+        "panic" => "func panic(v any)",
+        "print" => "func print(args ...Type)",
+        "println" => "func println(args ...Type)",
+        "real" => "func real(c ComplexType) FloatType",
+        "recover" => "func recover() any",
+        _ => return None,
+    })
 }

@@ -5,7 +5,9 @@ use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind};
 use crate::scope::Binding;
 use crate::symbols::{FileSymbols, Symbol};
 
-use super::presentation::{documentation, function_signature, node_at_range, syntax_text};
+use super::presentation::{
+    builtin_function, documentation, function_signature, node_at_range, syntax_text,
+};
 use super::{
     Engine, IndexReader, Node, Package, Path, Position, QueryProgress, Range, ReferenceQuery,
     Resolver, Result, Source, TypeKind, active_package, declaration_binding, draft_files,
@@ -276,7 +278,7 @@ impl<'w> Resolver<'w, '_> {
         Ok(None)
     }
 
-    fn is_builtin_error(
+    pub(super) fn is_builtin_error(
         &mut self,
         from: &'w Package,
         source: &Source,
@@ -307,7 +309,7 @@ impl<'w> Resolver<'w, '_> {
         Declaration::new(source, name).present(source, Some((self, package)), true)
     }
 
-    fn declaring_package(&self, source: &Source, from: &'w Package) -> &'w Package {
+    pub(super) fn declaring_package(&self, source: &Source, from: &'w Package) -> &'w Package {
         self.workspace
             .package_of_file(&source.path)
             .or_else(|| draft_package(self.workspace, source))
@@ -610,24 +612,6 @@ fn receiver_parameter_constraint<'w>(
 
 fn builtin_presentation(name: &str) -> Option<Presentation> {
     let signature = match name {
-        "append" => "func append(slice []Type, elems ...Type) []Type",
-        "cap" => "func cap(v Type) int",
-        "clear" => "func clear[T ~[]Type | ~map[Type]Type1](t T)",
-        "close" => "func close(c chan<- Type)",
-        "complex" => "func complex(r FloatType, i FloatType) ComplexType",
-        "copy" => "func copy(dst []Type, src []Type) int",
-        "delete" => "func delete(m map[Type]Type1, key Type)",
-        "imag" => "func imag(c ComplexType) FloatType",
-        "len" => "func len(v Type) int",
-        "make" => "func make(t Type, size ...IntegerType) Type",
-        "max" => "func max[T cmp.Ordered](x T, y ...T) T",
-        "min" => "func min[T cmp.Ordered](x T, y ...T) T",
-        "new" => "func new(Type) *Type",
-        "panic" => "func panic(v any)",
-        "print" => "func print(args ...Type)",
-        "println" => "func println(args ...Type)",
-        "real" => "func real(c ComplexType) FloatType",
-        "recover" => "func recover() any",
         "error" => "type error interface { Error() string }",
         "any" => "type any = interface{}",
         "comparable" => "type comparable interface{ comparable }",
@@ -643,7 +627,7 @@ fn builtin_presentation(name: &str) -> Option<Presentation> {
                 documentation: String::new(),
             });
         }
-        _ => return None,
+        _ => builtin_function(name)?,
     };
     Some(Presentation {
         signature: signature.into(),

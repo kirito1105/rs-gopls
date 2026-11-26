@@ -24,6 +24,7 @@ use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 mod hover;
 mod implementation;
 mod presentation;
+mod signature_help;
 
 struct FileIndex {
     symbols: FileSymbols,
@@ -149,7 +150,12 @@ impl GraphChanges {
         }
     }
 
-    fn affects_source(&self, workspace: &Workspace, from: Option<&Package>, source: &Source) -> bool {
+    fn affects_source(
+        &self,
+        workspace: &Workspace,
+        from: Option<&Package>,
+        source: &Source,
+    ) -> bool {
         !matches!(self, Self::Clean)
             && from.is_none_or(|package| {
                 self.affects(package)
@@ -789,6 +795,7 @@ enum TypeKind<'w> {
         file: PathBuf,
         signature: Arc<FunctionSignature>,
         substitutions: Substitutions<'w>,
+        method_receiver: Option<Box<TypeIdentity<'w>>>,
     },
     Parameter(usize),
     Inline {
@@ -851,6 +858,7 @@ struct ResolvedSymbol<'w> {
     file: PathBuf,
     symbol: Symbol,
     receiver: Option<TypeIdentity<'w>>,
+    method_receiver: Option<Box<TypeIdentity<'w>>>,
 }
 
 impl ResolvedSymbol<'_> {
@@ -1282,8 +1290,9 @@ impl<'w> Resolver<'w, '_> {
                     file,
                     signature,
                     substitutions,
+                    ..
                 } => {
-                    if let Some(range) = signature.function_type.or_else(|| {
+                    if let Some(range) = signature.origin.function_type().or_else(|| {
                         (signature.results.len() > 1)
                             .then_some(signature.result_tuple)
                             .flatten()
@@ -1334,7 +1343,11 @@ impl<'w> Resolver<'w, '_> {
             return Ok(location);
         }
         let file = self.workspace.builtin_source(root)?;
-        let definition = self.indexes.file_index(file)?.symbols.declaration(identifier);
+        let definition = self
+            .indexes
+            .file_index(file)?
+            .symbols
+            .declaration(identifier);
         Ok(definition.map(|symbol| (file.to_owned(), symbol.range)))
     }
 
@@ -1436,7 +1449,13 @@ impl<'w> Resolver<'w, '_> {
         let Some(ty) = self.infer_type(from, source, receiver, depth + 1, 0)? else {
             return Ok(None);
         };
-        self.member(from, &ty, name, true)
+        let mut member = self.member(from, &ty, name, true)?;
+        if ty.type_expression
+            && let Some(member) = &mut member
+        {
+            member.method_receiver = Some(Box::new(ty));
+        }
+        Ok(member)
     }
 
     fn member(
@@ -1561,6 +1580,7 @@ impl<'w> Resolver<'w, '_> {
                     file: file.clone(),
                     symbol: symbol.clone(),
                     receiver: None,
+                    method_receiver: None,
                 }))
             }
             TypeKind::Container(..) | TypeKind::Function { .. } | TypeKind::Parameter(_) => {
@@ -1681,6 +1701,7 @@ impl<'w> Resolver<'w, '_> {
                     file: file.clone(),
                     symbol: symbol.clone(),
                     receiver: None,
+                    method_receiver: None,
                 }));
             }
         }
@@ -1734,7 +1755,7 @@ impl<'w> Resolver<'w, '_> {
             return Ok(None);
         }
         match expression.kind() {
-            "identifier" | "type_identifier" | "true" | "false" => {
+            "identifier" | "type_identifier" | "package_identifier" | "true" | "false" => {
                 let name = node_text(expression, &source.text);
                 if let Some(binding) = lexical_binding(expression, name, &source.text) {
                     let addressable = binding
@@ -1770,13 +1791,16 @@ impl<'w> Resolver<'w, '_> {
                 let Some(ty) = self.infer_type(from, source, operand, depth + 1, 0)? else {
                     return Ok(None);
                 };
-                if expression.kind() == "index_expression"
-                    && matches!(&ty.kind, TypeKind::Function { signature, .. } if !signature.type_parameters.is_empty())
-                    && let Some(argument) = expression.child_by_field_name("index")
-                {
-                    return self.specialize_function(from, source, ty, [argument]);
-                }
                 if expression.kind() == "index_expression" {
+                    if let Some(argument) = expression.child_by_field_name("index") {
+                        if ty.type_expression {
+                            return self.instantiate_type_expression(from, source, ty, [argument]);
+                        }
+                        if matches!(&ty.kind, TypeKind::Function { signature, .. } if !signature.type_parameters.is_empty())
+                        {
+                            return self.specialize_function(from, source, ty, [argument]);
+                        }
+                    }
                     return self.indexed_element(ty);
                 }
                 let Some((container, pointers)) = self.container(ty.clone())? else {
@@ -1810,7 +1834,11 @@ impl<'w> Resolver<'w, '_> {
                 let arguments = expression
                     .named_children(&mut cursor)
                     .filter(|node| !node.is_extra() && *node != function);
-                self.specialize_function(from, source, ty, arguments)
+                if ty.type_expression {
+                    self.instantiate_type_expression(from, source, ty, arguments)
+                } else {
+                    self.specialize_function(from, source, ty, arguments)
+                }
             }
             "parenthesized_expression" => match expression.named_child(0) {
                 Some(inner) => self.infer_type(from, source, inner, depth + 1, 0),
@@ -2038,6 +2066,33 @@ impl<'w> Resolver<'w, '_> {
         Ok(Some(ty))
     }
 
+    fn instantiate_type_expression<'a>(
+        &mut self,
+        caller: &'w Package,
+        source: &Source,
+        mut ty: TypeIdentity<'w>,
+        arguments: impl IntoIterator<Item = Node<'a>>,
+    ) -> Result<Option<TypeIdentity<'w>>> {
+        let TypeKind::Named {
+            name,
+            arguments: actual,
+        } = &mut ty.kind
+        else {
+            return Ok(None);
+        };
+        let Some((_, details)) = self.type_info(ty.package, name)? else {
+            return Ok(None);
+        };
+        for argument in arguments {
+            if let Some(argument) = self.type_argument(caller, source, argument)? {
+                actual.push(Some(argument));
+            } else {
+                return Ok(None);
+            }
+        }
+        Ok((!actual.is_empty() && actual.len() == details.parameters.len()).then_some(ty))
+    }
+
     fn type_argument(
         &mut self,
         caller: &'w Package,
@@ -2081,6 +2136,7 @@ impl<'w> Resolver<'w, '_> {
                     file,
                     signature,
                     mut substitutions,
+                    ..
                 },
             ..
         }) = self.underlying_type(ty)?
@@ -2097,6 +2153,7 @@ impl<'w> Resolver<'w, '_> {
                 source,
                 arguments: &arguments,
                 depth,
+                allow_partial: false,
             };
             let origin = TypeOrigin {
                 package,
@@ -2127,7 +2184,15 @@ impl<'w> Resolver<'w, '_> {
         signature: &FunctionSignature,
         explicit: &Substitutions<'w>,
     ) -> Result<Option<Substitutions<'w>>> {
-        if signature.parameters.len() != call.arguments.len() {
+        let count = signature.parameters.len();
+        let variadic = signature.variadic && count > 0;
+        if !call.allow_partial
+            && if variadic {
+                call.arguments.len() < count - 1
+            } else {
+                call.arguments.len() != count
+            }
+        {
             return Ok(None);
         }
         let parameters = &signature.type_parameters;
@@ -2164,24 +2229,50 @@ impl<'w> Resolver<'w, '_> {
             )
         };
         let mut untyped = Vec::new();
-        for (argument, parameter) in call.arguments.iter().zip(&signature.parameters) {
+        for (index, argument) in call.arguments.iter().copied().enumerate() {
+            let Some(parameter) = signature
+                .parameters
+                .get(index)
+                .or_else(|| variadic.then(|| &signature.parameters[count - 1]))
+            else {
+                break;
+            };
             let Some(expected) = parameter.clone().and_then(pattern) else {
                 return Ok(None);
             };
+            let (argument, expected) = if argument.kind() == "variadic_argument"
+                && let Some(operand) = argument
+                    .named_children(&mut argument.walk())
+                    .find(|node| !node.is_extra())
+            {
+                (
+                    operand,
+                    TypeIdentity::new(
+                        origin.package,
+                        TypeKind::Container(Box::new(Container::Slice(expected)), None),
+                        0,
+                    ),
+                )
+            } else {
+                (argument, expected)
+            };
             if argument.has_error() {
+                if call.allow_partial {
+                    continue;
+                }
                 return Ok(None);
             }
             if let Some(actual) =
-                self.infer_type(call.caller, call.source, *argument, call.depth + 1, 0)?
+                self.infer_type(call.caller, call.source, argument, call.depth + 1, 0)?
             {
                 if actual.type_expression
                     || !self.unify_types(expected, actual, &mut bindings, true)?
                 {
                     return Ok(None);
                 }
-            } else if let Some(default) = untyped_default(*argument) {
+            } else if let Some(default) = untyped_default(argument) {
                 untyped.push((expected, default));
-            } else {
+            } else if !call.allow_partial {
                 return Ok(None);
             }
         }
@@ -2211,13 +2302,14 @@ impl<'w> Resolver<'w, '_> {
             }
         }
         if !self.apply_approximations(&approximations, &mut bindings)?
-            || bindings.iter().any(Option::is_none)
+            || (!call.allow_partial && bindings.iter().any(Option::is_none))
         {
             return Ok(None);
         }
         let substitutions = parameters
             .iter()
             .zip(&bindings)
+            .filter(|(_, ty)| ty.is_some())
             .map(|(param, ty)| (param.name.clone(), ty.clone()))
             .collect::<Vec<_>>();
         for (param, actual) in parameters.iter().zip(bindings) {
@@ -2372,7 +2464,11 @@ impl<'w> Resolver<'w, '_> {
         let Some(actual) = self.resolve_alias(actual)? else {
             return Ok(false);
         };
-        let actual = if loose && matches!(&expected.kind, TypeKind::Container(..)) {
+        let actual = if loose
+            && matches!(
+                &expected.kind,
+                TypeKind::Container(..) | TypeKind::Function { .. }
+            ) {
             self.underlying_type(actual)?
         } else {
             Some(actual)
@@ -2446,6 +2542,18 @@ impl<'w> Resolver<'w, '_> {
                     _ => Ok(false),
                 }
             }
+            (left @ TypeKind::Function { .. }, right @ TypeKind::Function { .. }) => self
+                .unify_function_types(
+                    TypeIdentity {
+                        kind: left,
+                        ..expected
+                    },
+                    TypeIdentity {
+                        kind: right,
+                        ..actual
+                    },
+                    bindings,
+                ),
             (
                 TypeKind::Inline {
                     file: a,
@@ -2519,7 +2627,10 @@ impl<'w> Resolver<'w, '_> {
                     return None;
                 }
                 let mut underlying = parse(binding.explicit_type?)?;
-                if !matches!(underlying.kind, TypeRefKind::Function(_) | TypeRefKind::Inline(_)) {
+                if !matches!(
+                    underlying.kind,
+                    TypeRefKind::Function(_) | TypeRefKind::Inline(_)
+                ) {
                     return None;
                 }
                 underlying.pointers = underlying.pointers.checked_add(reference.pointers)?;
@@ -2659,6 +2770,12 @@ impl<'w> Resolver<'w, '_> {
         )
         .map(|mut ty| {
             ty.addressable = addressable;
+            if let TypeKind::Function {
+                method_receiver, ..
+            } = &mut ty.kind
+            {
+                *method_receiver = resolved.method_receiver.clone();
+            }
             ty
         }))
     }
@@ -2681,8 +2798,10 @@ struct GenericCall<'w, 's, 'tree> {
     source: &'s Source,
     arguments: &'s [Node<'tree>],
     depth: usize,
+    allow_partial: bool,
 }
 
+#[derive(Clone, Copy)]
 enum CallArguments<'tree> {
     List(Option<Node<'tree>>),
     Single(Node<'tree>),
@@ -2701,7 +2820,22 @@ impl<'tree> CallArguments<'tree> {
     }
 }
 
-fn untyped_default(argument: Node<'_>) -> Option<&'static str> {
+fn untyped_default(mut argument: Node<'_>) -> Option<&'static str> {
+    loop {
+        argument = match argument.kind() {
+            "parenthesized_expression" => argument
+                .named_children(&mut argument.walk())
+                .find(|node| !node.is_extra())?,
+            "unary_expression"
+                if argument
+                    .child_by_field_name("operator")
+                    .is_some_and(|operator| matches!(operator.kind(), "+" | "-" | "^")) =>
+            {
+                argument.child_by_field_name("operand")?
+            }
+            _ => break,
+        };
+    }
     match argument.kind() {
         "int_literal" => Some("int"),
         "rune_literal" => Some("rune"),
@@ -2832,6 +2966,7 @@ fn materialize_type<'w>(
                 file: file.to_owned(),
                 signature,
                 substitutions: substitutions.to_vec(),
+                method_receiver: None,
             },
         ),
         TypeRefKind::Inline(shape) => (

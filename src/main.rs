@@ -16,18 +16,18 @@ use crossbeam_channel::{Sender, bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, Hover, HoverProviderCapability,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, HoverProviderCapability,
     InitializeParams, InitializeResult, Location, NumberOrString, OneOf, Position,
     PositionEncodingKind, Range, ReferenceParams, ServerCapabilities, ServerInfo,
-    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, Uri,
+    SignatureHelpOptions, TextDocumentPositionParams, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
     request::{
         GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, Initialize,
-        References, Request as _, Shutdown,
+        References, Request as _, Shutdown, SignatureHelpRequest,
     },
 };
 use serde_json::Value;
@@ -45,6 +45,7 @@ enum State {
 enum NavigationKind {
     Definition(DefinitionKind),
     Hover,
+    SignatureHelp,
     Implementation,
     References { include_declaration: bool },
 }
@@ -119,13 +120,18 @@ impl Running {
                     eprintln!("rs-gopls: loading Go packages: {message}");
                 }
                 for request in std::mem::take(&mut self.pending) {
-                    let result = if matches!(request.kind, NavigationKind::Hover) {
-                        self.engine
+                    let result = match request.kind {
+                        NavigationKind::Hover => self
+                            .engine
                             .hover_after_load_failure(&request.path, request.position)
                             .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
-                            .and_then(serialize_hover)
-                    } else {
-                        Err((ErrorCode::RequestFailed, message.clone()))
+                            .and_then(serialize_query),
+                        NavigationKind::SignatureHelp => self
+                            .engine
+                            .signature_help_after_load_failure(&request.path, request.position)
+                            .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
+                            .and_then(serialize_query),
+                        _ => Err((ErrorCode::RequestFailed, message.clone())),
                     };
                     send_response(connection, request.id, result)?;
                 }
@@ -151,7 +157,11 @@ impl Running {
             NavigationKind::Hover => self
                 .engine
                 .hover(&request.path, request.position)
-                .map(|progress| progress.map(serialize_hover)),
+                .map(|progress| progress.map(serialize_query)),
+            NavigationKind::SignatureHelp => self
+                .engine
+                .signature_help(&request.path, request.position)
+                .map(|progress| progress.map(serialize_query)),
             NavigationKind::Implementation => self
                 .engine
                 .implementations(&request.path, request.position)
@@ -366,7 +376,8 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
             GotoDefinition::METHOD
             | GotoTypeDefinition::METHOD
             | GotoImplementation::METHOD
-            | HoverRequest::METHOD,
+            | HoverRequest::METHOD
+            | SignatureHelpRequest::METHOD,
         ) => match document_position(params) {
             Ok((path, position)) => {
                 let kind = match method.as_str() {
@@ -375,6 +386,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                     }
                     GotoTypeDefinition::METHOD => NavigationKind::Definition(DefinitionKind::Type),
                     HoverRequest::METHOD => NavigationKind::Hover,
+                    SignatureHelpRequest::METHOD => NavigationKind::SignatureHelp,
                     _ => NavigationKind::Implementation,
                 };
                 return running.resolve_navigation(
@@ -451,6 +463,11 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
         )),
         definition_provider: Some(OneOf::Left(true)),
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".into(), ",".into()]),
+            retrigger_characters: Some(vec![",".into()]),
+            work_done_progress_options: Default::default(),
+        }),
         type_definition_provider: Some(true.into()),
         implementation_provider: Some(true.into()),
         references_provider: Some(OneOf::Left(true)),
@@ -520,8 +537,8 @@ fn serialize_location(location: Option<(PathBuf, Range)>) -> RequestResult {
     location.map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
 }
 
-fn serialize_hover(hover: Option<Hover>) -> RequestResult {
-    serde_json::to_value(hover).map_err(|error| (ErrorCode::InternalError, error.to_string()))
+fn serialize_query(result: impl serde::Serialize) -> RequestResult {
+    serde_json::to_value(result).map_err(|error| (ErrorCode::InternalError, error.to_string()))
 }
 
 fn register_file_watches(connection: &Connection) -> Result<()> {

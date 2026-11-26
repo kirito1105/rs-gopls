@@ -599,6 +599,7 @@ impl<'w> Resolver<'w, '_> {
                     file,
                     signature,
                     substitutions,
+                    ..
                 },
             ..
         }) = self.type_from_symbol(&symbol, reference, false)?
@@ -758,6 +759,7 @@ impl<'w> Resolver<'w, '_> {
                 file,
                 signature,
                 substitutions,
+                ..
             } => {
                 let Some(signature) = self.canonical_signature(
                     ty.package,
