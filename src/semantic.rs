@@ -21,7 +21,9 @@ use crate::symbols::{
 };
 use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 
+mod hover;
 mod implementation;
+mod presentation;
 
 struct FileIndex {
     symbols: FileSymbols,
@@ -145,6 +147,18 @@ impl GraphChanges {
             Self::Packages(packages) => packages.contains(&package.id),
             Self::Global => true,
         }
+    }
+
+    fn affects_source(&self, workspace: &Workspace, from: Option<&Package>, source: &Source) -> bool {
+        !matches!(self, Self::Clean)
+            && from.is_none_or(|package| {
+                self.affects(package)
+                    || source.imports.iter().any(|import| {
+                        workspace
+                            .resolve_import(package, &import.path)
+                            .is_none_or(|dependency| self.affects(dependency))
+                    })
+            })
     }
 
     fn include(&mut self, affected: Option<HashSet<String>>) {
@@ -463,10 +477,7 @@ impl Engine {
                 ))));
             }
         }
-        let test_source = path
-            .file_name()
-            .and_then(|filename| filename.to_str())
-            .is_some_and(|filename| filename.ends_with("_test.go"));
+        let test_source = is_test_source(path);
         self.include_tests |= test_source;
         let load = self.workspace_load();
         let Some(workspace) = &self.workspace else {
@@ -476,16 +487,7 @@ impl Engine {
             return Ok(DefinitionProgress::Pending(load));
         }
         let from = active_package(workspace, source, &self.new_documents);
-        if !matches!(self.graph_changes, GraphChanges::Clean)
-            && from.is_none_or(|package| {
-                self.graph_changes.affects(package)
-                    || source.imports.iter().any(|import| {
-                        workspace
-                            .resolve_import(package, &import.path)
-                            .is_none_or(|dependency| self.graph_changes.affects(dependency))
-                    })
-            })
-        {
+        if self.graph_changes.affects_source(workspace, from, source) {
             return Ok(DefinitionProgress::Pending(load));
         }
         let Some(from) = from else {
@@ -508,6 +510,12 @@ impl Engine {
         }?;
         Ok(DefinitionProgress::Ready(location))
     }
+}
+
+fn is_test_source(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|filename| filename.to_str())
+        .is_some_and(|filename| filename.ends_with("_test.go"))
 }
 
 fn local_reference_scope(declaration: Node<'_>) -> Option<Node<'_>> {
@@ -1320,6 +1328,22 @@ impl<'w> Resolver<'w, '_> {
         name: Node<'_>,
         root: &Path,
     ) -> Result<Option<(PathBuf, Range)>> {
+        let location = self.source_name_location(from, source, name)?;
+        let identifier = node_text(name, &source.text);
+        if location.is_some() || !is_predeclared(identifier) {
+            return Ok(location);
+        }
+        let file = self.workspace.builtin_source(root)?;
+        let definition = self.indexes.file_index(file)?.symbols.declaration(identifier);
+        Ok(definition.map(|symbol| (file.to_owned(), symbol.range)))
+    }
+
+    fn source_name_location(
+        &mut self,
+        from: &'w Package,
+        source: &Source,
+        name: Node<'_>,
+    ) -> Result<Option<(PathBuf, Range)>> {
         let identifier = node_text(name, &source.text);
         if let Some(binding) = lexical_binding(name, identifier, &source.text) {
             return Ok(Some((source.path.clone(), source.range(binding.name))));
@@ -1339,15 +1363,6 @@ impl<'w> Resolver<'w, '_> {
             return self
                 .indexes
                 .find_dot_import(self.workspace, from, &source.imports, identifier);
-        }
-        if is_predeclared(identifier) {
-            let file = self.workspace.builtin_source(root)?;
-            let definition = self
-                .indexes
-                .file_index(file)?
-                .symbols
-                .declaration(identifier);
-            return Ok(definition.map(|symbol| (file.to_owned(), symbol.range)));
         }
         Ok(None)
     }
@@ -2504,7 +2519,7 @@ impl<'w> Resolver<'w, '_> {
                     return None;
                 }
                 let mut underlying = parse(binding.explicit_type?)?;
-                if !matches!(underlying.kind, TypeRefKind::Function(_)) {
+                if !matches!(underlying.kind, TypeRefKind::Function(_) | TypeRefKind::Inline(_)) {
                     return None;
                 }
                 underlying.pointers = underlying.pointers.checked_add(reference.pointers)?;

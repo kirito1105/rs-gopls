@@ -254,6 +254,11 @@ pub(crate) fn declaration_binding<'tree>(name: Node<'tree>, text: &str) -> Optio
         "range_clause" | "receive_statement" if has_short_operator(owner) => {
             left_binding(owner, spelling, text)
         }
+        "type_switch_statement" if parent.kind() == "expression_list" => {
+            let (_, name) =
+                identifier_in_list(owner.child_by_field_name("alias")?, spelling, text)?;
+            Some(binding(name, None, owner.child_by_field_name("value"), 0))
+        }
         _ => declaration(owner, spelling, text),
     }?;
     (binding.name == name).then_some(binding)

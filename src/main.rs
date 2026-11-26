@@ -16,17 +16,18 @@ use crossbeam_channel::{Sender, bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, RequestId, Response};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams, InitializeParams,
-    InitializeResult, Location, NumberOrString, OneOf, Position, PositionEncodingKind, Range,
-    ReferenceParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, Hover, HoverProviderCapability,
+    InitializeParams, InitializeResult, Location, NumberOrString, OneOf, Position,
+    PositionEncodingKind, Range, ReferenceParams, ServerCapabilities, ServerInfo,
+    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, Uri,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
         DidOpenTextDocument, Exit, Initialized, Notification as _,
     },
     request::{
-        GotoDefinition, GotoImplementation, GotoTypeDefinition, Initialize, References,
-        Request as _, Shutdown,
+        GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, Initialize,
+        References, Request as _, Shutdown,
     },
 };
 use serde_json::Value;
@@ -43,6 +44,7 @@ enum State {
 
 enum NavigationKind {
     Definition(DefinitionKind),
+    Hover,
     Implementation,
     References { include_declaration: bool },
 }
@@ -116,12 +118,16 @@ impl Running {
                 if self.pending.is_empty() {
                     eprintln!("rs-gopls: loading Go packages: {message}");
                 }
-                for request in self.pending.drain(..) {
-                    send_response(
-                        connection,
-                        request.id,
-                        Err((ErrorCode::RequestFailed, message.clone())),
-                    )?;
+                for request in std::mem::take(&mut self.pending) {
+                    let result = if matches!(request.kind, NavigationKind::Hover) {
+                        self.engine
+                            .hover_after_load_failure(&request.path, request.position)
+                            .map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
+                            .and_then(serialize_hover)
+                    } else {
+                        Err((ErrorCode::RequestFailed, message.clone()))
+                    };
+                    send_response(connection, request.id, result)?;
                 }
             }
             Err(_) => {}
@@ -142,6 +148,10 @@ impl Running {
                 .engine
                 .definition(&request.path, request.position, kind)
                 .map(|progress| progress.map(serialize_location)),
+            NavigationKind::Hover => self
+                .engine
+                .hover(&request.path, request.position)
+                .map(|progress| progress.map(serialize_hover)),
             NavigationKind::Implementation => self
                 .engine
                 .implementations(&request.path, request.position)
@@ -204,7 +214,7 @@ impl Running {
         Ok(())
     }
 
-    fn cancel_definitions(
+    fn cancel_pending(
         &mut self,
         connection: &Connection,
         matches: impl FnMut(&mut NavigationRequest) -> bool,
@@ -219,7 +229,7 @@ impl Running {
 
     fn document_modified(&mut self, connection: &Connection, path: &Path) -> Result<()> {
         let key = path_key(path);
-        self.cancel_definitions(
+        self.cancel_pending(
             connection,
             |request| path_key(&request.path) == key,
             ErrorCode::ContentModified,
@@ -335,7 +345,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
         )),
         (state @ State::Running(..), Shutdown::METHOD) => {
             if let State::Running(running) = state {
-                running.cancel_definitions(
+                running.cancel_pending(
                     connection,
                     |_| true,
                     ErrorCode::RequestFailed,
@@ -353,14 +363,18 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
         }
         (
             State::Running(running),
-            GotoDefinition::METHOD | GotoTypeDefinition::METHOD | GotoImplementation::METHOD,
-        ) => match definition_position(params) {
+            GotoDefinition::METHOD
+            | GotoTypeDefinition::METHOD
+            | GotoImplementation::METHOD
+            | HoverRequest::METHOD,
+        ) => match document_position(params) {
             Ok((path, position)) => {
                 let kind = match method.as_str() {
                     GotoDefinition::METHOD => {
                         NavigationKind::Definition(DefinitionKind::Declaration)
                     }
                     GotoTypeDefinition::METHOD => NavigationKind::Definition(DefinitionKind::Type),
+                    HoverRequest::METHOD => NavigationKind::Hover,
                     _ => NavigationKind::Implementation,
                 };
                 return running.resolve_navigation(
@@ -436,6 +450,7 @@ fn initialize(params: Value) -> Result<(Engine, Value, bool)> {
             },
         )),
         definition_provider: Some(OneOf::Left(true)),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
         type_definition_provider: Some(true.into()),
         implementation_provider: Some(true.into()),
         references_provider: Some(OneOf::Left(true)),
@@ -468,9 +483,8 @@ fn workspace_root(params: InitializeParams) -> Result<PathBuf> {
     env::current_dir().context("getting the current directory for a client without a workspace")
 }
 
-fn definition_position(params: Value) -> Result<(PathBuf, Position)> {
-    let params: GotoDefinitionParams = serde_json::from_value(params)?;
-    let document = params.text_document_position_params;
+fn document_position(params: Value) -> Result<(PathBuf, Position)> {
+    let document: TextDocumentPositionParams = serde_json::from_value(params)?;
     Ok((file_path(&document.text_document.uri)?, document.position))
 }
 
@@ -505,6 +519,11 @@ fn serialize_location(location: Option<(PathBuf, Range)>) -> RequestResult {
     })();
     location.map_err(|error| (ErrorCode::InternalError, format!("{error:#}")))
 }
+
+fn serialize_hover(hover: Option<Hover>) -> RequestResult {
+    serde_json::to_value(hover).map_err(|error| (ErrorCode::InternalError, error.to_string()))
+}
+
 fn register_file_watches(connection: &Connection) -> Result<()> {
     let watchers: Vec<_> = [
         "**/*.go",
@@ -588,7 +607,7 @@ fn handle_notification(
                 NumberOrString::Number(value) => RequestId::from(value),
                 NumberOrString::String(value) => RequestId::from(value),
             };
-            running.cancel_definitions(
+            running.cancel_pending(
                 connection,
                 |request| request.id == id,
                 ErrorCode::RequestCanceled,
