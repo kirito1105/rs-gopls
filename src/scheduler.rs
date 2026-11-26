@@ -75,12 +75,12 @@ impl Scheduler {
         let Some(load) = self.requested.take() else {
             return Ok(());
         };
-        let root = engine.root().to_owned();
+        let roots = engine.roots().to_vec();
         let results = results.clone();
         thread::Builder::new()
             .name("go-package-loader".into())
             .spawn(move || {
-                let result = Workspace::load(&root, load.include_tests);
+                let result = Workspace::load_roots(&roots, load.include_tests);
                 let _ = results.send(WorkspaceResult { load, result });
             })
             .context("starting Go package loader")?;
@@ -313,8 +313,8 @@ mod tests {
     use lsp_types::{
         FileChangeType,
         notification::{
-            Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidOpenTextDocument, Exit,
-            Initialized, Notification as _,
+            Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+            DidOpenTextDocument, Exit, Initialized, Notification as _,
         },
         request::{
             GotoImplementation, HoverRequest, Initialize, References, Request as _, Shutdown,
@@ -430,6 +430,18 @@ mod tests {
             load
         }
 
+        fn finish_requested_load(&mut self) {
+            let (sender, receiver) = crossbeam_channel::bounded(1);
+            let running = self.running();
+            running
+                .scheduler
+                .start_workspace_load(&running.engine, &sender)
+                .unwrap();
+            drop(sender);
+            let update = receiver.recv().unwrap();
+            self.deliver(update.load, Ok(update.result.unwrap()));
+        }
+
         fn step(&mut self) {
             let State::Running(running) = &mut self.state else {
                 panic!("expected a running session");
@@ -492,6 +504,158 @@ mod tests {
         let mut params = position(path, line, character);
         params["context"] = json!({ "includeDeclaration": true });
         params
+    }
+
+    #[test]
+    fn initializes_with_valid_distinct_folders_and_legacy_fallbacks() {
+        let first = TestProject::new();
+        let second = TestProject::new();
+        let uri = path_uri(&first.root).unwrap();
+        let a = json!({"name": "one", "uri": uri});
+        let b = json!({"name": "two", "uri": path_uri(&second.root).unwrap()});
+        let roots = |mut params: Value| {
+            params["capabilities"] = json!({});
+            crate::initialize(params).map(|(session, _)| session.engine.roots().to_vec())
+        };
+        assert_eq!(
+            roots(json!({"workspaceFolders": [b, a, b], "rootUri": "untitled:ignored"})).unwrap(),
+            [second.root.clone(), first.root.clone()]
+        );
+        assert_eq!(
+            roots(json!({"workspaceFolders": [], "rootUri": uri, "rootPath": second.root}))
+                .unwrap(),
+            [first.root.clone()]
+        );
+        assert_eq!(
+            roots(json!({"rootPath": second.root})).unwrap(),
+            [second.root.clone()]
+        );
+        assert_eq!(
+            roots(json!({})).unwrap(),
+            [std::env::current_dir().unwrap()]
+        );
+        let file = first.write("file.go", "package sample\n");
+        for invalid in [
+            path_uri(&file).unwrap().to_string(),
+            "untitled:folder".into(),
+        ] {
+            assert!(
+                roots(json!({"workspaceFolders": [a, {"name":"invalid", "uri":invalid}]})).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn folder_changes_reload_the_graph_and_rescope_open_drafts_and_searches() {
+        let first = TestProject::new();
+        first.write("go.mod", "module example.test/first\n\ngo 1.22\n");
+        first.write("file.go", "package first\nvar FolderSymbolOne int\n");
+        let second = TestProject::new();
+        second.write("go.work", "go 1.22\n\nuse ./member\n");
+        second.write("member/go.mod", "module example.test/second\n\ngo 1.22\n");
+        second.write(
+            "member/file.go",
+            "package second\nvar FolderSymbolTwo int\n",
+        );
+        let a = json!({"name":"one", "uri":path_uri(&first.root).unwrap()});
+        let b = json!({"name":"two", "uri":path_uri(&second.root).unwrap()});
+        let folders = DidChangeWorkspaceFolders::METHOD;
+        let mut session = Session::start(&first);
+        let symbols = |session: &mut Session, id| {
+            session.request(
+                id,
+                WorkspaceSymbolRequest::METHOD,
+                json!({"query":"FolderSymbol"}),
+            );
+        };
+        let names = |session: &mut Session, id| {
+            session.finish_searches();
+            let mut names: Vec<_> = session
+                .reply(id)
+                .result
+                .as_ref()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|symbol| symbol["name"].as_str().unwrap().to_owned())
+                .collect();
+            names.sort();
+            names
+        };
+        symbols(&mut session, 1);
+        let stale = session.begin_load();
+        session.open(
+            &second.root.join("draft.go"),
+            "package draft\nvar FolderSymbolDraft int\n",
+        );
+        session.notify(folders, json!({"event":{"removed":[], "added":[a, b, b]}}));
+        let current = session.running().engine.workspace_load();
+        assert_eq!(current.generation, stale.generation + 1);
+        assert_eq!(session.scheduler().requested, Some(current));
+        session.deliver(stale, Ok(first.workspace(&["file.go"], true)));
+        session.count(1);
+        session.finish_requested_load();
+        assert_eq!(
+            names(&mut session, 1),
+            ["FolderSymbolDraft", "FolderSymbolOne", "FolderSymbolTwo"]
+        );
+        session.open(
+            &second.root.join("late.go"),
+            "package draft\nvar FolderSymbolLate int\n",
+        );
+        symbols(&mut session, 2);
+        assert_eq!(
+            names(&mut session, 2),
+            [
+                "FolderSymbolDraft",
+                "FolderSymbolLate",
+                "FolderSymbolOne",
+                "FolderSymbolTwo"
+            ]
+        );
+
+        session.notify(folders, json!({"event":{"removed":[], "added":[b]}}));
+        assert_eq!(session.running().engine.workspace_load(), current);
+        assert!(session.scheduler().requested.is_none());
+        let State::Running(running) = &mut session.state else {
+            unreachable!()
+        };
+        let missing =
+            json!({"name":"missing", "uri":path_uri(&second.root.join("absent")).unwrap()});
+        assert!(
+            handle_notification(
+                &session.server,
+                running,
+                folders,
+                json!({"event":{"removed":[a], "added":[missing]}})
+            )
+            .is_err()
+        );
+        assert_eq!(
+            running.engine.roots(),
+            [first.root.clone(), second.root.clone()]
+        );
+        assert_eq!(running.engine.workspace_load(), current);
+
+        symbols(&mut session, 3);
+        session.notify(folders, json!({"event":{"removed":[b], "added":[]}}));
+        session.error(3, ErrorCode::ContentModified, WORKSPACE_CHANGED);
+        symbols(&mut session, 4);
+        session.finish_requested_load();
+        assert_eq!(names(&mut session, 4), ["FolderSymbolOne"]);
+        session.notify(folders, json!({"event":{"removed":[a], "added":[]}}));
+        assert!(session.running().engine.roots().is_empty());
+        symbols(&mut session, 5);
+        session.finish_requested_load();
+        assert!(names(&mut session, 5).is_empty());
+        session.notify(folders, json!({"event":{"removed":[], "added":[b]}}));
+        symbols(&mut session, 6);
+        session.finish_requested_load();
+        assert_eq!(
+            names(&mut session, 6),
+            ["FolderSymbolDraft", "FolderSymbolLate", "FolderSymbolTwo"]
+        );
     }
 
     #[test]
@@ -939,6 +1103,7 @@ mod tests {
                 "signatureHelpProvider": { "triggerCharacters": ["(", ","], "retriggerCharacters": [","] },
                 "documentSymbolProvider": true,
                 "workspaceSymbolProvider": true,
+                "workspace": { "workspaceFolders": { "supported": true, "changeNotifications": true } }
             })
         );
         let Message::Request(registration) = client.receiver.try_recv().unwrap() else {
