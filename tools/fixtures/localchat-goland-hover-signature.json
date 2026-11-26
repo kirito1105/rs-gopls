@@ -1,0 +1,692 @@
+{
+  "build": "GO-263.7307.354",
+  "root": "E:\\Code\\localchat\\server",
+  "sdk": [
+    {
+      "module": "server",
+      "version": "1.27.4",
+      "homePath": "C:/Users/rick/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.windows-amd64"
+    }
+  ],
+  "cases": [
+    {
+      "id": "hover-interface-decl",
+      "kind": "hover",
+      "path": "internal/filestore/filestore.go",
+      "line": 10,
+      "character": 5,
+      "leafText": "FileBackend",
+      "leafRange": {
+        "start": {
+          "line": 10,
+          "character": 5
+        },
+        "end": {
+          "line": 10,
+          "character": 16
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/filestore\">filestore</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> FileBackend <a href=\"psi_element://KEYWORD:#interface\"><span style=\"color:#cf8e6d;\">interface</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.TestConnection\">TestConnection</a>() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.ReadFile\">ReadFile</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) ([]<a href=\"psi_element://TYPE:builtin#builtin.byte\">byte</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.WriteFile\">WriteFile</a>(data <a href=\"psi_element://PACKAGE:io\">io</a>.<a href=\"psi_element://TYPE:io#io.Reader\">Reader</a>, path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.FileExists\">FileExists</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.FileSize\">FileSize</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.RemoveFile\">RemoveFile</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.ListDirectory\">ListDirectory</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) ([]<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n}</pre></div>\n<div class='content'><p>FileBackend defines the interface for file storage operations.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> FileBackend <a href=\"psi_element://KEYWORD:#interface\"><span style=\"color:#cf8e6d;\">interface</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.TestConnection\">TestConnection</a>() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.ReadFile\">ReadFile</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) ([]<a href=\"psi_element://TYPE:builtin#builtin.byte\">byte</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.WriteFile\">WriteFile</a>(data <a href=\"psi_element://PACKAGE:io\">io</a>.<a href=\"psi_element://TYPE:io#io.Reader\">Reader</a>, path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.FileExists\">FileExists</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.FileSize\">FileSize</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.RemoveFile\">RemoveFile</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend.ListDirectory\">ListDirectory</a>(path <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) ([]<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n}</code></div>"
+    },
+    {
+      "id": "hover-func-decl-doc",
+      "kind": "hover",
+      "path": "internal/filestore/filestore.go",
+      "line": 21,
+      "character": 5,
+      "leafText": "NewFileBackend",
+      "leafRange": {
+        "start": {
+          "line": 21,
+          "character": 5
+        },
+        "end": {
+          "line": 21,
+          "character": 19
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFunctionDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/filestore\">filestore</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> NewFileBackend(settings <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/config\">config</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/config#config.FileStoreSettings\">FileStoreSettings</a>) (<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend\">FileBackend</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)</pre></div>\n<div class='content'><p>NewFileBackend creates a <a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend\">FileBackend</a> based on settings.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> NewFileBackend(settings <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/config\">config</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/config#config.FileStoreSettings\">FileStoreSettings</a>) (<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/filestore#filestore.FileBackend\">FileBackend</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)</code></div>"
+    },
+    {
+      "id": "hover-iface-method-decl",
+      "kind": "hover",
+      "path": "internal/store/store.go",
+      "line": 37,
+      "character": 1,
+      "leafText": "GetAll",
+      "leafRange": {
+        "start": {
+          "line": 37,
+          "character": 1
+        },
+        "end": {
+          "line": 37,
+          "character": 7
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoMethodSpecImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>) GetAll(offset <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, limit <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, includeBots <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>) ([]*<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)</pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>) GetAll(offset <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, limit <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, includeBots <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>) ([]*<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)</code></div>"
+    },
+    {
+      "id": "hover-iface-with-comment",
+      "kind": "hover",
+      "path": "internal/store/store.go",
+      "line": 113,
+      "character": 5,
+      "leafText": "FavoriteStore",
+      "leafRange": {
+        "start": {
+          "line": 113,
+          "character": 5
+        },
+        "end": {
+          "line": 113,
+          "character": 18
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> FavoriteStore <a href=\"psi_element://KEYWORD:#interface\"><span style=\"color:#cf8e6d;\">interface</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.Toggle\">Toggle</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.Delete\">Delete</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.IsFavorited\">IsFavorited</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.GetForUser\">GetForUser</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, offset <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, limit <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>) ([]*<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.Favorite\">Favorite</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.GetForPosts\">GetForPosts</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postIds []<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://KEYWORD:#map\"><span style=\"color:#cf8e6d;\">map</span></a>[<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>]<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.DeleteForPost\">DeleteForPost</a>(postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n}</pre></div>\n<div class='content'><p>FavoriteStore persists per-user saved posts (&quot;收藏 / 稍后读&quot;).\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> FavoriteStore <a href=\"psi_element://KEYWORD:#interface\"><span style=\"color:#cf8e6d;\">interface</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.Toggle\">Toggle</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.Delete\">Delete</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.IsFavorited\">IsFavorited</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.GetForUser\">GetForUser</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, offset <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, limit <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>) ([]*<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.Favorite\">Favorite</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.GetForPosts\">GetForPosts</a>(userId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, postIds []<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) (<a href=\"psi_element://KEYWORD:#map\"><span style=\"color:#cf8e6d;\">map</span></a>[<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>]<a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://METHOD_SPEC:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore.DeleteForPost\">DeleteForPost</a>(postId <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n}</code></div>"
+    },
+    {
+      "id": "hover-pkg-var",
+      "kind": "hover",
+      "path": "internal/store/store.go",
+      "line": 8,
+      "character": 4,
+      "leafText": "ErrReviewItemsNotFound",
+      "leafRange": {
+        "start": {
+          "line": 8,
+          "character": 4
+        },
+        "end": {
+          "line": 8,
+          "character": 26
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoVarDefinitionImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> ErrReviewItemsNotFound <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>&#32;=&#32;<span style=\"\">errors.New(</span><span style=\"color:#6aab73;\">\"one&#32;or&#32;more&#32;review&#32;items&#32;were&#32;not&#32;found\"</span><span style=\"\">)</span></pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> ErrReviewItemsNotFound <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>&#32;=&#32;<span style=\"\">errors.New(</span><span style=\"color:#6aab73;\">\"one&#32;or&#32;more&#32;review&#32;items&#32;were&#32;not&#32;found\"</span><span style=\"\">)</span></code></div>"
+    },
+    {
+      "id": "hover-const",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 12,
+      "character": 1,
+      "leafText": "UserPasswordMaxLength",
+      "leafRange": {
+        "start": {
+          "line": 12,
+          "character": 1
+        },
+        "end": {
+          "line": 12,
+          "character": 22
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoConstDefinitionImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#const\"><span style=\"color:#cf8e6d;\">const</span></a> UserPasswordMaxLength <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>&#32;=&#32;<span style=\"color:#2aacb8;\">72</span></pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#const\"><span style=\"color:#cf8e6d;\">const</span></a> UserPasswordMaxLength <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>&#32;=&#32;<span style=\"color:#2aacb8;\">72</span></code></div>"
+    },
+    {
+      "id": "hover-struct-decl",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 18,
+      "character": 5,
+      "leafText": "User",
+      "leafRange": {
+        "start": {
+          "line": 18,
+          "character": 5
+        },
+        "end": {
+          "line": 18,
+          "character": 9
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> User <a href=\"psi_element://KEYWORD:#struct\"><span style=\"color:#cf8e6d;\">struct</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Id\">Id</a>                 <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"id\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.CreateAt\">CreateAt</a>           <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"create_at,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.UpdateAt\">UpdateAt</a>           <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"update_at,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.DeleteAt\">DeleteAt</a>           <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"delete_at\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Username\">Username</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"username\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Password\">Password</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"password,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Email\">Email</a>              <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"email\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.EmailVerified\">EmailVerified</a>      <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>              <span style=\"color:#6aab73;\">`json:\"email_verified,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Nickname\">Nickname</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"nickname\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.FirstName\">FirstName</a>          <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"first_name\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastName\">LastName</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"last_name\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Position\">Position</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"position\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Roles\">Roles</a>              <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"roles\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Locale\">Locale</a>             <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"locale\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Props\">Props</a>              <a href=\"psi_element://KEYWORD:#map\"><span style=\"color:#cf8e6d;\">map</span></a>[<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>]<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a> <span style=\"color:#6aab73;\">`json:\"props,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.NotifyProps\">NotifyProps</a>        <a href=\"psi_element://KEYWORD:#map\"><span style=\"color:#cf8e6d;\">map</span></a>[<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>]<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a> <span style=\"color:#6aab73;\">`json:\"notify_props,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastPasswordUpdate\">LastPasswordUpdate</a> <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"last_password_update,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastPictureUpdate\">LastPictureUpdate</a>  <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"last_picture_update,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.FailedAttempts\">FailedAttempts</a>     <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>               <span style=\"color:#6aab73;\">`json:\"failed_attempts,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastActivityAt\">LastActivityAt</a>     <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"last_activity_at,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.IsBot\">IsBot</a>              <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>              <span style=\"color:#6aab73;\">`json:\"is_bot,omitempty\"`</span>\n}</pre></div>\n<table class='sections'><tr><td colspan='2'><p class='section'>方法对象: (*User):</p><pre><a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/model#model.User.PreSave\">PreSave</a>() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/model#model.User.PreUpdate\">PreUpdate</a>()\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/model#model.User.IsValid\">IsValid</a>() *<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.AppError\">AppError</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Sanitize\">Sanitize</a>()\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/model#model.User.CheckPassword\">CheckPassword</a>(password <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a></pre></td>\n</table>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> User <a href=\"psi_element://KEYWORD:#struct\"><span style=\"color:#cf8e6d;\">struct</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Id\">Id</a>                 <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"id\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.CreateAt\">CreateAt</a>           <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"create_at,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.UpdateAt\">UpdateAt</a>           <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"update_at,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.DeleteAt\">DeleteAt</a>           <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"delete_at\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Username\">Username</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"username\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Password\">Password</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"password,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Email\">Email</a>              <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"email\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.EmailVerified\">EmailVerified</a>      <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>              <span style=\"color:#6aab73;\">`json:\"email_verified,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Nickname\">Nickname</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"nickname\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.FirstName\">FirstName</a>          <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"first_name\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastName\">LastName</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"last_name\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Position\">Position</a>           <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"position\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Roles\">Roles</a>              <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"roles\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Locale\">Locale</a>             <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>            <span style=\"color:#6aab73;\">`json:\"locale\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.Props\">Props</a>              <a href=\"psi_element://KEYWORD:#map\"><span style=\"color:#cf8e6d;\">map</span></a>[<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>]<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a> <span style=\"color:#6aab73;\">`json:\"props,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.NotifyProps\">NotifyProps</a>        <a href=\"psi_element://KEYWORD:#map\"><span style=\"color:#cf8e6d;\">map</span></a>[<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>]<a href=\"psi_element://TYPE:builtin#builtin.string\">string</a> <span style=\"color:#6aab73;\">`json:\"notify_props,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastPasswordUpdate\">LastPasswordUpdate</a> <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"last_password_update,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastPictureUpdate\">LastPictureUpdate</a>  <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"last_picture_update,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.FailedAttempts\">FailedAttempts</a>     <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>               <span style=\"color:#6aab73;\">`json:\"failed_attempts,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.LastActivityAt\">LastActivityAt</a>     <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>             <span style=\"color:#6aab73;\">`json:\"last_activity_at,omitempty\"`</span>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/model#model.User.IsBot\">IsBot</a>              <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>              <span style=\"color:#6aab73;\">`json:\"is_bot,omitempty\"`</span>\n}</code></div>"
+    },
+    {
+      "id": "hover-struct-field-tag",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 23,
+      "character": 1,
+      "leafText": "Username",
+      "leafRange": {
+        "start": {
+          "line": 23,
+          "character": 1
+        },
+        "end": {
+          "line": 23,
+          "character": 9
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFieldDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><b>field</b> Username <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a><span style=\"color:#6aab73;\">`json:\"username\"`</span> of <a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></pre></div>\n",
+      "quickNav": "<div><code><b>field</b> Username <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a><span style=\"color:#6aab73;\">`json:\"username\"`</span> of <a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></code></div>"
+    },
+    {
+      "id": "hover-field-use",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 50,
+      "character": 3,
+      "leafText": "Username",
+      "leafRange": {
+        "start": {
+          "line": 50,
+          "character": 3
+        },
+        "end": {
+          "line": 50,
+          "character": 11
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFieldDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><b>field</b> Username <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a><span style=\"color:#6aab73;\">`json:\"username\"`</span> of <a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></pre></div>\n",
+      "quickNav": "<div><code><b>field</b> Username <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a><span style=\"color:#6aab73;\">`json:\"username\"`</span> of <a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></code></div>"
+    },
+    {
+      "id": "hover-method-decl",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 42,
+      "character": 15,
+      "leafText": "PreSave",
+      "leafRange": {
+        "start": {
+          "line": 42,
+          "character": 15
+        },
+        "end": {
+          "line": 42,
+          "character": 22
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoMethodDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (u *<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a>) PreSave() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a></pre></div>\n<table class='sections'><tr><td valign='top' class='section'><p>为 nil 性信息</td><td valign='top'><pre>结果 <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a> 可能为 <span color=\"cc7832\">nil</span><br/>u *<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a> 必须为<span color=\"cc7832\">non-nil</span><br/></pre></td>\n</table>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (u *<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a>) PreSave() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a></code></div>"
+    },
+    {
+      "id": "hover-local-inferred",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 46,
+      "character": 1,
+      "leafText": "now",
+      "leafRange": {
+        "start": {
+          "line": 46,
+          "character": 1
+        },
+        "end": {
+          "line": 46,
+          "character": 4
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoVarDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> now <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>&#32;=&#32;<span style=\"\">GetMillis()</span></pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> now <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a>&#32;=&#32;<span style=\"\">GetMillis()</span></code></div>"
+    },
+    {
+      "id": "hover-func-type-decl",
+      "kind": "hover",
+      "path": "internal/api/api.go",
+      "line": 18,
+      "character": 5,
+      "leafText": "HandlerFunc",
+      "leafRange": {
+        "start": {
+          "line": 18,
+          "character": 5
+        },
+        "end": {
+          "line": 18,
+          "character": 16
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:\">api</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> HandlerFunc <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(c *<a href=\"psi_element://TYPE:#api.Context\">Context</a>, w <a href=\"psi_element://PACKAGE:net/http\">http</a>.<a href=\"psi_element://TYPE:net/http#http.ResponseWriter\">ResponseWriter</a>, r *<a href=\"psi_element://PACKAGE:net/http\">http</a>.<a href=\"psi_element://TYPE:net/http#http.Request\">Request</a>)</pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> HandlerFunc <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(c *<a href=\"psi_element://TYPE:#api.Context\">Context</a>, w <a href=\"psi_element://PACKAGE:net/http\">http</a>.<a href=\"psi_element://TYPE:net/http#http.ResponseWriter\">ResponseWriter</a>, r *<a href=\"psi_element://PACKAGE:net/http\">http</a>.<a href=\"psi_element://TYPE:net/http#http.Request\">Request</a>)</code></div>"
+    },
+    {
+      "id": "hover-field-inline-comment",
+      "kind": "hover",
+      "path": "internal/api/api.go",
+      "line": 27,
+      "character": 1,
+      "leafText": "APIRoot",
+      "leafRange": {
+        "start": {
+          "line": 27,
+          "character": 1
+        },
+        "end": {
+          "line": 27,
+          "character": 8
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFieldDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><b>field</b> APIRoot *<a href=\"psi_element://PACKAGE:github.com/gorilla/mux\">mux</a>.<a href=\"psi_element://TYPE:github.com/gorilla/mux#mux.Router\">Router</a> of <a href=\"psi_element://TYPE:#api.Routes\">Routes</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></pre></div>\n<div class='content'><p>/api/v1\n</p>\n</div>\n",
+      "quickNav": "<div><code><b>field</b> APIRoot *<a href=\"psi_element://PACKAGE:github.com/gorilla/mux\">mux</a>.<a href=\"psi_element://TYPE:github.com/gorilla/mux#mux.Router\">Router</a> of <a href=\"psi_element://TYPE:#api.Routes\">Routes</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></code></div>"
+    },
+    {
+      "id": "hover-receiver-param",
+      "kind": "hover",
+      "path": "internal/app/user.go",
+      "line": 8,
+      "character": 25,
+      "leafText": "user",
+      "leafRange": {
+        "start": {
+          "line": 8,
+          "character": 25
+        },
+        "end": {
+          "line": 8,
+          "character": 29
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoParamDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> user *<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a></pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> user *<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a></code></div>"
+    },
+    {
+      "id": "hover-cross-pkg-method-call",
+      "kind": "hover",
+      "path": "internal/app/user.go",
+      "line": 73,
+      "character": 32,
+      "leafText": "GetAll",
+      "leafRange": {
+        "start": {
+          "line": 73,
+          "character": 32
+        },
+        "end": {
+          "line": 73,
+          "character": 38
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoMethodSpecImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>) GetAll(offset <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, limit <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, includeBots <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>) ([]*<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)</pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>) GetAll(offset <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, limit <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, includeBots <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a>) ([]*<a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/model\">model</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/model#model.User\">User</a>, <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>)</code></div>"
+    },
+    {
+      "id": "hover-pkg-qualifier",
+      "kind": "hover",
+      "path": "internal/app/user.go",
+      "line": 9,
+      "character": 14,
+      "leafText": "model",
+      "leafRange": {
+        "start": {
+          "line": 9,
+          "character": 14
+        },
+        "end": {
+          "line": 9,
+          "character": 19
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoPackage$GoPomTargetPsiElement",
+      "hoverHtml": null,
+      "quickNav": null
+    },
+    {
+      "id": "hover-import-path",
+      "kind": "hover",
+      "path": "internal/app/user.go",
+      "line": 3,
+      "character": 3,
+      "leafText": "\"net/http\"",
+      "leafRange": {
+        "start": {
+          "line": 3,
+          "character": 1
+        },
+        "end": {
+          "line": 3,
+          "character": 11
+        }
+      },
+      "targetClass": "com.intellij.psi.impl.file.PsiDirectoryImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><b>net</b></td>\n</table>\n<div class='definition'><pre>import \"net\"</pre></div>\n<div class='content'><p>Package net provides a portable interface for network I/O, including\nTCP/IP, UDP, domain name resolution, and Unix domain sockets.\n</p>\n<p>Although the package provides access to low-level networking\nprimitives, most clients will need only the basic interface provided\nby the <a href=\"psi_element://FUNCTION:net#net.Dial\">Dial</a>, <a href=\"psi_element://FUNCTION:net#net.Listen\">Listen</a>, and Accept functions and the associated\n<a href=\"psi_element://TYPE:net#net.Conn\">Conn</a> and <a href=\"psi_element://TYPE:net#net.Listener\">Listener</a> interfaces. The crypto/tls package uses\nthe same interfaces and similar <a href=\"psi_element://FUNCTION:net#net.Dial\">Dial</a> and <a href=\"psi_element://FUNCTION:net#net.Listen\">Listen</a> functions.\n</p>\n<p>The <a href=\"psi_element://FUNCTION:net#net.Dial\">Dial</a> function connects to a server:\n</p>\n<pre>conn, err := net.Dial(\"tcp\", \"golang.org:80\")\nif err != nil {\n\t// handle error\n}\nfmt.Fprintf(conn, \"GET / HTTP/1.0\\r\\n\\r\\n\")\nstatus, err := bufio.NewReader(conn).ReadString('\\n')\n// ...</pre>\n<p>The <a href=\"psi_element://FUNCTION:net#net.Listen\">Listen</a> function creates servers:\n</p>\n<pre>ln, err := net.Listen(\"tcp\", \":8080\")\nif err != nil {\n\t// handle error\n}\nfor {\n\tconn, err := ln.Accept()\n\tif err != nil {\n\t\t// handle error\n\t}\n\tgo handleConnection(conn)\n}</pre>\n<h2> Name Resolution</h2>\n<p>The method for resolving domain names, whether indirectly with functions like <a href=\"psi_element://FUNCTION:net#net.Dial\">Dial</a>\nor directly with functions like <a href=\"psi_element://FUNCTION:net#net.LookupHost\">LookupHost</a> and <a href=\"psi_element://FUNCTION:net#net.LookupAddr\">LookupAddr</a>, varies by operating system.\n</p>\n<p>On Unix systems, the resolver has two options for resolving names.\nIt can use a pure Go resolver that sends DNS requests directly to the servers\nlisted in /etc/resolv.conf, or it can use a cgo-based resolver that calls C\nlibrary routines such as getaddrinfo and getnameinfo.\n</p>\n<p>On Unix the pure Go resolver is preferred over the cgo resolver, because a blocked DNS\nrequest consumes only a goroutine, while a blocked C call consumes an operating system thread.\nWhen cgo is available, the cgo-based resolver is used instead under a variety of\nconditions: on systems that do not let programs make direct DNS requests (OS X),\nwhen the LOCALDOMAIN environment variable is present (even if empty),\nwhen the RES_OPTIONS or HOSTALIASES environment variable is non-empty,\nwhen the ASR_CONFIG environment variable is non-empty (OpenBSD only),\nwhen /etc/resolv.conf or /etc/nsswitch.conf specify the use of features that the\nGo resolver does not implement.\n</p>\n<p>On all systems (except Plan 9), when the cgo resolver is being used\nthis package applies a concurrent cgo lookup limit to prevent the system\nfrom running out of system threads. Currently, it is limited to 500 concurrent lookups.\n</p>\n<p>The resolver decision can be overridden by setting the netdns value of the\nGODEBUG environment variable (see package runtime) to go or cgo, as in:\n</p>\n<pre>export GODEBUG=netdns=go    # force pure Go resolver\nexport GODEBUG=netdns=cgo   # force native resolver (cgo, win32)</pre>\n<p>The decision can also be forced while building the Go source tree\nby setting the netgo or netcgo build tag.\nThe netgo build tag disables entirely the use of the native (CGO) resolver,\nmeaning the Go resolver is the only one that can be used.\nWith the netcgo build tag the native and the pure Go resolver are compiled into the binary,\nbut the native (CGO) resolver is preferred over the Go resolver.\nWith netcgo, the Go resolver can still be forced at runtime with GODEBUG=netdns=go.\n</p>\n<p>A numeric netdns setting, as in GODEBUG=netdns=1, causes the resolver\nto print debugging information about its decisions.\nTo force a particular resolver while also printing debugging information,\njoin the two settings by a plus sign, as in GODEBUG=netdns=go+1.\n</p>\n<p>The Go resolver will send an EDNS0 additional header with a DNS request,\nto signal a willingness to accept a larger DNS packet size.\nThis can reportedly cause sporadic failures with the DNS server run\nby some modems and routers. Setting GODEBUG=netedns0=0 will disable\nsending the additional header.\n</p>\n<p>On macOS, if Go code that uses the net package is built with\n-buildmode=c-archive, linking the resulting archive into a C program\nrequires passing -lresolv when linking the C code.\n</p>\n<p>On Plan 9, the resolver always accesses /net/cs and /net/dns.\n</p>\n<p>On Windows, in Go 1.18.x and earlier, the resolver always used C\nlibrary functions, such as GetAddrInfo and DnsQuery.\n</p>\n</div>\n",
+      "quickNav": null
+    },
+    {
+      "id": "hover-stdlib-func",
+      "kind": "hover",
+      "path": "internal/model/user.go",
+      "line": 50,
+      "character": 22,
+      "leafText": "TrimSpace",
+      "leafRange": {
+        "start": {
+          "line": 50,
+          "character": 22
+        },
+        "end": {
+          "line": 50,
+          "character": 31
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFunctionDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:strings\">strings</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> TrimSpace(s <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a></pre></div>\n<div class='content'><p>TrimSpace returns a slice (substring) of the string s,\nwith all leading and trailing white space removed,\nas defined by Unicode.\n</p>\n\n<br/><div><a href='goExample://Example'>Example</a></div>\n<div>Code:</div>\n<pre>&#32;&#32;&#32;&#32;<span style=\"\">fmt.Println(strings.TrimSpace(</span><span style=\"color:#6aab73;\">\"&#32;</span><span style=\"color:#cf8e6d;\">\\t\\n</span><span style=\"color:#6aab73;\">&#32;Hello,&#32;Gophers&#32;</span><span style=\"color:#cf8e6d;\">\\n\\t\\r\\n</span><span style=\"color:#6aab73;\">\"</span><span style=\"\">))<br></span><span style=\"\">&#32;&#32;&#32;&#32;</span></pre>\n<div>Output:</div>\n<div style='padding-left: 10px;'><pre>Hello, Gophers\n</pre></div>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> TrimSpace(s <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a></code></div>"
+    },
+    {
+      "id": "hover-builtin-append",
+      "kind": "hover",
+      "path": "internal/store/sqlstore/user_store.go",
+      "line": 93,
+      "character": 10,
+      "leafText": "append",
+      "leafRange": {
+        "start": {
+          "line": 93,
+          "character": 10
+        },
+        "end": {
+          "line": 93,
+          "character": 16
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFunctionDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:builtin\">builtin</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> append(slice []Type, elems ...Type) []Type</pre></div>\n<div class='content'><p>The append built-in function appends elements to the end of a slice. If\nit has sufficient capacity, the destination is resliced to accommodate the\nnew elements. If it does not, a new underlying array will be allocated.\nAppend returns the updated slice. It is therefore necessary to store the\nresult of append, often in the variable holding the slice itself:\n</p>\n<pre>slice = append(slice, elem1, elem2)\nslice = append(slice, anotherSlice...)</pre>\n<p>As a special case, it is legal to append a string to a byte slice, like this:\n</p>\n<pre>slice = append([]byte(\"hello \"), \"world\"...)</pre>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> append(slice []Type, elems ...Type) []Type</code></div>"
+    },
+    {
+      "id": "hover-embedded-field-decl",
+      "kind": "hover",
+      "path": "internal/store/sqlstore/user_store.go",
+      "line": 12,
+      "character": 2,
+      "leafText": "SqlStore",
+      "leafRange": {
+        "start": {
+          "line": 12,
+          "character": 2
+        },
+        "end": {
+          "line": 12,
+          "character": 10
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store/sqlstore\">sqlstore</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> SqlStore <a href=\"psi_element://KEYWORD:#struct\"><span style=\"color:#cf8e6d;\">struct</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.db\">db</a>         *<a href=\"psi_element://PACKAGE:database/sql\">sql</a>.<a href=\"psi_element://TYPE:database/sql#sql.DB\">DB</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.builder\">builder</a>    <a href=\"psi_element://PACKAGE:github.com/Masterminds/squirrel\">squirrel</a>.<a href=\"psi_element://TYPE:github.com/Masterminds/squirrel#squirrel.StatementBuilderType\">StatementBuilderType</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.user\">user</a>       <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.team\">team</a>       <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.TeamStore\">TeamStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.channel\">channel</a>    <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.ChannelStore\">ChannelStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.post\">post</a>       <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.PostStore\">PostStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.postSearch\">postSearch</a> <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.PostSearchStore\">PostSearchStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.session\">session</a>    <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SessionStore\">SessionStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.fileInfo\">fileInfo</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.FileInfoStore\">FileInfoStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.sticker\">sticker</a>    <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.StickerStore\">StickerStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.codeReview\">codeReview</a> <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.CodeReviewStore\">CodeReviewStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.bot\">bot</a>        <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.BotStore\">BotStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.document\">document</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.DocumentStore\">DocumentStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.shared\">shared</a>     <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SharedResourceStore\">SharedResourceStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.svnTag\">svnTag</a>     <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SVNFeatureTagStore\">SVNFeatureTagStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.reaction\">reaction</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.ReactionStore\">ReactionStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.favorite\">favorite</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore\">FavoriteStore</a>\n}</pre></div>\n<div class='content'><p>SqlStore implements <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.Store\">Store</a> backed by PostgreSQL.\n</p>\n</div>\n<table class='sections'><tr><td colspan='2'><p class='section'>方法对象: (*SqlStore):</p><pre><a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.User\">User</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Team\">Team</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.TeamStore\">TeamStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Channel\">Channel</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.ChannelStore\">ChannelStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Post\">Post</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.PostStore\">PostStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.PostSearch\">PostSearch</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.PostSearchStore\">PostSearchStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Session\">Session</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SessionStore\">SessionStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.FileInfo\">FileInfo</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.FileInfoStore\">FileInfoStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Sticker\">Sticker</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.StickerStore\">StickerStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.CodeReview\">CodeReview</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.CodeReviewStore\">CodeReviewStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Bot\">Bot</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.BotStore\">BotStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Document\">Document</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.DocumentStore\">DocumentStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.SharedResource\">SharedResource</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SharedResourceStore\">SharedResourceStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.SVNFeatureTag\">SVNFeatureTag</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SVNFeatureTagStore\">SVNFeatureTagStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Reaction\">Reaction</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.ReactionStore\">ReactionStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Favorite\">Favorite</a>() <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore\">FavoriteStore</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.Close\">Close</a>()\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.getBuilder\">getBuilder</a>() <a href=\"psi_element://PACKAGE:github.com/Masterminds/squirrel\">squirrel</a>.<a href=\"psi_element://TYPE:github.com/Masterminds/squirrel#squirrel.StatementBuilderType\">StatementBuilderType</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.createTables\">createTables</a>() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a>\n<a href=\"psi_element://METHOD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.runMigrations\">runMigrations</a>() <a href=\"psi_element://TYPE:builtin#builtin.error\">error</a></pre></td>\n</table>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> SqlStore <a href=\"psi_element://KEYWORD:#struct\"><span style=\"color:#cf8e6d;\">struct</span></a> {\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.db\">db</a>         *<a href=\"psi_element://PACKAGE:database/sql\">sql</a>.<a href=\"psi_element://TYPE:database/sql#sql.DB\">DB</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.builder\">builder</a>    <a href=\"psi_element://PACKAGE:github.com/Masterminds/squirrel\">squirrel</a>.<a href=\"psi_element://TYPE:github.com/Masterminds/squirrel#squirrel.StatementBuilderType\">StatementBuilderType</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.user\">user</a>       <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.UserStore\">UserStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.team\">team</a>       <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.TeamStore\">TeamStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.channel\">channel</a>    <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.ChannelStore\">ChannelStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.post\">post</a>       <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.PostStore\">PostStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.postSearch\">postSearch</a> <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.PostSearchStore\">PostSearchStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.session\">session</a>    <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SessionStore\">SessionStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.fileInfo\">fileInfo</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.FileInfoStore\">FileInfoStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.sticker\">sticker</a>    <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.StickerStore\">StickerStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.codeReview\">codeReview</a> <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.CodeReviewStore\">CodeReviewStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.bot\">bot</a>        <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.BotStore\">BotStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.document\">document</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.DocumentStore\">DocumentStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.shared\">shared</a>     <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SharedResourceStore\">SharedResourceStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.svnTag\">svnTag</a>     <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.SVNFeatureTagStore\">SVNFeatureTagStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.reaction\">reaction</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.ReactionStore\">ReactionStore</a>\n&nbsp;&nbsp;&nbsp;&nbsp;<a href=\"psi_element://FIELD:github.com/anthropic/chatting/mm/server/internal/store/sqlstore#sqlstore.SqlStore.favorite\">favorite</a>   <a href=\"psi_element://PACKAGE:github.com/anthropic/chatting/mm/server/internal/store\">store</a>.<a href=\"psi_element://TYPE:github.com/anthropic/chatting/mm/server/internal/store#store.FavoriteStore\">FavoriteStore</a>\n}</code></div>"
+    },
+    {
+      "id": "hover-empty-space",
+      "kind": "hover",
+      "path": "internal/filestore/filestore.go",
+      "line": 1,
+      "character": 0,
+      "leafText": "\n\n",
+      "leafRange": {
+        "start": {
+          "line": 0,
+          "character": 17
+        },
+        "end": {
+          "line": 2,
+          "character": 0
+        }
+      },
+      "targetClass": null,
+      "hoverHtml": null,
+      "quickNav": null
+    },
+    {
+      "id": "sig-iface-method-p0",
+      "kind": "signature",
+      "path": "internal/app/user.go",
+      "line": 73,
+      "character": 39,
+      "leafText": "offset",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "offset int, limit int, includeBots bool",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 10,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-iface-method-p1",
+      "kind": "signature",
+      "path": "internal/app/user.go",
+      "line": 73,
+      "character": 47,
+      "leafText": "limit",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "offset int, limit int, includeBots bool",
+          "rawHtml": null,
+          "highlightStart": 12,
+          "highlightEnd": 21,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-iface-method-p2",
+      "kind": "signature",
+      "path": "internal/app/user.go",
+      "line": 73,
+      "character": 54,
+      "leafText": "includeBots",
+      "activeParameter": 2,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "offset int, limit int, includeBots bool",
+          "rawHtml": null,
+          "highlightStart": 23,
+          "highlightEnd": 39,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-cross-pkg-func-p0",
+      "kind": "signature",
+      "path": "internal/app/user.go",
+      "line": 23,
+      "character": 32,
+      "leafText": "\"CreateUser\"",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "where string, id string, statusCode int, message string",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 12,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-cross-pkg-func-p2",
+      "kind": "signature",
+      "path": "internal/app/user.go",
+      "line": 23,
+      "character": 78,
+      "leafText": "http",
+      "activeParameter": 2,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "where string, id string, statusCode int, message string",
+          "rawHtml": null,
+          "highlightStart": 25,
+          "highlightEnd": 39,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-stdlib-variadic-p0",
+      "kind": "signature",
+      "path": "internal/filestore/filestore.go",
+      "line": 26,
+      "character": 25,
+      "leafText": "\"unsupported file store driver: %s\"",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "format string, a ...any",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 13,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-stdlib-variadic-p1",
+      "kind": "signature",
+      "path": "internal/filestore/filestore.go",
+      "line": 26,
+      "character": 62,
+      "leafText": "settings",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "format string, a ...any",
+          "rawHtml": null,
+          "highlightStart": 15,
+          "highlightEnd": 23,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-nested-inner",
+      "kind": "signature",
+      "path": "internal/model/user.go",
+      "line": 51,
+      "character": 45,
+      "leafText": "u",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "s string",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 8,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-nested-outer",
+      "kind": "signature",
+      "path": "internal/model/user.go",
+      "line": 51,
+      "character": 29,
+      "leafText": "strings",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "s string",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 8,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-builtin-append-p1",
+      "kind": "signature",
+      "path": "internal/store/sqlstore/user_store.go",
+      "line": 115,
+      "character": 24,
+      "leafText": "u",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "slice []Type, elems ...Type",
+          "rawHtml": null,
+          "highlightStart": 14,
+          "highlightEnd": 27,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-builtin-make-p1",
+      "kind": "signature",
+      "path": "internal/api/doc.go",
+      "line": 413,
+      "character": 39,
+      "leafText": "len",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "t Type, size ...IntegerType",
+          "rawHtml": null,
+          "highlightStart": 8,
+          "highlightEnd": 27,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-method-call-p1",
+      "kind": "signature",
+      "path": "internal/api/doc.go",
+      "line": 127,
+      "character": 44,
+      "leafText": "c",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "c *Context, docId string",
+          "rawHtml": null,
+          "highlightStart": 12,
+          "highlightEnd": 24,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "sig-outside-call",
+      "kind": "signature",
+      "path": "internal/filestore/filestore.go",
+      "line": 21,
+      "character": 5,
+      "leafText": "NewFileBackend",
+      "activeParameter": null,
+      "items": []
+    }
+  ]
+}

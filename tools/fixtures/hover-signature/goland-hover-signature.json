@@ -1,0 +1,641 @@
+{
+  "build": "GO-263.7307.354",
+  "root": "C:\\Users\\rick\\AppData\\Local\\Temp\\rs-gopls-goland-baseline\\hover-signature",
+  "sdk": [
+    {
+      "module": "hover-signature",
+      "version": null,
+      "homePath": ""
+    }
+  ],
+  "cases": [
+    {
+      "id": "syn-hover-import-pkg-doc",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 3,
+      "character": 23,
+      "leafText": "\"example.com/hoversig/helper\"",
+      "leafRange": {
+        "start": {
+          "line": 3,
+          "character": 1
+        },
+        "end": {
+          "line": 3,
+          "character": 30
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoImportSpecImpl",
+      "hoverHtml": null,
+      "quickNav": null
+    },
+    {
+      "id": "syn-hover-const-group-inline",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 51,
+      "character": 12,
+      "leafText": "StatusOK",
+      "leafRange": {
+        "start": {
+          "line": 51,
+          "character": 12
+        },
+        "end": {
+          "line": 51,
+          "character": 20
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoReferenceExpressionImpl",
+      "hoverHtml": null,
+      "quickNav": null
+    },
+    {
+      "id": "syn-hover-const-group-fallback",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 52,
+      "character": 12,
+      "leafText": "StatusError",
+      "leafRange": {
+        "start": {
+          "line": 52,
+          "character": 12
+        },
+        "end": {
+          "line": 52,
+          "character": 23
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoConstDefinitionImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:example.com/hoversig/helper\">helper</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#const\"><span style=\"color:#cf8e6d;\">const</span></a> StatusError <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>&#32;=&#32;<span style=\"color:#2aacb8;\">500</span></pre></div>\n<div class='content'><p>Status codes shared across the helper package.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#const\"><span style=\"color:#cf8e6d;\">const</span></a> StatusError <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>&#32;=&#32;<span style=\"color:#2aacb8;\">500</span></code></div>"
+    },
+    {
+      "id": "syn-hover-pkg-var-doc",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 31,
+      "character": 16,
+      "leafText": "DefaultName",
+      "leafRange": {
+        "start": {
+          "line": 31,
+          "character": 16
+        },
+        "end": {
+          "line": 31,
+          "character": 27
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoVarDefinitionImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:example.com/hoversig/helper\">helper</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> DefaultName <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>&#32;=&#32;<span style=\"color:#6aab73;\">\"guest\"</span></pre></div>\n<div class='content'><p>DefaultName is the fallback display name.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> DefaultName <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>&#32;=&#32;<span style=\"color:#6aab73;\">\"guest\"</span></code></div>"
+    },
+    {
+      "id": "syn-hover-promoted-field-tag",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 44,
+      "character": 10,
+      "leafText": "ID",
+      "leafRange": {
+        "start": {
+          "line": 44,
+          "character": 10
+        },
+        "end": {
+          "line": 44,
+          "character": 12
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFieldDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><b>field</b> ID <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a><span style=\"color:#6aab73;\">`json:\"id\"`</span> of <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Base\">Base</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></pre></div>\n<div class='content'><p>ID uniquely identifies the record.\n</p>\n</div>\n",
+      "quickNav": "<div><code><b>field</b> ID <a href=\"psi_element://TYPE:builtin#builtin.int64\">int64</a><span style=\"color:#6aab73;\">`json:\"id\"`</span> of <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Base\">Base</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></code></div>"
+    },
+    {
+      "id": "syn-hover-field-tag-inline",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 45,
+      "character": 10,
+      "leafText": "Name",
+      "leafRange": {
+        "start": {
+          "line": 45,
+          "character": 10
+        },
+        "end": {
+          "line": 45,
+          "character": 14
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFieldDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><b>field</b> Name <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a><span style=\"color:#6aab73;\">`json:\"name,omitempty\"`</span> of <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Item\">Item</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></pre></div>\n<div class='content'><p>display label\n</p>\n</div>\n",
+      "quickNav": "<div><code><b>field</b> Name <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a><span style=\"color:#6aab73;\">`json:\"name,omitempty\"`</span> of <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Item\">Item</a> <a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a></code></div>"
+    },
+    {
+      "id": "syn-hover-type-alias",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 35,
+      "character": 16,
+      "leafText": "IntBox",
+      "leafRange": {
+        "start": {
+          "line": 35,
+          "character": 16
+        },
+        "end": {
+          "line": 35,
+          "character": 22
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:example.com/hoversig/helper\">helper</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> IntBox = <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Box\">Box</a>[<a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>]</pre></div>\n<div class='content'><p>IntBox aliases a specialized <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Box\">Box</a>.\n</p>\n</div>\n<table class='sections'><tr><td colspan='2'><p class='section'>方法对象: (*IntBox):</p><pre><a href=\"psi_element://METHOD:example.com/hoversig/helper#helper.Box.Set\">Set</a>(v T)</pre></td>\n</table>\n<div class=\"content\">类型IntBox是类型Box[int]的别名。这些类型完全相同。有关详细信息，请参阅<a href=\"https://go.dev/ref/spec#Type_identity\">Go 规范: 类型标识</a></div>",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> IntBox = <a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Box\">Box</a>[<a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>]</code></div>"
+    },
+    {
+      "id": "syn-hover-generic-func-directive",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 30,
+      "character": 18,
+      "leafText": "Map",
+      "leafRange": {
+        "start": {
+          "line": 30,
+          "character": 18
+        },
+        "end": {
+          "line": 30,
+          "character": 21
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFunctionDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:example.com/hoversig/helper\">helper</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> Map[T <a href=\"psi_element://TYPE:builtin#builtin.any\">any</a>, U <a href=\"psi_element://TYPE:builtin#builtin.any\">any</a>](items []T, fn <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(T) U) []U</pre></div>\n<table class='sections'><tr><td valign='top' class='section'><p>替换:</td><td valign='top'><pre>T → <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>\nU → <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a></pre></td>\n</table>\n<div class='content'><p>Map transforms each element using fn.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> Map[T <a href=\"psi_element://TYPE:builtin#builtin.any\">any</a>, U <a href=\"psi_element://TYPE:builtin#builtin.any\">any</a>](items []T, fn <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(T) U) []U</code></div>"
+    },
+    {
+      "id": "syn-hover-generic-method",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 36,
+      "character": 5,
+      "leafText": "Set",
+      "leafRange": {
+        "start": {
+          "line": 36,
+          "character": 5
+        },
+        "end": {
+          "line": 36,
+          "character": 8
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoMethodDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:example.com/hoversig/helper\">helper</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (b *<a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Box\">Box</a>[T]) Set(v T)</pre></div>\n<table class='sections'><tr><td valign='top' class='section'><p>为 nil 性信息</td><td valign='top'><pre>b *<a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Box\">Box</a>[T] 必须为<span color=\"cc7832\">non-nil</span><br/></pre></td>\n</table>\n<table class='sections'><tr><td valign='top' class='section'><p>替换:</td><td valign='top'><pre>T → <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a></pre></td>\n</table>\n<div class='content'><p>Set replaces the stored value.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (b *<a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Box\">Box</a>[T]) Set(v T)</code></div>"
+    },
+    {
+      "id": "syn-hover-iface-method",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 39,
+      "character": 7,
+      "leafText": "Format",
+      "leafRange": {
+        "start": {
+          "line": 39,
+          "character": 7
+        },
+        "end": {
+          "line": 39,
+          "character": 13
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoMethodSpecImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (<a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Formatter\">Formatter</a>) Format(prefix <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, args ...<a href=\"psi_element://TYPE:builtin#builtin.any\">any</a>) <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a></pre></div>\n<div class='content'><p>Format renders args using prefix.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> (<a href=\"psi_element://TYPE:example.com/hoversig/helper#helper.Formatter\">Formatter</a>) Format(prefix <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>, args ...<a href=\"psi_element://TYPE:builtin#builtin.any\">any</a>) <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a></code></div>"
+    },
+    {
+      "id": "syn-hover-func-type",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 22,
+      "character": 74,
+      "leafText": "UnaryOp",
+      "leafRange": {
+        "start": {
+          "line": 22,
+          "character": 74
+        },
+        "end": {
+          "line": 22,
+          "character": 81
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoTypeSpecImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:example.com/hoversig\">main</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> UnaryOp <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(x <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>) <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a></pre></div>\n<div class='content'><p>UnaryOp transforms a single integer.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#type\"><span style=\"color:#cf8e6d;\">type</span></a> UnaryOp <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(x <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>) <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a></code></div>"
+    },
+    {
+      "id": "syn-hover-local-var-inferred",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 27,
+      "character": 1,
+      "leafText": "joined",
+      "leafRange": {
+        "start": {
+          "line": 27,
+          "character": 1
+        },
+        "end": {
+          "line": 27,
+          "character": 7
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoVarDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> joined <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>&#32;=&#32;<span style=\"\">helper.Join(</span><span style=\"color:#6aab73;\">\"-\"</span><span style=\"\">,&#32;</span><span style=\"color:#6aab73;\">\"a\"</span><span style=\"\">,&#32;</span><span style=\"color:#6aab73;\">\"b\"</span><span style=\"\">,&#32;</span><span style=\"color:#6aab73;\">\"c\"</span><span style=\"\">)</span></pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> joined <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>&#32;=&#32;<span style=\"\">helper.Join(</span><span style=\"color:#6aab73;\">\"-\"</span><span style=\"\">,&#32;</span><span style=\"color:#6aab73;\">\"a\"</span><span style=\"\">,&#32;</span><span style=\"color:#6aab73;\">\"b\"</span><span style=\"\">,&#32;</span><span style=\"color:#6aab73;\">\"c\"</span><span style=\"\">)</span></code></div>"
+    },
+    {
+      "id": "syn-hover-func-param",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 40,
+      "character": 5,
+      "leafText": "cb",
+      "leafRange": {
+        "start": {
+          "line": 40,
+          "character": 5
+        },
+        "end": {
+          "line": 40,
+          "character": 7
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoParamDefinitionImpl",
+      "hoverHtml": "<div class='definition'><pre><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> cb <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(count <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, tag <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a></pre></div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#var\"><span style=\"color:#cf8e6d;\">var</span></a> cb <a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a>(count <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a>, tag <a href=\"psi_element://TYPE:builtin#builtin.string\">string</a>) <a href=\"psi_element://TYPE:builtin#builtin.bool\">bool</a></code></div>"
+    },
+    {
+      "id": "syn-hover-builtin-len",
+      "kind": "hover",
+      "path": "main.go",
+      "line": 50,
+      "character": 5,
+      "leafText": "len",
+      "leafRange": {
+        "start": {
+          "line": 50,
+          "character": 5
+        },
+        "end": {
+          "line": 50,
+          "character": 8
+        }
+      },
+      "targetClass": "com.goide.psi.impl.GoFunctionDeclarationImpl",
+      "hoverHtml": "<table class='sections'><tr><td valign='top' class='section'><p>软件包:</td><td valign='top'><p><a href=\"psi_element://PACKAGE:builtin\">builtin</a></p>\n</td>\n</table>\n<div class='definition'><pre><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> len(v Type) <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a></pre></div>\n<div class='content'><p>The len built-in function returns the length of v, according to its type:\n</p>\n<ul>\n<li><p>Array: the number of elements in v.\n</p></li>\n<li><p>Pointer to array: the number of elements in *v (even if v is nil).\n</p></li>\n<li><p>Slice, or map: the number of elements in v; if v is nil, len(v) is zero.\n</p></li>\n<li><p>String: the number of bytes in v.\n</p></li>\n<li><p>Channel: the number of elements queued (unread) in the channel buffer;\nif v is nil, len(v) is zero.\n</p></li>\n</ul>\n<p>For some arguments, such as a string literal or a simple array expression, the\nresult can be a constant. See the Go language specification's &quot;Length and\ncapacity&quot; section for details.\n</p>\n</div>\n",
+      "quickNav": "<div><code><a href=\"psi_element://KEYWORD:#func\"><span style=\"color:#cf8e6d;\">func</span></a> len(v Type) <a href=\"psi_element://TYPE:builtin#builtin.int\">int</a></code></div>"
+    },
+    {
+      "id": "syn-sig-grouped-p0",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 23,
+      "character": 17,
+      "leafText": "inner",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "a int, b int, label string",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 5,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-grouped-p1",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 23,
+      "character": 27,
+      "leafText": "2",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "a int, b int, label string",
+          "rawHtml": null,
+          "highlightStart": 7,
+          "highlightEnd": 12,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-grouped-p2",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 23,
+      "character": 30,
+      "leafText": "\"ok\"",
+      "activeParameter": 2,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "a int, b int, label string",
+          "rawHtml": null,
+          "highlightStart": 14,
+          "highlightEnd": 26,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-nested-inner",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 23,
+      "character": 23,
+      "leafText": "1",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "n int",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 5,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-variadic-p0",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 27,
+      "character": 23,
+      "leafText": "\"-\"",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "sep string, parts ...string",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 10,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-variadic-p1",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 27,
+      "character": 28,
+      "leafText": "\"a\"",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "sep string, parts ...string",
+          "rawHtml": null,
+          "highlightStart": 12,
+          "highlightEnd": 27,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-variadic-p3-clamped",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 27,
+      "character": 38,
+      "leafText": "\"c\"",
+      "activeParameter": 3,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "sep string, parts ...string",
+          "rawHtml": null,
+          "highlightStart": 12,
+          "highlightEnd": 27,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-generic-call-p0",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 30,
+      "character": 22,
+      "leafText": "[",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.generics.instantiated.GoInstantiatedFunctionType",
+          "text": "items []int, fn func(int) string",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 11,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-generic-call-p1",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 30,
+      "character": 35,
+      "leafText": "func",
+      "activeParameter": null,
+      "items": []
+    },
+    {
+      "id": "syn-sig-inside-funclit-stop",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 31,
+      "character": 9,
+      "leafText": "helper",
+      "activeParameter": null,
+      "items": []
+    },
+    {
+      "id": "syn-sig-inside-compositelit-stop",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 46,
+      "character": 32,
+      "leafText": "\"beta\"",
+      "activeParameter": null,
+      "items": []
+    },
+    {
+      "id": "syn-sig-generic-method-p0",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 36,
+      "character": 9,
+      "leafText": "42",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.generics.instantiated.GoInstantiatedFunctionType",
+          "text": "v int",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 5,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-method-expr-p0",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 37,
+      "character": 24,
+      "leafText": "&",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.generics.instantiated.GoInstantiatedFunctionType",
+          "text": "*Box[T], int",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 7,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-method-expr-p1",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 37,
+      "character": 30,
+      "leafText": "99",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.generics.instantiated.GoInstantiatedFunctionType",
+          "text": "*Box[T], int",
+          "rawHtml": null,
+          "highlightStart": 9,
+          "highlightEnd": 12,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-iface-variadic-p2",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 39,
+      "character": 24,
+      "leafText": "2",
+      "activeParameter": 2,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "prefix string, args ...any",
+          "rawHtml": null,
+          "highlightStart": 15,
+          "highlightEnd": 26,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-func-var-p1",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 40,
+      "character": 11,
+      "leafText": "\"tag\"",
+      "activeParameter": 1,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoFunctionTypeImpl",
+          "text": "count int, tag string",
+          "rawHtml": null,
+          "highlightStart": 11,
+          "highlightEnd": 21,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-named-func-type-p0",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 41,
+      "character": 8,
+      "leafText": "7",
+      "activeParameter": 0,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoFunctionTypeImpl",
+          "text": "x int",
+          "rawHtml": null,
+          "highlightStart": 0,
+          "highlightEnd": 5,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-builtin-make-p2",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 48,
+      "character": 24,
+      "leafText": "4",
+      "activeParameter": 2,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "t Type, size ...IntegerType",
+          "rawHtml": null,
+          "highlightStart": 8,
+          "highlightEnd": 27,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "syn-sig-builtin-append-p3",
+      "kind": "signature",
+      "path": "main.go",
+      "line": 49,
+      "character": 27,
+      "leafText": "3",
+      "activeParameter": 3,
+      "items": [
+        {
+          "itemClass": "com.goide.psi.impl.GoLightType$LightFunctionType",
+          "text": "slice []Type, elems ...Type",
+          "rawHtml": null,
+          "highlightStart": 14,
+          "highlightEnd": 27,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}
