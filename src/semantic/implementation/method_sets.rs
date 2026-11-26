@@ -622,14 +622,40 @@ impl<'w> Resolver<'w, '_> {
         substitutions: &Substitutions<'w>,
     ) -> Result<Option<TypeIdentity<'w>>> {
         let index = self.indexes.file_index(file)?;
-        Ok(materialize_type(
+        let dot_imports = matches!(&reference.kind, TypeRefKind::Named(named) if
+            named.qualifier.is_none() && is_exported(&named.name)
+            && !substitutions.iter().any(|(name, _)| name == &named.name))
+            && index
+                .imports
+                .iter()
+                .any(|import| import.alias.as_deref() == Some("."));
+        let mut ty = materialize_type(
             self.workspace,
             package,
             file,
             &index.imports,
             reference,
             substitutions,
-        ))
+        );
+        if dot_imports
+            && let Some(ty) = &mut ty
+            && let TypeKind::Named { name, .. } = &ty.kind
+        {
+            let imports = index.imports.clone();
+            if self.type_info(package, name)?.is_none()
+                && let Some((declaration, _)) =
+                    self.indexes
+                        .find_dot_import(self.workspace, package, &imports, name)?
+                && let Some(owner) = imports
+                    .iter()
+                    .filter(|import| import.alias.as_deref() == Some("."))
+                    .filter_map(|import| self.workspace.resolve_import(package, &import.path))
+                    .find(|owner| self.indexes.files(owner).contains(&declaration))
+            {
+                ty.package = owner;
+            }
+        }
+        Ok(ty)
     }
 
     fn canonical_signature(

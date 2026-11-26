@@ -1,64 +1,106 @@
-type MethodShape = (usize, usize, bool);
+use std::collections::HashSet;
 
+use super::super::source::import_path;
+
+pub(super) type Arity = (usize, usize, bool);
+
+#[derive(Default)]
 pub(super) struct InterfaceSpellings {
-    // Missing spellings mean the scan could not rule out a match.
-    methods: Option<Vec<(String, Option<MethodShape>)>>,
+    pub(super) methods: Vec<(String, Option<Arity>)>,
+    pub(super) qualifiers: HashSet<String>,
+    pub(super) import_paths: HashSet<String>,
 }
 
-impl Default for InterfaceSpellings {
-    fn default() -> Self {
-        Self {
-            methods: Some(Vec::new()),
-        }
+pub(super) fn interface_spellings(text: &str) -> Option<InterfaceSpellings> {
+    if !text.contains("interface")
+        && !(text.contains("type") && (text.contains('.') || text.contains("error")))
+    {
+        return Some(InterfaceSpellings::default());
     }
+    scan(text).ok()
 }
 
-impl InterfaceSpellings {
-    pub(super) fn matches(&self, matches: impl Fn(&str, Option<MethodShape>) -> bool) -> bool {
-        self.methods
-            .as_ref()
-            .is_none_or(|methods| methods.iter().any(|(name, shape)| matches(name, *shape)))
-    }
-}
-
-/// Collects explicit spellings for reuse across queries. Callers looking for
-/// aliases or promoted methods must also keep importers of matching packages.
-pub(super) fn interface_spellings(text: &str) -> InterfaceSpellings {
-    if !text.contains("interface") {
-        return InterfaceSpellings::default();
-    }
-    InterfaceSpellings {
-        methods: scan(text).ok(),
-    }
-}
-
-fn scan(text: &str) -> Result<Vec<(String, Option<MethodShape>)>, ()> {
-    let mut methods = Vec::new();
+fn scan(text: &str) -> Result<InterfaceSpellings, ()> {
+    let mut spellings = InterfaceSpellings::default();
     let mut lexer = Lexer { rest: text };
-    let mut interface_depth = 0;
+    let mut interface_start = None;
+    let mut braces = 0;
+    let mut group_depth = 0;
+    let mut mentions_error = false;
+    let mut declaration = "";
+    let mut previous = None;
+    let mut import_aliases = Vec::new();
     while let Some(token) = lexer.next()? {
         match token.kind {
+            Kind::Word(word @ ("type" | "import" | "var" | "const" | "func"))
+                if braces == 0 && group_depth == 0 =>
+            {
+                declaration = word
+            }
+            Kind::Literal(literal) if declaration == "import" => match previous {
+                Some(Kind::Word(alias)) if alias != "import" && alias != "_" => {
+                    import_aliases.push((alias, literal))
+                }
+                Some(Kind::Byte(b'.')) => import_aliases.push((".", literal)),
+                _ => {}
+            },
             Kind::Word("interface") => {
-                if lexer.next()?.map(|token| token.kind) != Some(Kind::Byte(b'{')) {
+                if lexer.peek()?.map(|token| token.kind) != Some(Kind::Byte(b'{')) {
                     return Err(());
                 }
-                interface_depth += 1;
+                interface_start.get_or_insert(braces);
             }
-            Kind::Byte(b'{') if interface_depth != 0 => interface_depth += 1,
-            Kind::Byte(b'}') if interface_depth != 0 => interface_depth -= 1,
-            Kind::Word(name) if interface_depth != 0 => {
-                let mut signature = lexer;
-                if signature.next()?.map(|token| token.kind) == Some(Kind::Byte(b'(')) {
-                    methods.push((name.to_owned(), method_shape(signature)));
+            Kind::Byte(b'{') => braces += 1,
+            Kind::Byte(b'}') => {
+                braces -= 1;
+                if interface_start == Some(braces) {
+                    interface_start = None;
+                }
+            }
+            Kind::Byte(b'(' | b'[') => group_depth += 1,
+            Kind::Byte(b')' | b']') => group_depth -= 1,
+            // A named base, a type argument or an embedded interface can supply methods.
+            Kind::Word(name)
+                if interface_start.is_some() || (declaration == "type" && braces == 0) =>
+            {
+                mentions_error |= name == "error";
+                let mut tail = lexer;
+                match tail.next()?.map(|t| t.kind) {
+                    Some(Kind::Byte(b'.')) => {
+                        spellings.qualifiers.insert(name.to_owned());
+                    }
+                    Some(Kind::Byte(b'(')) if interface_start.is_some() => {
+                        spellings
+                            .methods
+                            .push((name.to_owned(), method_shape(tail)));
+                    }
+                    _ => {}
                 }
             }
             _ => {}
         }
+        if braces < 0 || group_depth < 0 {
+            return Err(());
+        }
+        previous = Some(token.kind);
     }
-    if interface_depth != 0 {
+    if braces != 0 || group_depth != 0 {
         return Err(());
     }
-    Ok(methods)
+    // The predeclared error interface supplies this method outside the import graph.
+    if mentions_error {
+        spellings
+            .methods
+            .push(("Error".into(), Some((0, 1, false))));
+    }
+    for (alias, literal) in import_aliases {
+        if alias == "." || spellings.qualifiers.contains(alias) {
+            spellings
+                .import_paths
+                .insert(import_path(literal).ok_or(())?);
+        }
+    }
+    Ok(spellings)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -66,7 +108,7 @@ enum Kind<'a> {
     Word(&'a str),
     Byte(u8),
     Ellipsis,
-    Literal,
+    Literal(&'a str),
 }
 
 #[derive(Clone, Copy)]
@@ -112,11 +154,14 @@ impl<'a> Lexer<'a> {
                     .count();
                 (Kind::Word(&self.rest[..len]), len)
             }
-            b'`' => (Kind::Literal, self.rest[1..].find('`').ok_or(())? + 2),
-            b'\'' | b'"' => (
-                Kind::Literal,
-                quoted_len(self.rest.as_bytes(), first).ok_or(())?,
-            ),
+            b'`' | b'\'' | b'"' => {
+                let len = if first == b'`' {
+                    self.rest[1..].find('`').ok_or(())? + 2
+                } else {
+                    quoted_len(self.rest.as_bytes(), first).ok_or(())?
+                };
+                (Kind::Literal(&self.rest[..len]), len)
+            }
             b'.' if self.rest.starts_with("...") => (Kind::Ellipsis, 3),
             b'!'..=b'~' => (Kind::Byte(first), 1),
             // Let the real parser handle Unicode identifiers and unusual bytes.
@@ -145,7 +190,7 @@ fn quoted_len(text: &[u8], quote: u8) -> Option<usize> {
     None
 }
 
-fn method_shape(mut lexer: Lexer<'_>) -> Option<MethodShape> {
+fn method_shape(mut lexer: Lexer<'_>) -> Option<Arity> {
     let (parameters, variadic) = parameter_list(&mut lexer)?;
     let token = lexer.peek().ok()??;
     let results = match token.kind {
@@ -260,13 +305,15 @@ fn identifier(kind: Kind<'_>) -> Option<()> {
 mod tests {
     use super::*;
 
-    fn matches(spellings: &InterfaceSpellings, name: &str, shape: MethodShape) -> bool {
-        spellings.matches(|candidate, fingerprint| {
-            name == candidate && fingerprint.is_none_or(|candidate| shape == candidate)
+    fn matches(spellings: &Option<InterfaceSpellings>, name: &str, shape: Arity) -> bool {
+        spellings.as_ref().is_none_or(|spellings| {
+            spellings.methods.iter().any(|(candidate, arity)| {
+                name == candidate && arity.is_none_or(|candidate| shape == candidate)
+            })
         })
     }
 
-    fn finds(source: &str, name: &str, shape: MethodShape) -> bool {
+    fn finds(source: &str, name: &str, shape: Arity) -> bool {
         matches(&interface_spellings(source), name, shape)
     }
 
