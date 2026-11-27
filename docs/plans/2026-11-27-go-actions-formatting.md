@@ -60,6 +60,8 @@
 - [x] **GoLand 基线与脱敏**：在 GoLand `GO-263.7307.354` 上通过脱敏脚本 `tools/capture_goland_actions.groovy` 采集 `tools/fixtures/actions/` 的 `GoImportOptimizer` 与 `gofmt` / QuickFix 对照基线，归档至 `docs/goland-actions-baseline.md`，不含硬编码个人路径。
 - [x] **性能与全量回归**：按 [导航性能对照](../PLANS.md#导航性能对照) 记录 `formatting`、`organizeImports` 与 `codeAction` 耗时；`cargo check --workspace --locked`、`cargo test --workspace --locked` 零告警；`tools/check_workspace_updates.py`（含新增 `actions` 模块）与既有全部回归通过。
 
+- [x] 在 A、F、B、D 合并后的同一发布配置上对照 `gofmt` 路径缓存前后的首查、暖态和编辑后耗时。验证目录、环境切换和回退，并重放四条功能线及历史导航用例。
+
 ## 实现依据
 
 ### GoLand 安装包静态核查（`GO-263.7307.354`）
@@ -115,3 +117,8 @@ python -B .\tools\check_goland_actions.py $server --workspace .\tools\fixtures\a
 - 2026-11-27 验证 Wave 0 操作夹具与采集脚本。`go test ./helper/...` 通过。GoLand `GO-263.7307.354` 的格式化和导入整理共 4 个用例，各完成 30 次重复计时且结果一致。格式化正文与 Go SDK 的 `gofmt` 一致，导入整理保留两种导入注释与 cgo 前导注释及 `import "C"`。[操作夹具](../../tools/fixtures/actions/) · [采集脚本](../../tools/capture_goland_actions.groovy)
 - [x] 2026-11-27 验证 Wave 3 操作工具。格式化、导入整理和 QuickFix 共 9 项通过精确文本校验，导入整理的编辑范围避开 cgo 前导注释和 `import "C"`。使用 GoLand `GO-263.7307.354` 和 Go `1.26.3` 对照两项格式化的首查与热查耗时，rs-gopls 完成 270 次编辑后查询。[操作校验](../../tools/check_goland_actions.py) · [操作基准](../../tools/compare_actions.py)
 - 2026-11-27 完成 D-WP1（`4809672`，`import_edits` 19 项单测）、D-WP2+3（`f1e3054`，`formatting` + `code_action`）及 Wave 3 接线与单变量短声明 QuickFix 修复（`a5a8e45`）。发布版 SHA-256 `0A0532A807D96E98D0301E527CA2E082F6D08A356B43AC58A64690B98768C362`，`source.organizeImports` 暖态 P50 `0.1789 ms`、`quickfix` 暖态 P50 `0.3862 ms`、`formatting`（`gofmt`）P50 `106.6592 ms`，主进程峰值工作集 `10.44 MiB`；全工作区 120/120 Rust 测试、32/32 Python 单测、29/29 工作区回归与 9/9 操作严格对照全部通过。归档基线文档 [GoLand 操作基线](../goland-actions-baseline.md)，状态更新为「已完成」。
+
+- 2026-11-27 在包含四条功能线的合并提交 `3eeb2e5` 与启用路径缓存的发布版上，用相同的 2 个格式化用例各执行 60 次暖态和 60 次未保存编辑后查询。暖态 P50 / P95 从 `120.5525 / 193.7707 ms` 降至 `25.8410 / 29.0452 ms`。缓存单测覆盖工作目录别名、显式 SDK、环境切换和 PATH 回退。[格式化实测](../goland-actions-baseline.md)
+- 合并发布版 SHA-256 为 `CE1A7C089F88C97474B3A7198F8BDD19BAFA6917B067A87A593864EFA347113E`。Cargo 工作区检查、190 项 Rust 测试及 release 构建均通过，编译零告警。32 项 Python 单测、34 项工作区回归（历史 23 项按原序执行）、126 项补全核心校验、11 项诊断、20 项层级、9 项操作和第六阶段 124 项声明跳转均通过。补全回放包含 68 项已记录的行为差异，诊断的两项差异来自额外的包加载错误。
+- 同机使用运行中的 GoLand `GO-263.7307.354` 与 Go 1.26.3 复测调用及类型层级，20 项的目标和范围与归档采集一致。两端结果完全一致的 10 项提供 300 次暖态对照。其余 10 项的调用范围或嵌入关系有已记录差异。准备调用层级的 120 次暖态查询中，rs-gopls P50 / P95 为 0.1802 / 0.2251 ms，GoLand 为 0.4850 / 0.8849 ms。逐项数据保存在 Cargo 产物目录的 `hierarchy-integration-bench.json`。
+- 补全采集脱敏后，两份夹具的 126 / 22 个查询、3,122 / 1,073 条候选及接受编辑结果均与原始采集逐项一致。GoLand 使用 Go 1.27.4 现场重放了选择器和含注释单条导入两个采集用例，自动导入可接受，输出保留可重定位的路径。

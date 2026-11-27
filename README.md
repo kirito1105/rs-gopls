@@ -2,9 +2,10 @@
 
 Go language server prototype in Rust. It follows the GoLand Go plugin's separation between syntax, declaration indexes, and reference resolution.
 
-- `src/workspace.rs` loads the package graph and active source files through `go list`, using the Go SDK and build environment on PATH.
-- `src/semantic.rs` parses Go into a Tree-sitter syntax tree, extracts lightweight per-file declaration indexes, and binds local and package names and resolves fields, methods, and call-result selectors. Open files use editor content. Ranged edits update the existing syntax tree and line index.
-- `src/main.rs` handles LSP requests over stdio with UTF-16 positions.
+- `src/main.rs` manages the stdio LSP session, negotiates capabilities, and receives document and workspace notifications. `src/dispatch.rs` registers request handlers and their capabilities.
+- `src/scheduler.rs` coordinates background package loads and cancellable searches, including requests waiting for a package graph or SDK index.
+- `src/workspace.rs` uses `go list` to select files, track package identities and load errors, and resolve imports across workspace folders.
+- `src/semantic.rs` manages document snapshots and cache invalidation. The modules in `src/semantic/` share Tree-sitter syntax, declaration indexes, and name and type resolution. Ranged edits update the open buffer and its UTF-16 line index.
 
 ## Build and verify
 
@@ -40,7 +41,7 @@ python -B .\tools\check_definitions.py $server --stage 6
 python -B .\tools\check_workspace_updates.py $server
 ~~~
 
-Use the optional workspace argument on the first command to check the matching localchat/server source revision. See the [first-stage definition roadmap](docs/plans/2026-11-25-go-definition.md), [second-stage plan](docs/plans/2026-11-25-go-definition-phase-two.md), and [third-stage navigation plan](docs/plans/2026-11-25-go-navigation-phase-three.md). The [GoLand navigation baseline](docs/goland-definition-baseline.md) records real-project targets.
+Use the optional workspace argument on the first command to check the real project revision recorded in the navigation baseline. See the [first-stage definition roadmap](docs/plans/2026-11-25-go-definition.md), [second-stage plan](docs/plans/2026-11-25-go-definition-phase-two.md), and [third-stage navigation plan](docs/plans/2026-11-25-go-navigation-phase-three.md). The [GoLand navigation baseline](docs/goland-definition-baseline.md) records real-project targets.
 
 ## Type definition
 
@@ -61,6 +62,22 @@ The server provides `textDocument/hover` and `textDocument/signatureHelp` (trigg
 ## Document outline and workspace symbols
 
 `textDocument/documentSymbol` lists the current file's declarations in source order as a nested or flat outline, according to client capabilities. `workspace/symbol` searches active project and test packages by simple or qualified name and returns exact declaration locations. Both use unsaved editor buffers. [GoLand symbol baseline and benchmarks](docs/goland-symbols-baseline.md)
+
+## Context completion
+
+Completion offers names in scope, struct fields, methods, and importable packages and symbols. Clients can resolve documentation and auto-import edits on demand. The server checks that the document and package graph still match before returning an edit. [GoLand completion baseline](docs/goland-completion-baseline.md)
+
+## Real-time diagnostics
+
+Clients can pull diagnostics or receive published reports for open Go files. Reports cover syntax, package loading, name resolution, and type errors. Quick fixes use the same diagnostic data. [GoLand diagnostics baseline](docs/goland-diagnostics-baseline.md)
+
+## Call and type hierarchy across workspace folders
+
+Call hierarchy groups incoming and outgoing calls by declaration. Type hierarchy follows interface and struct embedding. Adding or removing a workspace folder refreshes the active package graph. [GoLand hierarchy and multi-folder baseline](docs/goland-hierarchy-baseline.md)
+
+## Formatting and code actions
+
+Document formatting runs the Go SDK's `gofmt` on the unsaved buffer and preserves its line endings. Organize Imports groups standard, third-party, and local imports while preserving comments and cgo preambles. Quick fixes can add missing imports, remove unused imports, and repair unused variables or short declarations. [GoLand formatting and code actions baseline](docs/goland-actions-baseline.md)
 
 ## Test in Zed on Windows
 
