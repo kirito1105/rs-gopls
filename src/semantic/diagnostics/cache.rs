@@ -46,9 +46,10 @@ impl DiagnosticsCache {
 
     #[allow(dead_code, reason = "document lifecycle entry point")]
     pub(crate) fn invalidate_document(&mut self, path_key: &Path) {
-        if self.reports.remove(path_key).is_some() {
-            self.order.retain(|key| key != path_key);
-        }
+        // A resolved report can depend on bindings in any open buffer.
+        self.reports
+            .retain(|key, report| key != path_key && report.is_partial);
+        self.order.retain(|key| self.reports.contains_key(key));
     }
 
     #[allow(dead_code, reason = "workspace lifecycle entry point")]

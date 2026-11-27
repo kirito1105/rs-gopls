@@ -1,0 +1,4 @@
+# example.test/vendordep v0.0.0 => ./.deps/vendordep
+## explicit; go 1.25.0
+example.test/vendordep/visible
+# example.test/vendordep => ./.deps/vendordep

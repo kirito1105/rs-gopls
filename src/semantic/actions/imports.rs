@@ -1,18 +1,24 @@
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
+use std::sync::LazyLock;
+
 use lsp_types::TextEdit;
+use regex::Regex;
 use tree_sitter::Node;
 
 use crate::semantic::snapshot::DocumentSnapshot;
-use crate::semantic::source::{import_path, node_text};
+use crate::semantic::source::{decoded_import_path, node_text};
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum ImportOperation<'a> {
     AddImport {
+        path: &'a str,
+        alias: Option<&'a str>,
+    },
+    CompleteImport {
         path: &'a str,
         alias: Option<&'a str>,
     },
@@ -28,16 +34,35 @@ pub(crate) enum ImportEditError {
     InvalidImportPath,
     InvalidImportAlias,
     UnsafeSyntaxTree,
+    ConflictingBinding {
+        path: String,
+        alias: Option<String>,
+        existing_path: String,
+        existing_alias: Option<String>,
+    },
 }
 
 impl fmt::Display for ImportEditError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::MissingPackageClause => "missing Go package clause",
-            Self::InvalidImportPath => "invalid Go import path",
-            Self::InvalidImportAlias => "invalid Go import alias",
-            Self::UnsafeSyntaxTree => "cannot safely edit the Go package or import declarations",
-        })
+        match self {
+            Self::MissingPackageClause => f.write_str("missing Go package clause"),
+            Self::InvalidImportPath => f.write_str("invalid Go import path"),
+            Self::InvalidImportAlias => f.write_str("invalid Go import alias"),
+            Self::ConflictingBinding {
+                path,
+                alias,
+                existing_path,
+                existing_alias,
+            } => {
+                write!(
+                    f,
+                    "import {path:?} with alias {alias:?} conflicts with {existing_path:?} with alias {existing_alias:?}"
+                )
+            }
+            Self::UnsafeSyntaxTree => {
+                f.write_str("cannot safely edit the Go package or import declarations")
+            }
+        }
     }
 }
 
@@ -53,53 +78,12 @@ pub(crate) fn import_edits(
         Some((first, _)) if first.ends_with('\r') => "\r\n",
         _ => "\n",
     };
-    let mut header = Header::parse(document)?;
+    let header = Header::parse(document)?;
     match operation {
-        ImportOperation::AddImport { path, alias } => {
-            if !valid_path(path) {
-                return Err(ImportEditError::InvalidImportPath);
-            }
-            if alias.is_some_and(|name| !valid_alias(name)) {
-                return Err(ImportEditError::InvalidImportAlias);
-            }
-            if header
-                .declarations
-                .iter()
-                .flat_map(|d| &d.block.specs)
-                .any(|s| s.equivalent(path, alias))
-            {
-                return Ok(Vec::new());
-            }
-
-            let mut spec = Spec::new(path.to_owned(), alias, format!("\"{path}\"").into());
-            let target = header
-                .declarations
-                .iter()
-                .position(|d| d.grouped && !d.cgo())
-                .or_else(|| header.declarations.iter().position(|d| !d.cgo()));
-            if path != "C"
-                && let Some(index) = target
-            {
-                let decl = &mut header.declarations[index];
-                spec.group = insertion_group(path, &decl.block.specs);
-                decl.block.specs.push(spec);
-                decl.block.sort();
-                let replacement = decl.block.render(eol, decl.grouped);
-                return Ok(replace(document, decl.bytes.clone(), replacement, eol)
-                    .into_iter()
-                    .collect());
-            }
-
-            let end = header
-                .declarations
-                .last()
-                .map_or(header.package_end, |d| d.bytes.end);
-            let gap = whitespace_after(text, end);
-            let mut replacement = format!("{eol}{eol}import {}{eol}", spec.line(&[]));
-            if gap.end < text.len() {
-                replacement.push_str(eol);
-            }
-            Ok(vec![TextEdit::new(document.byte_range(gap), replacement)])
+        ImportOperation::AddImport { path, alias }
+        | ImportOperation::CompleteImport { path, alias } => {
+            let completion = matches!(operation, ImportOperation::CompleteImport { .. });
+            header.add(document, path, alias, eol, completion)
         }
         ImportOperation::OrganizeImports {
             unused_paths,
@@ -156,7 +140,7 @@ pub(crate) fn import_edits(
 }
 
 struct Header<'a> {
-    package_end: usize,
+    package: Node<'a>,
     declarations: Vec<Declaration<'a>>,
 }
 
@@ -167,7 +151,7 @@ impl<'a> Header<'a> {
         if root.is_error() {
             return Err(ImportEditError::UnsafeSyntaxTree);
         }
-        let mut package_end = None;
+        let mut package = None;
         let mut declarations = Vec::new();
         let mut previous_end = 0;
         let mut in_body = false;
@@ -181,34 +165,110 @@ impl<'a> Header<'a> {
             match node.kind() {
                 "comment" => continue,
                 "package_clause" => {
-                    if in_body || package_end.is_some() || node.has_error() {
+                    if in_body || package.is_some() || node.has_error() {
                         return Err(ImportEditError::UnsafeSyntaxTree);
                     }
+                    if !node.named_children(&mut node.walk()).any(|child| {
+                        child.kind() == "package_identifier"
+                            && node_text(child, text) != "_"
+                            && valid_identifier(node_text(child, text))
+                    }) {
+                        return Err(ImportEditError::MissingPackageClause);
+                    }
                     (previous_end, _) = declaration_tail(node, text);
-                    package_end = Some(previous_end);
+                    package = Some(node);
                 }
                 "import_declaration" => {
                     if in_body || node.has_error() {
                         return Err(ImportEditError::UnsafeSyntaxTree);
                     }
-                    package_end.ok_or(ImportEditError::MissingPackageClause)?;
+                    package.ok_or(ImportEditError::MissingPackageClause)?;
                     let decl = Declaration::parse(node, text, previous_end)?;
                     previous_end = decl.bytes.end;
                     declarations.push(decl);
                 }
+                "ERROR" if error_contains_import(node) => {
+                    return Err(ImportEditError::UnsafeSyntaxTree);
+                }
+                _ if package.is_none() => return Err(ImportEditError::MissingPackageClause),
                 _ => in_body = true,
             }
         }
         Ok(Self {
-            package_end: package_end.ok_or(ImportEditError::MissingPackageClause)?,
+            package: package.ok_or(ImportEditError::MissingPackageClause)?,
             declarations,
         })
+    }
+
+    fn add(
+        &self,
+        document: &DocumentSnapshot<'_>,
+        path: &str,
+        alias: Option<&str>,
+        eol: &str,
+        completion: bool,
+    ) -> Result<Vec<TextEdit>, ImportEditError> {
+        if !valid_path(path) {
+            return Err(ImportEditError::InvalidImportPath);
+        }
+        if alias.is_some_and(|name| {
+            path == "C" || name == "init" || (name != "." && !valid_identifier(name))
+        }) {
+            return Err(ImportEditError::InvalidImportAlias);
+        }
+        let specs = || self.declarations.iter().flat_map(|decl| &decl.block.specs);
+        if specs().any(|s| {
+            s.path == path && (s.alias == alias || (!completion && s.equivalent(path, alias)))
+        }) {
+            return Ok(Vec::new());
+        }
+        if let Some(existing) = specs().find(|s| binding_conflicts(s, path, alias)) {
+            return Err(ImportEditError::ConflictingBinding {
+                path: path.to_owned(),
+                alias: alias.map(str::to_owned),
+                existing_path: existing.path.clone(),
+                existing_alias: existing.alias.map(str::to_owned),
+            });
+        }
+        let text = document.text();
+        let spec = match alias {
+            Some(alias) => format!("{alias} \"{path}\""),
+            None => format!("\"{path}\""),
+        };
+        let target = self
+            .declarations
+            .iter()
+            .filter(|decl| path != "C" && !decl.cgo())
+            .min_by_key(|decl| {
+                let group = insertion_group(path, &decl.block.specs);
+                (
+                    decl.close.is_none(),
+                    !decl.block.specs.iter().any(|spec| spec.group == group),
+                )
+            });
+        let (bytes, new_text) = if let Some(decl) = target {
+            let key = (insertion_group(path, &decl.block.specs), path, alias);
+            if let Some(close) = decl.close {
+                insert_in_block(&decl.block.specs, close, text, eol, &spec, key)
+            } else {
+                group_single(decl, text, eol, &spec, key, completion)
+            }
+        } else {
+            insert_declaration(
+                self.declarations.last().map_or(self.package, |d| d.node),
+                text,
+                eol,
+                &spec,
+            )
+        };
+        Ok(vec![TextEdit::new(document.byte_range(bytes), new_text)])
     }
 }
 
 struct Declaration<'a> {
     bytes: Range<usize>,
-    grouped: bool,
+    node: Node<'a>,
+    close: Option<Node<'a>>,
     block: ImportBlock<'a>,
 }
 
@@ -217,7 +277,7 @@ impl<'a> Declaration<'a> {
         self.block.specs.iter().any(|s| s.path == "C")
     }
 
-    fn parse(node: Node<'_>, text: &'a str, previous_end: usize) -> Result<Self, ImportEditError> {
+    fn parse(node: Node<'a>, text: &'a str, previous_end: usize) -> Result<Self, ImportEditError> {
         let mut start = node;
         let mut block = ImportBlock::default();
         while let Some(comment) = start.prev_named_sibling() {
@@ -231,7 +291,7 @@ impl<'a> Declaration<'a> {
             start = comment;
         }
         block.leading.reverse();
-        let mut grouped = false;
+        let mut close = None;
         for child in node.named_children(&mut node.walk()) {
             match child.kind() {
                 "comment" => block.leading.push(comment_text(child, text)),
@@ -242,7 +302,12 @@ impl<'a> Declaration<'a> {
                     block.specs.push(spec);
                 }
                 "import_spec_list" => {
-                    grouped = true;
+                    close = Some(
+                        child
+                            .children(&mut child.walk())
+                            .find(|n| n.kind() == ")" && !n.is_missing())
+                            .ok_or(ImportEditError::UnsafeSyntaxTree)?,
+                    );
                     block.read_list(child, text)?;
                 }
                 _ => return Err(ImportEditError::UnsafeSyntaxTree),
@@ -250,7 +315,7 @@ impl<'a> Declaration<'a> {
         }
         let (end, trailing) = declaration_tail(node, text);
         if let [spec] = &mut block.specs[..]
-            && !grouped
+            && close.is_none()
         {
             spec.trailing = trailing;
         } else {
@@ -258,7 +323,8 @@ impl<'a> Declaration<'a> {
         }
         Ok(Self {
             bytes: start.start_byte()..end,
-            grouped,
+            node,
+            close,
             block,
         })
     }
@@ -295,6 +361,9 @@ struct ImportBlock<'a> {
 
 impl<'a> ImportBlock<'a> {
     fn read_list(&mut self, list: Node<'_>, text: &'a str) -> Result<(), ImportEditError> {
+        let mut previous_end = list
+            .child(0)
+            .map_or(list.start_byte(), |open| trailing_end(open, text));
         let mut pending = Vec::new();
         let mut last_line = list.start_position().row;
         let mut gap = false;
@@ -317,6 +386,9 @@ impl<'a> ImportBlock<'a> {
                 }
                 "import_spec" => {
                     let mut spec = Spec::parse(child, text)?;
+                    spec.bytes.start = leading_start(child, previous_end, text);
+                    spec.indent = spec.indent.or_else(|| line_indent(text, spec.bytes.start));
+                    previous_end = spec.bytes.end;
                     pending.append(&mut spec.leading);
                     spec.leading = std::mem::take(&mut pending);
                     in_local |= gap
@@ -385,34 +457,34 @@ impl<'a> ImportBlock<'a> {
 struct Spec<'a> {
     path: String,
     alias: Option<&'a str>,
-    literal: Cow<'a, str>,
+    literal: &'a str,
+    bytes: Range<usize>,
+    indent: Option<&'a str>,
     leading: Vec<&'a str>,
     trailing: Vec<&'a str>,
     group: Group,
 }
 
 impl<'a> Spec<'a> {
-    fn new(path: String, alias: Option<&'a str>, literal: Cow<'a, str>) -> Self {
-        let group = classify(&path, &[]);
-        Self {
-            path,
-            alias,
-            literal,
-            leading: Vec::new(),
-            trailing: Vec::new(),
-            group,
-        }
-    }
-
     fn parse(node: Node<'_>, text: &'a str) -> Result<Self, ImportEditError> {
         let literal = node
             .child_by_field_name("path")
             .ok_or(ImportEditError::UnsafeSyntaxTree)?;
-        let path = literal_path(literal, text)
-            .filter(|p| valid_path(p))
-            .ok_or(ImportEditError::InvalidImportPath)?;
-        let alias = node.child_by_field_name("name").map(|n| node_text(n, text));
-        let mut spec = Self::new(path, alias, node_text(literal, text).into());
+        let literal = node_text(literal, text);
+        let path = decoded_import_path(literal).ok_or(ImportEditError::UnsafeSyntaxTree)?;
+        if !valid_path(&path) {
+            return Err(ImportEditError::InvalidImportPath);
+        }
+        let mut spec = Self {
+            group: classify(&path, &[]),
+            path,
+            alias: node.child_by_field_name("name").map(|n| node_text(n, text)),
+            literal,
+            bytes: node.start_byte()..trailing_end(node, text),
+            indent: line_indent(text, node.start_byte()),
+            leading: Vec::new(),
+            trailing: Vec::new(),
+        };
         spec.leading.extend(
             node.named_children(&mut node.walk())
                 .filter(|n| n.kind() == "comment")
@@ -466,51 +538,19 @@ fn with_trailing_comments<'a>(
     line
 }
 
-// Go's numeric escapes may spell individual UTF-8 bytes as well as Unicode scalars.
-fn literal_path(node: Node<'_>, text: &str) -> Option<String> {
-    let literal = node_text(node, text);
-    if node.kind() == "raw_string_literal" || !literal.contains('\\') {
-        return import_path(literal);
-    }
-    let mut rest = literal.strip_prefix('"')?.strip_suffix('"')?;
-    let mut bytes = Vec::with_capacity(rest.len());
-    while let Some((plain, escape)) = rest.split_once('\\') {
-        bytes.extend_from_slice(plain.as_bytes());
-        let (digits, radix, width) = match escape.as_bytes().first()? {
-            b'x' => (&escape[1..], 16, 2),
-            b'u' => (&escape[1..], 16, 4),
-            b'U' => (&escape[1..], 16, 8),
-            _ => (escape, 8, 3),
-        };
-        let (digits, tail) = digits.split_at_checked(width)?;
-        let value = u32::from_str_radix(digits, radix).ok()?;
-        if width <= 3 {
-            bytes.push(u8::try_from(value).ok()?);
-        } else {
-            bytes.extend_from_slice(char::from_u32(value)?.encode_utf8(&mut [0; 4]).as_bytes());
-        }
-        rest = tail;
-    }
-    bytes.extend_from_slice(rest.as_bytes());
-    String::from_utf8(bytes).ok()
-}
-
 fn valid_path(path: &str) -> bool {
+    const FORBIDDEN: &str = concat!(r##"!"#$%&'()*,:;<=>?[\]^{|}"##, "\x60\u{fffd}");
+    static GRAPHIC: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[\p{L}\p{M}\p{N}\p{P}\p{S}]+\z").unwrap());
     !path.split('/').any(str::is_empty)
-        && !path.chars().any(|c| {
-            c.is_control()
-                || c.is_whitespace()
-                || "!\"#$%&'()*,:;<=>?[\\]^\x60{|}\u{fffd}".contains(c)
-        })
+        && GRAPHIC.is_match(path)
+        && !path.contains(|ch| FORBIDDEN.contains(ch))
 }
 
-fn valid_alias(name: &str) -> bool {
-    if name == "." {
-        return true;
-    }
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c == '_' || c.is_alphabetic())
-        && chars.all(|c| c == '_' || c.is_alphanumeric())
+fn valid_identifier(name: &str) -> bool {
+    static IDENTIFIER: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\A[_\p{L}][_\p{L}\p{Nd}]*\z").unwrap());
+    IDENTIFIER.is_match(name)
         && !matches!(
             name,
             "break"
@@ -629,6 +669,226 @@ fn insertion_group(path: &str, existing: &[Spec<'_>]) -> Group {
         .filter(|(shared, _)| *shared > 0)
         .max()
         .map_or(default, |(_, group)| group.0)
+}
+
+fn binding_conflicts(existing: &Spec<'_>, path: &str, alias: Option<&str>) -> bool {
+    if existing.alias == Some("_") || alias == Some("_") {
+        return false;
+    }
+    if existing.path == path {
+        return existing.alias != alias;
+    }
+    // Default package names require package resolution, which the AST edit
+    // contract leaves to the caller. Explicit named aliases are known here.
+    alias.is_some_and(|alias| alias != "." && existing.alias == Some(alias))
+}
+
+fn error_contains_import(node: Node<'_>) -> bool {
+    node.children(&mut node.walk())
+        .any(|child| match child.kind() {
+            "import" | "import_declaration" => true,
+            "ERROR" => error_contains_import(child),
+            _ => false,
+        })
+}
+
+fn leading_start(node: Node<'_>, previous_end: usize, text: &str) -> usize {
+    let mut start = node.start_byte();
+    let mut sibling = node.prev_named_sibling();
+    while let Some(comment) = sibling.filter(|node| node.kind() == "comment") {
+        if comment.start_byte() < previous_end || has_blank_line(&text[comment.end_byte()..start]) {
+            break;
+        }
+        start = comment.start_byte();
+        sibling = comment.prev_named_sibling();
+    }
+    start
+}
+
+fn trailing_end(node: Node<'_>, text: &str) -> usize {
+    let mut end = node.end_byte();
+    let mut sibling = node.next_named_sibling();
+    while let Some(comment) = sibling.filter(|node| node.kind() == "comment") {
+        let gap = text[end..comment.start_byte()].trim_matches([' ', '\t']);
+        if !(gap.is_empty() || (gap == ";" && node_text(comment, text).starts_with("//"))) {
+            break;
+        }
+        end = comment.end_byte();
+        if text[..end].ends_with('\r') && text.as_bytes().get(end) == Some(&b'\n') {
+            end -= 1;
+        }
+        sibling = comment.next_named_sibling();
+    }
+    end
+}
+
+fn has_blank_line(gap: &str) -> bool {
+    gap.split_inclusive('\n')
+        .skip(1)
+        .any(|line| line.ends_with('\n') && line.trim().is_empty())
+}
+
+type ImportKey<'a> = (Group, &'a str, Option<&'a str>);
+
+impl Spec<'_> {
+    fn key(&self) -> ImportKey<'_> {
+        (self.group, &self.path, self.alias)
+    }
+}
+
+fn insert_declaration(node: Node<'_>, text: &str, eol: &str, spec: &str) -> (Range<usize>, String) {
+    let mut at = trailing_end(node, text);
+    let rest = text[at..].trim_start_matches([' ', '\t']);
+    if let Some(rest) = rest.strip_prefix(';') {
+        at = text.len() - rest.len();
+    }
+    let rest = &text[at..];
+    let next = rest.trim_start_matches([' ', '\t', '\r', '\n']);
+    let gap = &rest[..rest.len() - next.len()];
+    let newlines = gap.bytes().filter(|byte| *byte == b'\n').take(2).count();
+    let (end, needed) = if next.is_empty() {
+        (text.len(), 1)
+    } else if newlines == 0 {
+        (text.len() - next.len(), 2)
+    } else {
+        // Keep the original line's trailing spaces on that line.
+        at += rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        (at, 2 - newlines)
+    };
+    (
+        at..end,
+        format!("{eol}{eol}import {spec}{}", eol.repeat(needed)),
+    )
+}
+
+fn group_single(
+    decl: &Declaration<'_>,
+    text: &str,
+    eol: &str,
+    spec: &str,
+    key: ImportKey<'_>,
+    completion: bool,
+) -> (Range<usize>, String) {
+    let original = &decl.block.specs[0];
+    let end = trailing_end(decl.node, text);
+    let first_child = decl.node.named_child(0).expect("single import spec");
+    let mut existing = String::new();
+    let mut start = decl.node.start_byte();
+    // Completion edits leave the declaration's documentation in place. A quick fix
+    // moves that documentation with the original spec when constructing the group.
+    if !completion && decl.bytes.start < start {
+        let docs = text[decl.bytes.start..start].trim_end();
+        existing.push_str(&docs.replace(eol, &format!("{eol}\t")));
+        existing.push_str(eol);
+        existing.push('\t');
+        start = decl.bytes.start;
+    }
+    existing.push_str(&text[first_child.start_byte()..end]);
+    let (first, second) = if key < original.key() {
+        (spec, existing.as_str())
+    } else {
+        (existing.as_str(), spec)
+    };
+    let gap = if key.0 != original.group { eol } else { "" };
+    (
+        start..end,
+        format!("import ({eol}\t{first}{eol}{gap}\t{second}{eol})"),
+    )
+}
+
+fn insert_in_block(
+    specs: &[Spec<'_>],
+    close: Node<'_>,
+    text: &str,
+    eol: &str,
+    spec: &str,
+    key: ImportKey<'_>,
+) -> (Range<usize>, String) {
+    let indent = specs
+        .iter()
+        .filter_map(|entry| entry.indent)
+        .find(|indent| !indent.is_empty())
+        .unwrap_or("\t");
+    let group = specs
+        .chunk_by(|left, right| !has_blank_line(&text[left.bytes.end..right.bytes.start]))
+        .find(|group| group.iter().any(|entry| entry.key().0 == key.0));
+    if let Some(group) = group {
+        if let Some(after) = group.iter().find(|entry| entry.key() > key) {
+            return insert_before(after.bytes.start, text, eol, indent, spec, false);
+        }
+        return insert_after(
+            group.last().unwrap().bytes.end,
+            text,
+            eol,
+            indent,
+            spec,
+            false,
+        );
+    }
+    if let Some(next) = specs.iter().find(|s| s.group > key.0) {
+        return insert_before(next.bytes.start, text, eol, indent, spec, true);
+    }
+    match specs.last() {
+        Some(last)
+            if let Some(close_indent) = line_indent(text, close.start_byte())
+                && text[last.bytes.end..close.start_byte()].trim().is_empty()
+                && has_blank_line(&text[last.bytes.end..close.start_byte()]) =>
+        {
+            let at = close.start_byte() - close_indent.len();
+            (at..at, format!("{indent}{spec}{eol}"))
+        }
+        Some(last) => insert_after(last.bytes.end, text, eol, indent, spec, true),
+        _ => {
+            let (at, prefix) = line_indent(text, close.start_byte())
+                .map_or((close.start_byte(), eol), |indent| {
+                    (close.start_byte() - indent.len(), "")
+                });
+            (at..at, format!("{prefix}{indent}{spec}{eol}"))
+        }
+    }
+}
+
+fn line_indent(text: &str, at: usize) -> Option<&str> {
+    let line_start = text[..at].rfind('\n').map_or(0, |index| index + 1);
+    let indent = &text[line_start..at];
+    indent
+        .bytes()
+        .all(|byte| matches!(byte, b' ' | b'\t'))
+        .then_some(indent)
+}
+
+fn insert_before(
+    at: usize,
+    text: &str,
+    eol: &str,
+    indent: &str,
+    spec: &str,
+    separate: bool,
+) -> (Range<usize>, String) {
+    let gap = if separate { eol } else { "" };
+    if let Some(previous_indent) = line_indent(text, at) {
+        let start = at - previous_indent.len();
+        (start..start, format!("{indent}{spec}{eol}{gap}"))
+    } else {
+        (at..at, format!("{eol}{indent}{spec}{eol}{gap}{indent}"))
+    }
+}
+
+fn insert_after(
+    mut at: usize,
+    text: &str,
+    eol: &str,
+    indent: &str,
+    spec: &str,
+    separate: bool,
+) -> (Range<usize>, String) {
+    let rest = text[at..].trim_start_matches([' ', '\t']);
+    if rest.starts_with(['\r', '\n']) {
+        at = text.len() - rest.len();
+    }
+    let gap = if separate { eol } else { "" };
+    let suffix = if rest.starts_with(')') { eol } else { "" };
+    (at..at, format!("{eol}{gap}{indent}{spec}{suffix}"))
 }
 
 fn whitespace_after(text: &str, end: usize) -> Range<usize> {
@@ -1114,5 +1374,373 @@ mod tests {
             apply("package p\nimport \"bad path\"\n", add("fmt", None)),
             Err(ImportEditError::InvalidImportPath)
         );
+    }
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use lsp_types::Position;
+
+    use super::*;
+    use crate::semantic::Engine;
+    use crate::test_support::TestProject;
+
+    fn with_document<T>(text: &str, f: impl FnOnce(&DocumentSnapshot<'_>) -> T) -> T {
+        let project = TestProject::new();
+        let path = project.root.join("sample.go");
+        let mut engine = Engine::new(project.root.clone());
+        engine.open(path.clone(), text.into(), 1).unwrap();
+        let mut snapshot = engine.snapshot();
+        let document = snapshot.document(&path).unwrap().unwrap();
+        f(&document)
+    }
+
+    fn add(text: &str, path: &str, alias: Option<&str>) -> Result<Vec<TextEdit>, ImportEditError> {
+        with_document(text, |doc| {
+            import_edits(doc, ImportOperation::CompleteImport { path, alias })
+        })
+    }
+
+    fn byte_offset(text: &str, position: Position) -> usize {
+        let start = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(byte, _)| byte + 1))
+            .nth(position.line as usize)
+            .expect("valid line");
+        let line = text[start..]
+            .split('\n')
+            .next()
+            .unwrap()
+            .trim_end_matches('\r');
+        let mut column = 0;
+        for (byte, ch) in line.char_indices() {
+            if column == position.character {
+                return start + byte;
+            }
+            column += ch.len_utf16() as u32;
+        }
+        assert_eq!(column, position.character, "valid UTF-16 boundary");
+        start + line.len()
+    }
+
+    fn apply(text: &str, edits: &[TextEdit]) -> String {
+        let mut output = String::new();
+        let mut from = 0;
+        for edit in edits {
+            let start = byte_offset(text, edit.range.start);
+            let end = byte_offset(text, edit.range.end);
+            assert!(from <= start && start <= end, "ordered, disjoint edits");
+            output.push_str(&text[from..start]);
+            output.push_str(&edit.new_text);
+            from = end;
+        }
+        output.push_str(&text[from..]);
+        output
+    }
+
+    fn assert_added(text: &str, path: &str, alias: Option<&str>, expected: &str) {
+        let edits = add(text, path, alias).unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(apply(text, &edits), expected);
+        assert_eq!(add(expected, path, alias).unwrap(), []);
+    }
+
+    #[test]
+    fn needs_a_valid_package_before_any_declarations() {
+        for text in [
+            "",
+            "// no package\n",
+            "var x int\npackage p\n",
+            "package _\n",
+        ] {
+            assert_eq!(
+                add(text, "fmt", None),
+                Err(ImportEditError::MissingPackageClause),
+                "{text:?}"
+            );
+        }
+        assert_eq!(
+            add("package\n", "fmt", None),
+            Err(ImportEditError::UnsafeSyntaxTree)
+        );
+    }
+
+    #[test]
+    fn inserts_first_import_with_a_single_trailing_newline_at_eof() {
+        assert_added(
+            "package p",
+            "io",
+            Some("io"),
+            "package p\n\nimport io \"io\"\n",
+        );
+        assert_added(
+            "package p\n",
+            "io",
+            Some("名٣"),
+            "package p\n\nimport 名٣ \"io\"\n",
+        );
+        for eol in ["\n", "\r\n"] {
+            for suffix in [eol.to_owned(), eol.repeat(2)] {
+                let text = format!("package p{suffix}");
+                let expected = format!("package p{eol}{eol}import io \"io\"{eol}");
+                assert_added(&text, "io", Some("io"), &expected);
+            }
+        }
+    }
+
+    #[test]
+    fn separates_package_and_declaration_comments_in_lf_and_crlf() {
+        let text =
+            "package /* 🧠猫 */ p // trailing 🦀\n// Doc belongs to the function.\nfunc F() {}\n";
+        let expected = "package /* 🧠猫 */ p // trailing 🦀\n\nimport \"fmt\"\n\n// Doc belongs to the function.\nfunc F() {}\n";
+        assert_added(text, "fmt", None, expected);
+        assert_added(
+            &text.replace('\n', "\r\n"),
+            "fmt",
+            None,
+            &expected.replace('\n', "\r\n"),
+        );
+        assert_added(
+            "package p; /* decl docs */ var a int\n",
+            "fmt",
+            None,
+            "package p;\n\nimport \"fmt\"\n\n/* decl docs */ var a int\n",
+        );
+    }
+
+    #[test]
+    fn groups_single_import_with_its_exact_alias_literal_and_comments() {
+        let text = concat!(
+            "package p\n\n// import declaration docs\n",
+            "import /* 🐱 lead */ alias /* keep */ \x60example.test/a\x60 // 尾 🦀\n",
+            "\nfunc f() {}\n",
+        );
+        let expected = concat!(
+            "package p\n\n// import declaration docs\n",
+            "import (\n\t\"fmt\"\n\n\t/* 🐱 lead */ alias /* keep */ \x60example.test/a\x60 // 尾 🦀\n)\n",
+            "\nfunc f() {}\n",
+        );
+        assert_added(text, "fmt", None, expected);
+        assert_added(
+            &text.replace('\n', "\r\n"),
+            "fmt",
+            None,
+            &expected.replace('\n', "\r\n"),
+        );
+        assert_added(
+            "package p\nimport /* immediately after import */\n\n\"io\"\n",
+            "fmt",
+            None,
+            "package p\nimport (\n\t\"fmt\"\n\t/* immediately after import */\n\n\"io\"\n)\n",
+        );
+    }
+
+    #[test]
+    fn preserves_the_blank_import_when_adding_a_named_binding_for_its_path() {
+        assert_added(
+            "package p\nimport _ \"fmt\" // side effects\n",
+            "fmt",
+            Some("printer"),
+            "package p\nimport (\n\t_ \"fmt\" // side effects\n\tprinter \"fmt\"\n)\n",
+        );
+        assert_added(
+            "package p\nimport _ \"fmt\"\n",
+            "fmt",
+            None,
+            "package p\nimport (\n\t\"fmt\"\n\t_ \"fmt\"\n)\n",
+        );
+    }
+
+    #[test]
+    fn preserves_import_groups_and_inserts_before_the_comments_for_the_next_spec() {
+        let text = concat!(
+            "package p\nimport (\n",
+            "    \"bytes\" // existing stdlib import\n    // Relative docs\n    _ \"os\"\n",
+            "\n    \"example.test/b\"\n    // belongs to the dot import 😀\n    . \"example.test/z\"\n",
+            "\n    \"local/module\"\n)\n",
+        );
+        let expected = text.replace("    // Relative", "    \"fmt\"\n    // Relative");
+        assert_added(text, "fmt", None, &expected);
+        let expected = text.replace(
+            "    // belongs",
+            "    client \"example.test/c\"\n    // belongs",
+        );
+        assert_added(text, "example.test/c", Some("client"), &expected);
+        assert_added(
+            "package p\nimport ( // group header\n\t// belongs to os\n\t\"os\"\n)\n",
+            "fmt",
+            None,
+            "package p\nimport ( // group header\n\t\"fmt\"\n\t// belongs to os\n\t\"os\"\n)\n",
+        );
+    }
+
+    #[test]
+    fn creates_a_missing_group_without_moving_existing_specs() {
+        assert_added(
+            "package p\nimport (\n\t// belongs to module\n\t\"example.test/module\"\n)\n",
+            "fmt",
+            None,
+            "package p\nimport (\n\t\"fmt\"\n\n\t// belongs to module\n\t\"example.test/module\"\n)\n",
+        );
+        assert_added(
+            "package p\nimport (\n  \"fmt\" // keep here\n)\n",
+            "example.test/module",
+            None,
+            "package p\nimport (\n  \"fmt\" // keep here\n\n  \"example.test/module\"\n)\n",
+        );
+        assert_added(
+            "package p\r\nimport (\r\n\t\"fmt\"\r\n\r\n)\r\n",
+            "example.test/module",
+            None,
+            "package p\r\nimport (\r\n\t\"fmt\"\r\n\r\n\t\"example.test/module\"\r\n)\r\n",
+        );
+    }
+
+    #[test]
+    fn chooses_the_first_matching_block_and_preserves_cgo_preamble() {
+        let text = concat!(
+            "package p\n\n/*\n#include <stdio.h>\n*/\nimport \"C\" // cgo\n",
+            "import ()\n",
+            "import (\n\t\"example.test/a\"\n)\n",
+            "import (\n  \"io\"\n)\n",
+            "import (\n    \"os\"\n)\n",
+        );
+        let expected = text.replace("  \"io\"", "  \"fmt\"\n  \"io\"");
+        assert_added(text, "fmt", None, &expected);
+
+        let cgo_only = "package p\n\n// preamble\nimport \"C\" // cgo\n// F doc\nfunc F() {}\n";
+        let expected = "package p\n\n// preamble\nimport \"C\" // cgo\n\nimport \"fmt\"\n\n// F doc\nfunc F() {}\n";
+        assert_added(cgo_only, "fmt", None, expected);
+    }
+
+    #[test]
+    fn handles_compact_and_empty_import_blocks() {
+        assert_added(
+            "package p\nimport ()\n",
+            "fmt",
+            None,
+            "package p\nimport (\n\t\"fmt\"\n)\n",
+        );
+        assert_added(
+            "package p\nimport (\"bytes\"; /* keep with os */ \"os\")\n",
+            "fmt",
+            None,
+            "package p\nimport (\"bytes\"; \n\t\"fmt\"\n\t/* keep with os */ \"os\")\n",
+        );
+        assert_added(
+            "package p; import \"os\"; var x int\n",
+            "fmt",
+            None,
+            "package p; import (\n\t\"fmt\"\n\t\"os\"\n); var x int\n",
+        );
+    }
+
+    #[test]
+    fn detects_duplicates_by_go_decoded_path_and_explicit_alias() {
+        let text = concat!(
+            "package p\n",
+            "import (\n\t_ \"\\x66mt\"\n\t. \"\\143ontext\"\n\talias \x60io\x60\n\t\"net/\\u0068ttp\"\n)\n",
+        );
+        for (path, alias) in [
+            ("fmt", Some("_")),
+            ("context", Some(".")),
+            ("io", Some("alias")),
+            ("net/http", None),
+        ] {
+            assert_eq!(add(text, path, alias).unwrap(), []);
+        }
+        assert!(matches!(
+            add(text, "context", None),
+            Err(ImportEditError::ConflictingBinding { .. })
+        ));
+        assert!(matches!(
+            add(text, "io", None),
+            Err(ImportEditError::ConflictingBinding { .. })
+        ));
+        assert!(matches!(
+            add(text, "os", Some("alias")),
+            Err(ImportEditError::ConflictingBinding { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_malformed_import_declarations_and_invalid_add_requests() {
+        for text in [
+            "package p\nimport (\n\"fmt\"\n",
+            "package p\nimport (\n\"fmt\"\nfunc f() {}\n",
+            "package p\nimport (\n\"io\"\n???\n)\n",
+            "package p\nimport \"\\invalid\"\n",
+            "package p\nimport ",
+            "package p\nimport \"",
+            "package p\nfunc f() {}\nimport \"io\"\n",
+        ] {
+            assert_eq!(
+                add(text, "fmt", None),
+                Err(ImportEditError::UnsafeSyntaxTree),
+                "{text:?}"
+            );
+        }
+        for path in [
+            "",
+            "two words",
+            "bad\"path",
+            "bad\npath",
+            "bad\\path",
+            "bad\x60path",
+            "bad\u{200d}path",
+        ] {
+            assert_eq!(
+                add("package p\n", path, None),
+                Err(ImportEditError::InvalidImportPath)
+            );
+        }
+        for alias in [
+            "",
+            "2x",
+            "two names",
+            "var",
+            "init",
+            "bad-name",
+            "x½",
+            "x\u{0345}",
+        ] {
+            assert_eq!(
+                add("package p\n", "fmt", Some(alias)),
+                Err(ImportEditError::InvalidImportAlias)
+            );
+        }
+        let edits = with_document("package p\n", |doc| {
+            import_edits(
+                doc,
+                ImportOperation::OrganizeImports {
+                    unused_paths: &[],
+                    local_prefixes: &[],
+                },
+            )
+        })
+        .unwrap();
+        assert!(edits.is_empty());
+    }
+
+    #[test]
+    fn utf16_import_edit_and_main_completion_edit_apply_to_the_same_snapshot() {
+        let text = "package p; import /* 🦀猫 */ \"io\"; var x = \"😀\" + fmt.Pr";
+        with_document(text, |document| {
+            let mut edits = import_edits(
+                document,
+                ImportOperation::CompleteImport {
+                    path: "fmt",
+                    alias: None,
+                },
+            )
+            .unwrap();
+            let start = text.find("Pr").unwrap();
+            let main = TextEdit::new(document.byte_range(start..text.len()), "Print".into());
+            assert!(edits[0].range.end.character < main.range.start.character);
+            edits.push(main);
+            assert_eq!(
+                apply(text, &edits),
+                "package p; import (\n\t\"fmt\"\n\t/* 🦀猫 */ \"io\"\n); var x = \"😀\" + fmt.Print",
+            );
+        });
     }
 }

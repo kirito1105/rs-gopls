@@ -38,6 +38,19 @@ LEGACY_CASES = (
     "implementation-cancel",
     "implementation-active-cancel",
 )
+COMPLETION_CASES = (
+    "completion_unsaved_edits_and_incremental_typing",
+    "completion_capability_negotiation",
+    "completion_resolve_and_stale_protection",
+    "completion_graph_refresh_auto_import",
+    "completion_cancellation_and_stale_tasks",
+)
+FEATURE_CASES = {
+    "actions": ("document-formatting", "code-actions"),
+    "completion": COMPLETION_CASES,
+    "diagnostics": ("diagnostics-push", "diagnostics-pull"),
+    "hierarchy": ("hierarchy-workspace-folders", "call-type-hierarchy"),
+}
 
 
 @contextmanager
@@ -63,6 +76,8 @@ class WorkspaceDiscoveryTests(unittest.TestCase):
         self.assertEqual(tuple(check_workspace_updates.CASES), tuple(cases))
         for name, case in cases.items():
             self.assertIs(check_workspace_updates.CASES[name], case.check)
+        for module, expected in FEATURE_CASES.items():
+            self.assertEqual(tuple(name for name, case in cases.items() if case.module == module), expected)
         for name in LEGACY_CASES:
             case = cases[name]
             self.assertIs(getattr(check_workspace_updates, case.check.__name__), case.check)

@@ -210,6 +210,47 @@ fn real_workspace_matches_every_diagnostics_fixture() {
 }
 
 #[test]
+fn cached_diagnostics_follow_unsaved_sibling_bindings() {
+    let project = TestProject::new();
+    let source = project.write("source.go", "package sample\nconst Value = 1\n");
+    let caller = project.write("caller.go", "package sample\nvar X = Value\n");
+    let mut engine = Engine::new(project.root.clone());
+    engine.install_workspace(
+        engine.workspace_load(),
+        project.workspace(&["source.go", "caller.go"], false),
+    );
+    assert!(
+        engine
+            .diagnostics_report(&caller)
+            .unwrap()
+            .0
+            .items
+            .is_empty()
+    );
+    engine
+        .open(source.clone(), "package sample\n".into(), 1)
+        .unwrap();
+    assert!(
+        engine
+            .diagnostics_report(&caller)
+            .unwrap()
+            .0
+            .items
+            .iter()
+            .any(|d| d.code == NameUnresolved)
+    );
+    engine.close(&source);
+    assert!(
+        engine
+            .diagnostics_report(&caller)
+            .unwrap()
+            .0
+            .items
+            .is_empty()
+    );
+}
+
+#[test]
 fn partial_reports_upgrade_and_cache_checks_all_snapshot_fields() {
     let project = TestProject::new();
     let text = "package sample\nvar X = missing\n";

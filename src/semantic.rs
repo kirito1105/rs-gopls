@@ -16,8 +16,10 @@ use crate::symbols::{
     Container, FunctionSignature, Symbol, SymbolKind, TypeDetails, TypeRef, TypeRefKind,
 };
 use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
+use completion::prefilter::{FileNames, Stamp};
 
 pub(crate) mod actions;
+pub(crate) mod completion;
 mod definition;
 pub(crate) mod diagnostics;
 mod document_symbols;
@@ -97,6 +99,7 @@ pub struct Engine {
     implementation_cache: implementation::ImplementationCache,
     implementation_sources: implementation::InterfaceSources,
     workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex,
+    completion_imports: completion::ImportCache,
     include_tests: bool,
 }
 
@@ -105,10 +108,14 @@ struct EngineState {
     workspace: Option<Workspace>,
     graph_changes: GraphChanges,
     generation: u64,
+    completion_graph_generation: u64,
+    completion_source_generation: u64,
     parser: Parser,
     documents: HashMap<PathBuf, IndexedSource>,
     new_documents: HashSet<PathBuf>,
     disk_index: HashMap<PathBuf, DiskIndex>,
+    completion_names: HashMap<PathBuf, FileNames>,
+    completion_weights: HashMap<completion::InferredMemo, i32>,
 }
 
 impl Engine {
@@ -128,15 +135,20 @@ impl Engine {
                 workspace: None,
                 graph_changes: GraphChanges::default(),
                 generation: 0,
+                completion_graph_generation: 0,
+                completion_source_generation: 0,
                 parser,
                 documents: HashMap::new(),
                 new_documents: HashSet::new(),
                 disk_index: HashMap::new(),
+                completion_names: HashMap::new(),
+                completion_weights: HashMap::new(),
             },
             diagnostics_cache: diagnostics::DiagnosticsCache::default(),
             implementation_cache: implementation::ImplementationCache::default(),
             implementation_sources: implementation::InterfaceSources::default(),
             workspace_symbol_index: workspace_symbols::WorkspaceSymbolIndex::default(),
+            completion_imports: completion::ImportCache::default(),
             include_tests: false,
         }
     }
@@ -163,6 +175,7 @@ impl Engine {
             }
             let source = SyntaxSource::parse(&mut self.state.parser, path, text, None)?;
             self.diagnostics_cache.invalidate_document(&key);
+            self.state.completion_sources_changed(Some(&source.path));
             if new_file {
                 self.state.new_documents.insert(key.clone());
             } else {
@@ -201,6 +214,7 @@ impl Engine {
                 (!self.implementation_cache.is_empty()).then_some(&mut observe as _),
             )?;
             self.diagnostics_cache.invalidate_document(&key);
+            self.state.completion_sources_changed(Some(path));
             self.workspace_symbol_index.document_edited(&key);
             edit.apply(&mut self.implementation_cache, &key);
         }
@@ -213,6 +227,7 @@ impl Engine {
         self.diagnostics_cache.invalidate_document(&key);
         self.implementation_sources.invalidate(&key);
         if self.state.documents.remove(&key).is_some() {
+            self.state.completion_sources_changed(Some(path));
             self.workspace_symbol_index.document_closed(&key);
         }
         if self.state.new_documents.remove(&key) && path.is_file() {
@@ -220,17 +235,33 @@ impl Engine {
             // watched-file notification. Refresh the build's file selection.
             self.file_changed(path, FileChangeType::CREATED);
         }
-        if self
-            .state
-            .disk_index
-            .get(&key)
-            .is_some_and(|index| !index.still_current(path))
+        if self.state.disk_index.contains_key(&key)
+            || self.state.completion_names.contains_key(&key)
         {
-            self.state.disk_index.remove(&key);
+            let fingerprint = fs::read_to_string(path)
+                .ok()
+                .map(|text| text_fingerprint(&text));
+            if self
+                .state
+                .disk_index
+                .get(&key)
+                .is_some_and(|index| Some(index.fingerprint) != fingerprint)
+            {
+                self.state.disk_index.remove(&key);
+                self.completion_imports.source_changed(&key);
+            }
+            if self
+                .state
+                .completion_names
+                .get(&key)
+                .is_some_and(|names| Some(names.fingerprint) != fingerprint)
+            {
+                self.state.completion_names.remove(&key);
+                self.completion_imports.source_changed(&key);
+            }
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code, reason = "single-folder accessor"))]
     pub fn root(&self) -> &Path {
         self.roots()
             .first()
@@ -249,6 +280,9 @@ impl Engine {
             .eq(roots.iter().map(|root| path_key(root)))
         {
             return false;
+        }
+        if self.roots().first().map(|p| path_key(p)) != roots.first().map(|p| path_key(p)) {
+            self.completion_imports = completion::ImportCache::default();
         }
         self.state.roots = roots;
         self.diagnostics_cache.clear();
@@ -275,12 +309,45 @@ impl Engine {
         }
     }
 
+    pub(crate) fn prewarm_completion_sdk(&self, refresh: bool) {
+        self.completion_imports
+            .prewarm(self.root(), refresh && self.state.workspace.is_some());
+    }
+
+    pub(crate) fn completion_wake(&self) -> &crossbeam_channel::Receiver<()> {
+        self.completion_imports.wake()
+    }
+
     pub fn install_workspace(&mut self, load: WorkspaceLoad, workspace: Workspace) -> bool {
         if load.generation != self.state.generation {
             return false;
         }
+        if let Some(root) = self.completion_imports.sdk_root() {
+            workspace.share_sdk_root(&root);
+        }
+        if self.state.workspace.is_some() && !self.state.completion_names.is_empty() {
+            let selected: HashSet<_> = workspace
+                .navigation_packages()
+                .flat_map(|package| package.files.iter().map(|file| path_key(file)))
+                .collect();
+            let sdk = workspace.sdk_root().map(path_key);
+            self.state.completion_names.retain(|path, names| {
+                if sdk.as_ref().is_some_and(|sdk| path.starts_with(sdk)) {
+                    return true;
+                }
+                let current =
+                    fs::metadata(path).is_ok_and(|metadata| names.stamp == Stamp::from(metadata));
+                if !current {
+                    self.state.disk_index.remove(path);
+                    self.completion_imports.source_changed(path);
+                }
+                selected.contains(path) && current
+            });
+        }
         self.implementation_sources.retain_workspace(&workspace);
         self.state.workspace = Some(workspace);
+        self.state.completion_graph_generation += 1;
+        self.state.completion_sources_changed(None);
         self.state.graph_changes = GraphChanges::Clean;
         self.diagnostics_cache.clear();
         self.implementation_cache.clear();
@@ -291,6 +358,8 @@ impl Engine {
     fn invalidate(&mut self, affected: Option<HashSet<String>>) {
         self.implementation_cache.clear();
         self.state.generation += 1;
+        self.state.completion_graph_generation += 1;
+        self.state.completion_sources_changed(None);
         self.state.graph_changes.include(affected);
     }
 
@@ -309,7 +378,10 @@ impl Engine {
         }
 
         self.implementation_cache.clear();
+        self.state.completion_sources_changed(Some(path));
         let key = path_key(path);
+        self.state.completion_names.remove(&key);
+        self.completion_imports.source_changed(&key);
         self.workspace_symbol_index
             .disk_changed(&key, self.state.documents.contains_key(&key));
         self.implementation_sources.invalidate(&key);
@@ -462,5 +534,23 @@ impl Engine {
         QueryProgress<Option<Vec<TypeHierarchyItem>>, hierarchy::type_hierarchy::TypeHierarchyTask>,
     > {
         hierarchy::type_hierarchy::subtypes(self, item)
+    }
+}
+
+impl EngineState {
+    fn completion_sources_changed(&mut self, path: Option<&Path>) {
+        self.completion_source_generation += 1;
+        if self.completion_weights.is_empty() {
+            return;
+        }
+        if let Some(affected) = path
+            .zip(self.workspace.as_ref())
+            .and_then(|(path, graph)| graph.affected_packages(path))
+        {
+            self.completion_weights
+                .retain(|key, _| !affected.contains(key.package_id()));
+        } else {
+            self.completion_weights.clear();
+        }
     }
 }

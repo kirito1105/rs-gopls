@@ -23,14 +23,14 @@ use lsp_server::{Connection, ErrorCode, Message, Notification, Request};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
     DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    InitializeParams, NumberOrString, OneOf, PositionEncodingKind, PublishDiagnosticsParams,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, Uri, WorkspaceFolder, WorkspaceFoldersServerCapabilities,
-    WorkspaceServerCapabilities,
+    DidSaveTextDocumentParams, InitializeParams, NumberOrString, OneOf, PositionEncodingKind,
+    PublishDiagnosticsParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextDocumentSyncSaveOptions, Uri,
+    WorkspaceFolder, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     notification::{
         Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
-        DidCloseTextDocument, DidOpenTextDocument, Exit, Initialized, Notification as _,
-        PublishDiagnostics,
+        DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument, Exit, Initialized,
+        Notification as _, PublishDiagnostics,
     },
     request::{Initialize, Request as _, Shutdown, WorkspaceDiagnosticRefresh},
 };
@@ -41,6 +41,7 @@ use protocol::{
 };
 use scheduler::{Scheduler, WorkspaceResult};
 use semantic::Engine;
+use semantic::completion::CompletionClientCapabilities;
 use workspace::path_key;
 
 #[cfg(test)]
@@ -59,6 +60,7 @@ struct Running {
     watch_files: bool,
     hierarchical_document_symbols: bool,
     diagnostic_updates: DiagnosticUpdates,
+    completion_capabilities: CompletionClientCapabilities,
     scheduler: Scheduler,
 }
 
@@ -165,11 +167,16 @@ fn serve(connection: &Connection) -> Result<()> {
         .send(())
         .context("scheduling navigation searches")?;
     loop {
-        let search_receiver = if matches!(&state, State::Running(running) if !running.scheduler.searches.is_empty())
-        {
-            &search_ready
-        } else {
-            &search_idle
+        let (search_receiver, completion_wake) = match &state {
+            State::Running(running) => (
+                if running.scheduler.ready_search(&running.engine).is_some() {
+                    &search_ready
+                } else {
+                    &search_idle
+                },
+                running.engine.completion_wake(),
+            ),
+            _ => (&search_idle, &search_idle),
         };
         select_biased! {
             recv(connection.receiver) -> message => {
@@ -177,7 +184,13 @@ fn serve(connection: &Connection) -> Result<()> {
                     break;
                 };
                 match message {
-                    Message::Request(request) => handle_request(connection, &mut state, request)?,
+                    Message::Request(request) => {
+                        let initializing = matches!(state, State::Starting) && request.method == Initialize::METHOD;
+                        handle_request(connection, &mut state, request)?;
+                        if initializing && let State::Running(running) = &state {
+                            running.engine.prewarm_completion_sdk(false);
+                        }
+                    }
                     Message::Notification(notification) if notification.method == Exit::METHOD => {
                         ensure!(
                             matches!(state, State::Shutdown),
@@ -203,6 +216,7 @@ fn serve(connection: &Connection) -> Result<()> {
                     running.workspace_loaded(connection, update.context("receiving Go package metadata")?)?;
                 }
             }
+            recv(completion_wake) -> _ => {}
             recv(search_receiver) -> ready => {
                 ready.context("receiving navigation search work")?;
                 if let State::Running(running) = &mut state {
@@ -254,6 +268,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 &mut running.engine,
                 &mut running.scheduler,
                 running.hierarchical_document_symbols,
+                running.completion_capabilities,
                 Request { id, method, params },
             );
         }
@@ -280,6 +295,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|document| document.document_symbol.as_ref())
         .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
+    let completion_capabilities = CompletionClientCapabilities::from_initialize(&params);
     let document = params.capabilities.text_document.as_ref();
     let pull = document.and_then(|d| d.diagnostic.as_ref()).is_some();
     let publish = document
@@ -306,6 +322,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
             TextDocumentSyncOptions {
                 open_close: Some(true),
                 change: Some(TextDocumentSyncKind::INCREMENTAL),
+                save: Some(TextDocumentSyncSaveOptions::Supported(true)),
                 ..Default::default()
             },
         )),
@@ -331,6 +348,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
             hierarchical_document_symbols,
             diagnostic_updates,
             engine: Engine::with_roots(roots),
+            completion_capabilities,
             scheduler: Scheduler::default(),
         },
         result,
@@ -474,6 +492,20 @@ fn handle_notification(
                     connection,
                     PublishDiagnosticsParams::new(params.text_document.uri, Vec::new(), None),
                 )?;
+            }
+            Ok(())
+        }
+        DidSaveTextDocument::METHOD => {
+            let params: DidSaveTextDocumentParams = serde_json::from_value(params)?;
+            let path = file_path(&params.text_document.uri)?;
+            let before = running.engine.workspace_load();
+            running
+                .engine
+                .file_changed(&path, lsp_types::FileChangeType::CHANGED);
+            running.scheduler.document_modified(connection, &path)?;
+            let after = running.engine.workspace_load();
+            if after != before {
+                running.scheduler.workspace_modified(connection, after)?;
             }
             Ok(())
         }

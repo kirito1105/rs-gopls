@@ -1,4 +1,8 @@
-"""Discover workspace cases declared as (name, check[, old order]) tuples."""
+"""Discover CASES from public check modules, including completion.
+
+Each module declares (name, check[, old order]) tuples. New checks follow the
+legacy cases in module and declaration order.
+"""
 
 from collections.abc import Callable
 from dataclasses import dataclass

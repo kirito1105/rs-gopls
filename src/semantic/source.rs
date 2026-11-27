@@ -86,8 +86,52 @@ impl Source {
         previous: Option<&Tree>,
     ) -> Result<Self> {
         let tree = parser.parse(&text, previous).context("parsing Go source")?;
+        Ok(Self::from_tree(path, text, lines, tree))
+    }
+
+    pub(super) fn parse_declarations(
+        parser: &mut Parser,
+        path: PathBuf,
+        text: String,
+        bodies: &[std::ops::Range<usize>],
+    ) -> Result<(Self, bool)> {
+        let lines = LineIndex::new(&text);
+        if !bodies.is_empty() {
+            // Keep both braces and all original byte/UTF-16 offsets. The
+            // declaration grammar and source text are otherwise unchanged.
+            let mut start = 0;
+            let mut included = Vec::with_capacity(bodies.len() + 1);
+            for body in bodies {
+                included.push(tree_sitter::Range {
+                    start_byte: start,
+                    end_byte: body.start,
+                    start_point: lines.point(start),
+                    end_point: lines.point(body.start),
+                });
+                start = body.end;
+            }
+            included.push(tree_sitter::Range {
+                start_byte: start,
+                end_byte: text.len(),
+                start_point: lines.point(start),
+                end_point: lines.point(text.len()),
+            });
+            if parser.set_included_ranges(&included).is_ok() {
+                let tree = parser.parse(&text, None);
+                parser
+                    .set_included_ranges(&[])
+                    .expect("resetting Tree-sitter input ranges");
+                if let Some(tree) = tree.filter(|tree| !tree.root_node().has_error()) {
+                    return Ok((Self::from_tree(path, text, lines, tree), true));
+                }
+            }
+        }
+        Self::parse_with_lines(parser, path, text, lines, None).map(|source| (source, false))
+    }
+
+    fn from_tree(path: PathBuf, text: String, lines: LineIndex, tree: Tree) -> Self {
         let imports = imports(tree.root_node(), &text, &lines);
-        Ok(Self {
+        Self {
             path,
             text,
             lines,
@@ -95,7 +139,7 @@ impl Source {
             imports,
             outline: OnceCell::new(),
             reference_names: OnceCell::new(),
-        })
+        }
     }
 
     // The observer sees each validated change against the current working copy.
@@ -280,7 +324,10 @@ impl Source {
             .then_some(ReferenceQuery::Name(leaf))
     }
     pub(super) fn range(&self, node: Node<'_>) -> Range {
-        self.byte_range(node.byte_range())
+        Range::new(
+            position_on_line(&self.text, node.start_position(), node.start_byte()),
+            position_on_line(&self.text, node.end_position(), node.end_byte()),
+        )
     }
 
     pub(super) fn byte_range(&self, range: std::ops::Range<usize>) -> Range {
@@ -304,34 +351,114 @@ pub(super) fn import_path(literal: &str) -> Option<String> {
     }
 }
 
+pub(super) fn import_specs(declaration: Node<'_>) -> impl Iterator<Item = Node<'_>> {
+    let mut cursor = declaration.walk();
+    let container = declaration
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "import_spec_list")
+        .unwrap_or(declaration);
+    std::iter::successors(container.named_child(0), Node::next_named_sibling)
+        .filter(|child| child.kind() == "import_spec")
+}
+
+// String escapes in Go include byte escapes, which can encode one piece of a
+// UTF-8 character at a time. Decode before comparing import paths.
+pub(super) fn decoded_import_path(literal: &str) -> Option<String> {
+    if let Some(raw) = literal.strip_prefix('`').and_then(|s| s.strip_suffix('`')) {
+        return Some(raw.replace('\r', ""));
+    }
+    let mut contents = literal.strip_prefix('"')?.strip_suffix('"')?;
+    let mut decoded = Vec::with_capacity(contents.len());
+    while let Some((prefix, escape)) = contents.split_once('\\') {
+        decoded.extend_from_slice(prefix.as_bytes());
+        let (kind, rest) = escape.split_at_checked(1)?;
+        let (digits, unicode) = match kind.as_bytes()[0] {
+            b'x' => (2, false),
+            b'u' => (4, true),
+            b'U' => (8, true),
+            b'0'..=b'7' => {
+                let (digits, rest) = escape.split_at_checked(3)?;
+                decoded.push(u8::from_str_radix(digits, 8).ok()?);
+                contents = rest;
+                continue;
+            }
+            _ => {
+                decoded.push(match kind {
+                    "a" => 7,
+                    "b" => 8,
+                    "f" => 12,
+                    "n" => b'\n',
+                    "r" => b'\r',
+                    "t" => b'\t',
+                    "v" => 11,
+                    "\\" => b'\\',
+                    "\"" => b'"',
+                    _ => return None,
+                });
+                contents = rest;
+                continue;
+            }
+        };
+        let (digits, rest) = rest.split_at_checked(digits)?;
+        if !digits.bytes().all(|digit| digit.is_ascii_hexdigit()) {
+            return None;
+        }
+        let value = u32::from_str_radix(digits, 16).ok()?;
+        if unicode {
+            decoded.extend_from_slice(char::from_u32(value)?.encode_utf8(&mut [0; 4]).as_bytes());
+        } else {
+            decoded.push(u8::try_from(value).ok()?);
+        }
+        contents = rest;
+    }
+    decoded.extend_from_slice(contents.as_bytes());
+    String::from_utf8(decoded).ok()
+}
+
+pub(super) fn raw_imports<'a>(
+    root: Node<'a>,
+    text: &'a str,
+    lines: &'a LineIndex,
+) -> impl Iterator<Item = Import> + 'a {
+    std::iter::successors(root.named_child(0), Node::next_named_sibling)
+        .filter(|child| child.kind() == "import_declaration")
+        .flat_map(import_specs)
+        .filter(|spec| !spec.has_error())
+        .filter_map(move |spec| import_from_spec(spec, text, lines, decoded_import_path))
+}
+
+fn import_from_spec(
+    spec: Node<'_>,
+    text: &str,
+    lines: &LineIndex,
+    decode: fn(&str) -> Option<String>,
+) -> Option<Import> {
+    let path = spec.child_by_field_name("path")?;
+    let alias = spec.child_by_field_name("name");
+    let name = alias.unwrap_or(path);
+    Some(Import {
+        alias: alias.map(|node| node_text(node, text).to_owned()),
+        path: decode(node_text(path, text))?,
+        binding: Range::new(
+            lines.position(text, name.start_byte()),
+            lines.position(text, name.end_byte()),
+        ),
+    })
+}
+
 fn imports(root: Node<'_>, text: &str, lines: &LineIndex) -> Vec<Import> {
     fn collect(node: Node<'_>, text: &str, lines: &LineIndex, result: &mut Vec<Import>) {
         match node.kind() {
             "import_declaration" | "import_spec_list" => {
-                let mut cursor = node.walk();
-                for child in node.named_children(&mut cursor) {
+                for child in node.named_children(&mut node.walk()) {
                     collect(child, text, lines, result);
                 }
             }
             "import_spec" => {
-                let Some(path) = node.child_by_field_name("path") else {
-                    return;
-                };
-                let alias = node.child_by_field_name("name");
-                let name = alias.unwrap_or(path);
-                let binding = Range::new(
-                    lines.position(text, name.start_byte()),
-                    lines.position(text, name.end_byte()),
-                );
-                let alias = alias.map(|node| node_text(node, text).to_owned());
-                if let Some(path) = import_path(node_text(path, text))
-                    && alias.as_deref() != Some("_")
+                if let Some(import) = import_from_spec(node, text, lines, import_path)
+                    && import.alias.as_deref() != Some("_")
                 {
-                    result.push(Import {
-                        alias,
-                        path,
-                        binding,
-                    });
+                    result.push(import);
                 }
             }
             _ => {}
@@ -428,15 +555,7 @@ impl LineIndex {
     }
 
     pub(super) fn position(&self, text: &str, offset: usize) -> Position {
-        let point = self.point(offset);
-        let prefix = &text[self.starts[point.row]..offset];
-        let prefix = if text.as_bytes().get(offset) == Some(&b'\n') {
-            prefix.strip_suffix('\r').unwrap_or(prefix)
-        } else {
-            prefix
-        };
-        let column = prefix.encode_utf16().count();
-        Position::new(point.row as u32, column as u32)
+        position_on_line(text, self.point(offset), offset)
     }
 
     pub(super) fn edit(&mut self, start: usize, end: usize, inserted: &str) {
@@ -452,6 +571,21 @@ impl LineIndex {
                 .map(|(index, _)| start + index + 1),
         );
     }
+}
+
+fn position_on_line(text: &str, point: Point, offset: usize) -> Position {
+    let prefix = &text[offset - point.column..offset];
+    let prefix = if text.as_bytes().get(offset) == Some(&b'\n') {
+        prefix.strip_suffix('\r').unwrap_or(prefix)
+    } else {
+        prefix
+    };
+    let column = if prefix.is_ascii() {
+        prefix.len()
+    } else {
+        prefix.encode_utf16().count()
+    };
+    Position::new(point.row as u32, column as u32)
 }
 
 pub(super) fn function_at(source: &Source, origin: Range) -> Option<Node<'_>> {

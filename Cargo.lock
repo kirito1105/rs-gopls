@@ -540,6 +540,7 @@ dependencies = [
  "crossbeam-channel",
  "lsp-server",
  "lsp-types",
+ "regex",
  "serde",
  "serde_json",
  "tree-sitter",

@@ -188,9 +188,11 @@ fn action_import_edits(
 ) -> Result<Vec<TextEdit>> {
     match import_edits(document, operation) {
         Ok(edits) => Ok(edits),
-        Err(ImportEditError::UnsafeSyntaxTree | ImportEditError::MissingPackageClause) => {
-            Ok(Vec::new())
-        }
+        Err(
+            ImportEditError::UnsafeSyntaxTree
+            | ImportEditError::MissingPackageClause
+            | ImportEditError::ConflictingBinding { .. },
+        ) => Ok(Vec::new()),
         Err(error) => Err(error.into()),
     }
 }
@@ -279,14 +281,15 @@ fn import_candidates<'w>(
                 importers.extend(workspace.direct_importers(package));
             }
         }
-        let owner_path = owner.map(|p| package_path(&p.id));
+        let owner_path = owner.map(Package::import_path);
         let file = path_key(file);
         for package in workspace
             .navigation_packages()
             .filter(|p| p.name == qualifier)
         {
-            let path = package_path(&package.id);
-            if package.load_error
+            let path = package.import_path();
+            if owner.is_some_and(|from| !workspace.matches_import_variant(from, path, &package.id))
+                || package.load_error
                 || package.id.contains(" [")
                 || path == "builtin"
                 || path == "C"
@@ -325,12 +328,6 @@ fn import_candidates<'w>(
         .filter(|path| !blocked.contains(path) && seen.insert(*path))
         .take(8)
         .collect()
-}
-
-fn package_path(id: &str) -> &str {
-    // Independent workspace groups and test builds carry qualifiers in their graph IDs.
-    let path = id.split_once(':').map_or(id, |(_, path)| path);
-    path.split_once(" [").map_or(path, |(path, _)| path)
 }
 
 fn internal_visible_from(

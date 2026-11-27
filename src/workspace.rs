@@ -44,16 +44,22 @@ pub struct Package {
     import_map: HashMap<String, String>,
     for_test: String,
     external: bool,
+    group: Option<usize>,
+    standard: bool,
+    module_path: Option<String>,
+    direct_dependency: bool,
 }
 
 pub struct Workspace {
     roots: Vec<PathBuf>,
     module_paths: Vec<String>,
     package_errors: Vec<PackageLoadError>,
+    group_imports: Vec<HashMap<String, String>>,
     packages: BTreeMap<String, Package>,
     file_packages: HashMap<PathBuf, String>,
     importers: HashMap<String, Vec<String>>,
     includes_tests: bool,
+    sdk_root: OnceCell<PathBuf>,
     builtin_source: OnceCell<Result<PathBuf, String>>,
 }
 
@@ -97,8 +103,10 @@ impl Workspace {
         let PackageListing {
             packages,
             importers,
+            sdk_root,
             module_paths,
             mut errors,
+            group_imports,
             ..
         } = listing;
         errors.sort_unstable();
@@ -123,10 +131,12 @@ impl Workspace {
             roots,
             module_paths: module_paths.into_iter().collect(),
             package_errors: errors,
+            group_imports,
             packages,
             file_packages,
             importers,
             includes_tests,
+            sdk_root: sdk_root.map_or_else(OnceCell::new, OnceCell::from),
             builtin_source: OnceCell::new(),
         }
     }
@@ -174,10 +184,24 @@ impl Workspace {
 
     pub(crate) fn builtin_source(&self, root: &Path) -> Result<&Path> {
         self.builtin_source
-            .get_or_init(|| find_builtin_source(root).map_err(|error| format!("{error:#}")))
+            .get_or_init(|| {
+                if let Some(sdk) = self.sdk_root() {
+                    Ok(sdk.join("src").join("builtin").join("builtin.go"))
+                } else {
+                    find_builtin_source(root).map_err(|error| format!("{error:#}"))
+                }
+            })
             .as_ref()
             .map(PathBuf::as_path)
             .map_err(|error| anyhow!("{error}"))
+    }
+
+    pub(crate) fn sdk_root(&self) -> Option<&Path> {
+        self.sdk_root.get().map(PathBuf::as_path)
+    }
+
+    pub(crate) fn share_sdk_root(&self, root: &Path) {
+        let _ = self.sdk_root.set(root.to_owned());
     }
 
     pub fn includes_tests(&self) -> bool {
@@ -197,7 +221,25 @@ impl Workspace {
     }
 
     pub fn resolve_import(&self, from: &Package, import_path: &str) -> Option<&Package> {
-        self.package(from.import_id(import_path))
+        let id = from
+            .import_map
+            .get(import_path)
+            .or_else(|| self.group_imports.get(from.group?)?.get(import_path));
+        self.package(id.map_or(import_path, String::as_str))
+    }
+
+    pub(crate) fn matches_import_variant(
+        &self,
+        from: &Package,
+        import_path: &str,
+        id: &str,
+    ) -> bool {
+        let Some(group) = from.group else { return true };
+        // Only colliding package IDs are qualified with their independent build group.
+        match self.group_imports[group].get(import_path) {
+            Some(selected) => selected == id,
+            None => !id.contains(':'),
+        }
     }
 
     pub(crate) fn package_of_draft(&self, path: &Path, name: &str) -> Option<&Package> {
@@ -316,10 +358,40 @@ impl Package {
             && self.name == other.name
             && self.load_error == other.load_error
             && self.external == other.external
+            && self.standard == other.standard
+            && self.module_path == other.module_path
     }
 
     pub(crate) fn directory_and_name(&self) -> (&Path, &str) {
         (&self.directory, &self.name)
+    }
+
+    pub(crate) fn import_path(&self) -> &str {
+        let path = self
+            .id
+            .split_once(':')
+            .map_or(self.id.as_str(), |(_, path)| path);
+        path.split_once(" [").map_or(path, |(path, _)| path)
+    }
+
+    pub(crate) fn is_production(&self) -> bool {
+        self.for_test.is_empty()
+    }
+
+    pub(crate) fn is_standard(&self) -> bool {
+        self.standard
+    }
+
+    pub(crate) fn is_external(&self) -> bool {
+        self.external
+    }
+
+    pub(crate) fn module_path(&self) -> Option<&str> {
+        self.module_path.as_deref()
+    }
+
+    pub(crate) fn is_direct_dependency(&self) -> bool {
+        self.direct_dependency
     }
 
     fn import_id<'a>(&'a self, path: &'a str) -> &'a str {
@@ -427,6 +499,7 @@ struct ListedPackage {
 struct ListedModule {
     path: String,
     main: bool,
+    indirect: bool,
     version: String,
     replace: Option<Box<ListedModule>>,
 }
@@ -518,6 +591,8 @@ fn error_path(file: &str, root: &Path, dir: &Path) -> Option<PathBuf> {
 #[derive(Default)]
 struct PackageListing {
     packages: BTreeMap<String, Package>,
+    sdk_root: Option<PathBuf>,
+    group_imports: Vec<HashMap<String, String>>,
     alternate_ids: HashMap<String, Vec<String>>,
     importers: HashMap<String, Vec<String>>,
     module_paths: BTreeSet<String>,
@@ -531,6 +606,22 @@ impl PackageListing {
         let stream = serde_json::Deserializer::from_reader(reader).into_iter::<ListedPackage>();
         for package in stream {
             let mut package = package.context("decoding go list package metadata")?;
+            if package.goroot && self.sdk_root.is_none() {
+                let import = package.import_path.split(" [").next().unwrap_or_default();
+                let relative = Path::new(import);
+                if !import.is_empty()
+                    && package.dir.is_absolute()
+                    && package.dir.ends_with(relative)
+                {
+                    self.sdk_root = package
+                        .dir
+                        .ancestors()
+                        .nth(relative.components().count())
+                        .filter(|src| src.file_name().is_some_and(|name| name == "src"))
+                        .and_then(Path::parent)
+                        .map(Path::to_owned);
+                }
+            }
             let load_error = package.error.is_some();
             if let Some(error) = package.error.take() {
                 self.errors
@@ -577,9 +668,20 @@ impl PackageListing {
                 external: package.goroot
                     || package
                         .module
-                        .is_some_and(|module| module.in_module_cache()),
+                        .as_ref()
+                        .is_some_and(ListedModule::in_module_cache),
+                group,
+                standard: package.goroot,
+                direct_dependency: package
+                    .module
+                    .as_ref()
+                    .is_some_and(|m| !m.main && !m.indirect),
+                module_path: package.module.map(|m| m.path).filter(|p| !p.is_empty()),
             };
             self.insert(owner, package.imports, group, &mut aliases);
+        }
+        if group.is_some() {
+            self.group_imports.push(aliases);
         }
         Ok(())
     }
@@ -594,9 +696,10 @@ impl PackageListing {
         if !aliases.is_empty() {
             owner.remap_imports(&imports, aliases);
         }
-        if let Some(existing) = self.packages.get(&owner.id) {
+        if let Some(existing) = self.packages.get_mut(&owner.id) {
             let Some(group) = group else { return };
             if existing.same_build(&owner) {
+                existing.direct_dependency |= owner.direct_dependency;
                 return;
             }
             // Independent modules may bind the same Go import path to different sources.
@@ -605,6 +708,7 @@ impl PackageListing {
                 .iter()
                 .find(|id| self.packages[*id].same_build(&owner))
             {
+                self.packages.get_mut(id).unwrap().direct_dependency |= owner.direct_dependency;
                 aliases.insert(owner.id, id.clone());
                 return;
             }
@@ -812,6 +916,9 @@ mod tests {
             let file = project.root.join(folder).join("app.go");
             let owner = workspace.package_of_file(&file).unwrap();
             let dep = workspace.resolve_import(owner, "example.test/dep").unwrap();
+            assert_eq!(dep.import_path(), "example.test/dep");
+            assert_eq!(dep.module_path(), Some("example.test/dep"));
+            assert!(dep.is_direct_dependency());
             let dep_file = project.root.join(format!("dep-{folder}/dep.go"));
             assert_eq!(dep.id, workspace.package_of_file(&dep_file).unwrap().id);
             assert_eq!(
