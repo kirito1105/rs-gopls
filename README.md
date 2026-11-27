@@ -83,7 +83,23 @@ Call hierarchy groups incoming and outgoing calls by declaration. Type hierarchy
 
 Document formatting runs the Go SDK's `gofmt` on the unsaved buffer and preserves its line endings. Organize Imports groups standard, third-party, and local imports while preserving comments and cgo preambles. Quick fixes can add missing imports, remove unused imports, and repair unused variables or short declarations. [GoLand formatting and code actions baseline](docs/goland-actions-baseline.md)
 
-## Try safe rename in VS Code on Windows
+## Try rs-gopls in VS Code on Windows
+
+### Official Go extension
+
+With the Go extension (`golang.go` 0.58.0), set `go.alternateTools.gopls` to the absolute path of the server. From this repository, build the release executable and print the corresponding VS Code workspace setting.
+
+```powershell
+cargo build -p rs-gopls --release --locked
+$target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
+@{ 'go.alternateTools' = @{ gopls = (Join-Path $target 'release/rs-gopls.exe') } } | ConvertTo-Json
+```
+
+Open the Go project in a trusted workspace. Run **Preferences: Open Workspace Settings (JSON)** and merge the printed entry into the workspace settings. Run **Go: Restart Language Server**, then use **Go: Locate Configured Go Tools** to check the path shown for `gopls`.
+
+To try cross-package implementation navigation, open `tools/fixtures/implementation-navigation` as the Go workspace and apply the setting above. In `api/notifier.go`, press **Ctrl+F12** on `Notifier` to see the two `Sender` types in the `email` and `sms` packages. Press it on `Notify` to see their value- and pointer-receiver methods. [Example interface](tools/fixtures/implementation-navigation/api/notifier.go)
+
+### Generic LSP Client
 
 After building the release executable, run these commands from the repository root. They create a fresh copy of the two-package Go example and open it in a dedicated VS Code profile. The Generic LSP Client starts this repository's release binary over stdio.
 
