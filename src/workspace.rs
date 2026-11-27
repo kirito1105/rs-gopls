@@ -10,6 +10,9 @@ use serde::Deserialize;
 
 use crate::workspace_roots::{folder_groups, list_roots_for_folders};
 
+mod inputs;
+use inputs::PackageInputs;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WorkspaceLoad {
     pub generation: u64,
@@ -51,6 +54,7 @@ pub struct Package {
 }
 
 pub struct Workspace {
+    rename_inputs: Option<Result<PackageInputs, String>>,
     roots: Vec<PathBuf>,
     module_paths: Vec<String>,
     package_errors: Vec<PackageLoadError>,
@@ -70,21 +74,42 @@ impl Workspace {
     }
 
     pub(crate) fn load_roots(folders: &[PathBuf], include_tests: bool) -> Result<Self> {
+        Self::load_graph(folders, include_tests, false)
+    }
+
+    pub(crate) fn load_roots_for_rename(folders: &[PathBuf], include_tests: bool) -> Result<Self> {
+        Self::load_graph(folders, include_tests, true)
+    }
+
+    fn load_graph(folders: &[PathBuf], include_tests: bool, track_inputs: bool) -> Result<Self> {
+        let configuration = track_inputs.then(|| PackageInputs::configuration(folders));
         let mut roots = BTreeSet::new();
         let mut listing = PackageListing::default();
         let groups = folder_groups(folders)?;
-        for (index, group) in groups.iter().enumerate() {
+        let mut queries = Vec::with_capacity(groups.len());
+        for group in &groups {
             let directories = list_roots_for_folders(group)?;
+            roots.extend(
+                directories
+                    .iter()
+                    .map(|dir| path_key(&dir.canonicalize().unwrap_or_else(|_| dir.clone()))),
+            );
+            queries.push((&group[0], directories));
+        }
+        let roots: Vec<_> = roots.into_iter().collect();
+        let inputs = configuration.map(|config| {
+            config
+                .and_then(|inputs| inputs.with_sources(&roots))
+                .map_err(|err| err.to_string())
+        });
+        for (index, (folder, directories)) in queries.iter().enumerate() {
             list_packages(
-                &group[0],
-                &directories,
+                folder,
+                directories,
                 include_tests,
                 (groups.len() > 1).then_some(index),
                 &mut listing,
             )?;
-            for directory in directories {
-                roots.insert(path_key(&directory.canonicalize().unwrap_or(directory)));
-            }
         }
         if groups.len() > 1 {
             for importers in listing.importers.values_mut() {
@@ -92,11 +117,9 @@ impl Workspace {
                 importers.dedup();
             }
         }
-        Ok(Self::from_listing(
-            roots.into_iter().collect(),
-            listing,
-            include_tests,
-        ))
+        let mut workspace = Self::from_listing(roots, listing, include_tests);
+        workspace.rename_inputs = inputs;
+        Ok(workspace)
     }
 
     fn from_listing(roots: Vec<PathBuf>, listing: PackageListing, includes_tests: bool) -> Self {
@@ -128,6 +151,7 @@ impl Workspace {
             }
         }
         Self {
+            rename_inputs: None,
             roots,
             module_paths: module_paths.into_iter().collect(),
             package_errors: errors,
@@ -155,11 +179,25 @@ impl Workspace {
                 None,
             )
             .unwrap();
-        Self::from_listing(
+        let mut workspace = Self::from_listing(
             roots.iter().map(|root| path_key(root)).collect(),
             packages,
             includes_tests,
-        )
+        );
+        workspace.rename_inputs = Some(
+            PackageInputs::configuration(roots)
+                .and_then(|inputs| inputs.with_sources(roots))
+                .map_err(|err| err.to_string()),
+        );
+        workspace
+    }
+
+    pub(crate) fn rename_inputs_current(&self) -> Result<bool> {
+        match &self.rename_inputs {
+            None => Ok(false),
+            Some(Ok(inputs)) => inputs.current(&self.roots),
+            Some(Err(reason)) => bail!("cannot verify the package inputs: {reason}"),
+        }
     }
 
     pub(crate) fn roots(&self) -> &[PathBuf] {
@@ -364,6 +402,21 @@ impl Package {
             .split_once(':')
             .map_or(self.id.as_str(), |(_, path)| path);
         path.split_once(" [").map_or(path, |(path, _)| path)
+    }
+
+    pub(crate) fn private_name_owner(&self) -> &str {
+        // An in-package test view shares the regular package's private names.
+        // Its own display ID may lack the build-group prefix when only this
+        // module has tests; ForTest retains the remapped production ID.
+        let tested_path = self
+            .for_test
+            .split_once(':')
+            .map_or(self.for_test.as_str(), |(_, path)| path);
+        if !self.is_production() && self.import_path() == tested_path {
+            &self.for_test
+        } else {
+            &self.id
+        }
     }
 
     pub(crate) fn is_production(&self) -> bool {
@@ -755,6 +808,30 @@ mod tests {
     use super::*;
     use crate::test_support::TestProject;
     use serde_json::json;
+
+    #[test]
+    fn rename_detects_parent_module_changes_for_each_independent_folder() {
+        let project = TestProject::new();
+        for name in ["left", "right"] {
+            project.write(
+                &format!("{name}/go.mod"),
+                &format!("module example.test/{name}\n\ngo 1.22\n"),
+            );
+            project.write(
+                &format!("{name}/pkg/source.go"),
+                "package pkg\nconst Value = 1\n",
+            );
+        }
+        let folders = ["left/pkg", "right/pkg"].map(|name| project.root.join(name));
+        let workspace = Workspace::load_roots_for_rename(&folders, false).unwrap();
+        assert!(workspace.rename_inputs_current().unwrap());
+        assert!(workspace.package("example.test/right/pkg").is_some());
+        project.write("right/go.mod", "module example.test/renamed\n\ngo 1.22\n");
+        assert!(
+            !workspace.rename_inputs_current().unwrap(),
+            "the second folder's parent go.mod changed"
+        );
+    }
 
     #[test]
     fn parses_package_error_positions_from_the_right() {

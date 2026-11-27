@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -10,17 +11,18 @@ use lsp_types::{
     DiagnosticServerCapabilities, DocumentDiagnosticParams, DocumentDiagnosticReportKind,
     DocumentFormattingParams, DocumentSymbolParams, FoldingRangeParams,
     FoldingRangeProviderCapability, FullDocumentDiagnosticReport, HoverProviderCapability,
-    InlayHintParams, OneOf, Position, ReferenceParams, SemanticTokensFullOptions,
-    SemanticTokensOptions, SemanticTokensParams, ServerCapabilities, SignatureHelpOptions,
-    TextDocumentPositionParams, TypeHierarchySubtypesParams, TypeHierarchySupertypesParams,
-    UnchangedDocumentDiagnosticReport, Uri, WorkspaceSymbolParams,
+    InitializeParams, InlayHintParams, OneOf, Position, ReferenceParams, RenameOptions,
+    RenameParams, SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams,
+    ServerCapabilities, SignatureHelpOptions, TextDocumentPositionParams,
+    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, UnchangedDocumentDiagnosticReport,
+    Uri, WorkspaceSymbolParams,
     request::{
         CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
         CodeActionRequest, Completion, DocumentDiagnosticRequest, DocumentHighlightRequest,
         DocumentSymbolRequest, FoldingRangeRequest, Formatting, GotoDefinition, GotoImplementation,
-        GotoTypeDefinition, HoverRequest, InlayHintRequest, References, Request as _,
-        ResolveCompletionItem, SemanticTokensFullRequest, SignatureHelpRequest,
-        TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
+        GotoTypeDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest, References,
+        Rename, Request as _, ResolveCompletionItem, SemanticTokensFullRequest,
+        SignatureHelpRequest, TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
         WorkspaceSymbolRequest,
     },
 };
@@ -36,12 +38,71 @@ use crate::semantic::completion::{
     CompletionClientCapabilities, ResolveCompletionResult, StaleCompletion, Trace,
 };
 use crate::semantic::diagnostics::DiagnosticReport;
+use crate::semantic::rename::{RenameError, RenameResult};
 use crate::semantic::{
     DefinitionKind, EditorFoldingOptions, Engine, QueryProgress, SemanticTask,
     semantic_tokens_legend,
 };
 
 type Handler = fn(&mut RequestContext<'_>, RequestId, Value) -> Result<()>;
+
+#[derive(Clone, Copy)]
+pub(super) struct ClientFeatures {
+    hierarchical_document_symbols: bool,
+    rename: RenameSupport,
+    folding_options: EditorFoldingOptions,
+    completion: CompletionClientCapabilities,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RenameSupport {
+    Unavailable,
+    Direct,
+    WithPrepare,
+}
+
+impl ClientFeatures {
+    pub(super) fn from_initialize(params: &InitializeParams) -> Self {
+        let caps = &params.capabilities;
+        let document = caps.text_document.as_ref();
+        let versioned_edits = caps
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.workspace_edit.as_ref())
+            .and_then(|edit| edit.document_changes)
+            == Some(true);
+        let prepare = document
+            .and_then(|text| text.rename.as_ref())
+            .and_then(|rename| rename.prepare_support)
+            == Some(true);
+        Self {
+            completion: CompletionClientCapabilities::from_initialize(params),
+            folding_options: EditorFoldingOptions {
+                line_folding_only: document
+                    .and_then(|text| text.folding_range.as_ref())
+                    .and_then(|folding| folding.line_folding_only)
+                    .unwrap_or_default(),
+            },
+            hierarchical_document_symbols: document
+                .and_then(|text| text.document_symbol.as_ref())
+                .and_then(|symbols| symbols.hierarchical_document_symbol_support)
+                == Some(true),
+            rename: match (versioned_edits, prepare) {
+                (false, _) => RenameSupport::Unavailable,
+                (true, false) => RenameSupport::Direct,
+                (true, true) => RenameSupport::WithPrepare,
+            },
+        }
+    }
+
+    fn supports(self, method: &str) -> bool {
+        match method {
+            Rename::METHOD => self.rename != RenameSupport::Unavailable,
+            PrepareRenameRequest::METHOD => self.rename == RenameSupport::WithPrepare,
+            _ => true,
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,13 +114,13 @@ struct Capabilities {
 }
 
 struct Feature {
-    capabilities: fn(&mut Capabilities),
+    capabilities: fn(&mut Capabilities, ClientFeatures),
     methods: &'static [(&'static str, Handler)],
 }
 
 const FEATURES: &[Feature] = &[
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.definition_provider = Some(OneOf::Left(true));
             caps.standard.type_definition_provider = Some(true.into());
             caps.standard.implementation_provider = Some(true.into());
@@ -73,7 +134,7 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.hover_provider = Some(HoverProviderCapability::Simple(true));
             caps.standard.signature_help_provider = Some(SignatureHelpOptions {
                 trigger_characters: Some(vec!["(".into(), ",".into()]),
@@ -87,7 +148,7 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.document_symbol_provider = Some(OneOf::Left(true));
             caps.standard.workspace_symbol_provider = Some(OneOf::Left(true));
         },
@@ -97,7 +158,7 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.semantic_tokens_provider = Some(
                 SemanticTokensOptions {
                     legend: semantic_tokens_legend(),
@@ -119,7 +180,7 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.diagnostic_provider =
                 Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
                     identifier: Some("rs-gopls".into()),
@@ -131,7 +192,7 @@ const FEATURES: &[Feature] = &[
         methods: &[(DocumentDiagnosticRequest::METHOD, document_diagnostics)],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.call_hierarchy_provider =
                 Some(CallHierarchyServerCapability::Simple(true));
             caps.type_hierarchy_provider = true;
@@ -146,7 +207,7 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.document_formatting_provider = Some(OneOf::Left(true));
             caps.standard.code_action_provider =
                 Some(CodeActionProviderCapability::Options(CodeActionOptions {
@@ -163,7 +224,7 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
-        capabilities: |caps| {
+        capabilities: |caps, _| {
             caps.standard.completion_provider = Some(CompletionOptions {
                 resolve_provider: Some(true),
                 trigger_characters: Some(vec![".".into()]),
@@ -178,15 +239,31 @@ const FEATURES: &[Feature] = &[
             (ResolveCompletionItem::METHOD, resolve_completion),
         ],
     },
+    Feature {
+        capabilities: |caps, client| {
+            caps.standard.rename_provider = match client.rename {
+                RenameSupport::Unavailable => None,
+                RenameSupport::Direct => Some(OneOf::Left(true)),
+                RenameSupport::WithPrepare => Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
+            };
+        },
+        methods: &[
+            (PrepareRenameRequest::METHOD, prepare_rename),
+            (Rename::METHOD, rename),
+        ],
+    },
 ];
 
-pub(super) fn capabilities(standard: ServerCapabilities) -> impl Serialize {
+pub(super) fn capabilities(standard: ServerCapabilities, client: ClientFeatures) -> impl Serialize {
     let mut capabilities = Capabilities {
         standard,
         type_hierarchy_provider: false,
     };
     for feature in FEATURES {
-        (feature.capabilities)(&mut capabilities);
+        (feature.capabilities)(&mut capabilities, client);
     }
     capabilities
 }
@@ -195,9 +272,7 @@ pub(super) fn handle(
     connection: &Connection,
     engine: &mut Engine,
     scheduler: &mut Scheduler,
-    hierarchical_document_symbols: bool,
-    completion_capabilities: CompletionClientCapabilities,
-    folding_options: EditorFoldingOptions,
+    client: ClientFeatures,
     request: Request,
 ) -> Result<()> {
     let Request { id, method, params } = request;
@@ -205,12 +280,12 @@ pub(super) fn handle(
         connection,
         engine,
         scheduler,
-        hierarchical_document_symbols,
-        completion_capabilities,
-        folding_options,
+        hierarchical_document_symbols: client.hierarchical_document_symbols,
+        completion_capabilities: client.completion,
+        folding_options: client.folding_options,
     };
     for &(name, handler) in FEATURES.iter().flat_map(|feature| feature.methods) {
-        if method == name {
+        if method == name && client.supports(name) {
             return handler(&mut context, id, params);
         }
     }
@@ -370,6 +445,84 @@ fn document_params<P: DeserializeOwned>(
 ) -> Result<(PathBuf, P)> {
     let params = serde_json::from_value(value)?;
     Ok((file_path(uri(&params))?, params))
+}
+
+fn prepare_rename(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_position(params),
+        |engine, path, &position| {
+            Ok(adapt(
+                engine.prepare_rename(path, position)?,
+                serialize_query,
+            ))
+        },
+        None,
+    )
+}
+
+struct RenameQuery {
+    path: PathBuf,
+    position: Position,
+    new_name: String,
+    disk_source: OnceCell<Option<Vec<u8>>>,
+}
+
+impl DeferredQuery for RenameQuery {
+    fn run(&self, engine: &mut Engine) -> Result<RequestProgress> {
+        // A cold query re-resolves this cursor after go list completes. A client
+        // without file watches may have replaced the declaration in the meantime.
+        if !engine.is_open(&self.path) && self.path.extension().is_some_and(|ext| ext == "go") {
+            let current = std::fs::read(&self.path).ok();
+            if let Some(original) = self.disk_source.get() {
+                if original != &current {
+                    return Ok(QueryProgress::Ready(serialize_rename(Err(
+                        RenameError::ContentModified,
+                    ))));
+                }
+            } else {
+                self.disk_source.get_or_init(|| current);
+            }
+        }
+        Ok(adapt(
+            engine.rename(&self.path, self.position, &self.new_name)?,
+            serialize_rename,
+        ))
+    }
+
+    fn requires_stable_workspace(&self) -> bool {
+        true
+    }
+}
+
+fn serialize_rename(result: RenameResult) -> RequestResult {
+    match result {
+        Ok(edit) => serialize_query(edit),
+        Err(RenameError::Rejected(reason)) => Err((ErrorCode::RequestFailed, reason)),
+        Err(RenameError::ContentModified) => Err((
+            ErrorCode::ContentModified,
+            "a rename input changed during validation".into(),
+        )),
+    }
+}
+
+fn rename(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let query = (|| -> Result<RenameQuery> {
+        let params: RenameParams = serde_json::from_value(params)?;
+        let document = params.text_document_position;
+        Ok(RenameQuery {
+            path: file_path(&document.text_document.uri)?,
+            position: document.position,
+            new_name: params.new_name,
+            disk_source: OnceCell::new(),
+        })
+    })();
+    match query {
+        Ok(query) => context
+            .scheduler
+            .submit(context.engine, context.connection, id, query),
+        Err(error) => context.respond(id, Err(invalid_params(error))),
+    }
 }
 
 fn definition(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {

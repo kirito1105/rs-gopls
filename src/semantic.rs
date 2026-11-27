@@ -31,6 +31,7 @@ mod index;
 mod presentation;
 mod query;
 mod references;
+pub(crate) mod rename;
 mod resolver;
 mod signature_help;
 pub(crate) mod snapshot;
@@ -96,6 +97,7 @@ impl GraphChanges {
 }
 
 pub struct Engine {
+    pub(crate) track_rename_inputs: bool,
     state: EngineState,
     diagnostics_cache: diagnostics::DiagnosticsCache,
     implementation_cache: implementation::ImplementationCache,
@@ -107,7 +109,7 @@ pub struct Engine {
 
 struct EngineState {
     roots: Vec<PathBuf>,
-    workspace: Option<Workspace>,
+    workspace: Option<Rc<Workspace>>,
     graph_changes: GraphChanges,
     generation: u64,
     completion_graph_generation: u64,
@@ -176,6 +178,7 @@ impl Engine {
             .set_language(&tree_sitter_go::LANGUAGE.into())
             .expect("Go grammar must match the tree-sitter runtime");
         Self {
+            track_rename_inputs: false,
             state: EngineState {
                 roots,
                 workspace: None,
@@ -228,7 +231,7 @@ impl Engine {
                 self.state.new_documents.remove(&key);
             }
             self.workspace_symbol_index.document_opened(
-                self.state.workspace.as_ref(),
+                self.state.workspace.as_deref(),
                 &self.state.roots,
                 &key,
                 &source.path,
@@ -391,7 +394,7 @@ impl Engine {
             });
         }
         self.implementation_sources.retain_workspace(&workspace);
-        self.state.workspace = Some(workspace);
+        self.state.workspace = Some(Rc::new(workspace));
         self.state.completion_graph_generation += 1;
         self.state.completion_sources_changed(None);
         self.state.graph_changes = GraphChanges::Clean;
@@ -466,7 +469,7 @@ impl Engine {
             self.state.generation,
             self.state
                 .workspace
-                .as_ref()
+                .as_deref()
                 .is_some_and(Workspace::includes_tests),
         )
     }

@@ -341,10 +341,12 @@ class LspClient:
             raise RuntimeError(f"{method} failed: {response['error']}")
         return response["result"]
 
-    def initialize(self, *, watch_files=False, hierarchical_document_symbols=None):
+    def initialize(self, *, watch_files=False, hierarchical_document_symbols=None, document_changes=None, prepare_rename=None):
         workspace = {"workspaceFolders": True}
         if watch_files:
             workspace["didChangeWatchedFiles"] = {"dynamicRegistration": True}
+        if document_changes is not None:
+            workspace["workspaceEdit"] = {"documentChanges": document_changes}
         capabilities = {
             "general": {"positionEncodings": ["utf-16"]},
             "workspace": workspace,
@@ -353,6 +355,8 @@ class LspClient:
             capabilities["textDocument"] = {
                 "documentSymbol": {"hierarchicalDocumentSymbolSupport": hierarchical_document_symbols},
             }
+        if prepare_rename is not None:
+            capabilities.setdefault("textDocument", {})["rename"] = {"prepareSupport": prepare_rename}
         init = self.request(
             "initialize",
             processId=os.getpid(),
@@ -446,8 +450,12 @@ def acknowledge_file_watches(client):
         raise RuntimeError(f"missing Go file watcher registration: {missing}")
 
 
-def initialize_session(client, *, watch_files=False, hierarchical=None, require_go_watches=True):
-    capabilities = client.initialize(watch_files=watch_files, hierarchical_document_symbols=hierarchical)
+def initialize_session(client, *, watch_files=False, hierarchical=None, require_go_watches=True,
+                       document_changes=None, prepare_rename=None):
+    capabilities = client.initialize(
+        watch_files=watch_files, hierarchical_document_symbols=hierarchical,
+        document_changes=document_changes, prepare_rename=prepare_rename,
+    )
     if watch_files:
         if require_go_watches:
             acknowledge_file_watches(client)
@@ -457,11 +465,15 @@ def initialize_session(client, *, watch_files=False, hierarchical=None, require_
 
 
 @contextmanager
-def session(executable_path, root, timeout, *, watch_files=False, hierarchical=None, **env):
+def session(executable_path, root, timeout, *, watch_files=False, hierarchical=None,
+            document_changes=None, prepare_rename=None, **env):
     environment = {**os.environ, **WORKSPACE_ENVIRONMENT, **env}
     client = LspClient([executable_path], root, timeout, environment=environment)
     try:
-        initialize_session(client, watch_files=watch_files, hierarchical=hierarchical)
+        initialize_session(
+            client, watch_files=watch_files, hierarchical=hierarchical,
+            document_changes=document_changes, prepare_rename=prepare_rename,
+        )
         yield client
         client.shutdown()
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:

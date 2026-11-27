@@ -372,7 +372,9 @@ fn recovered_function_body<'tree>(
     let function = node.prev_named_sibling()?;
     (node.is_error()
         && node.start_byte() <= byte
-        && node.next_named_sibling().is_none_or(|next| offset < next.start_byte())
+        && node
+            .next_named_sibling()
+            .is_none_or(|next| offset < next.start_byte())
         && is_function(function)
         && function.child_by_field_name("body").is_none()
         && node.child(0).is_some_and(|child| child.kind() == "{")
@@ -422,10 +424,7 @@ pub(crate) fn lexical_binding<'tree>(
             "type_switch_statement" => {
                 type_case_binding(scope, child, offset, name, text).or_else(|| initializer(scope))
             }
-            "communication_case" if child.kind() == "statement_list" => scope
-                .child_by_field_name("communication")
-                .filter(|node| node.kind() == "receive_statement" && has_short_operator(*node))
-                .and_then(|node| left_binding(node, name, text)),
+            "communication_case" => case_entry_binding(child, name, text),
             "function_declaration" | "method_declaration" | "func_literal"
                 if child.kind() == "block" =>
             {
@@ -470,6 +469,11 @@ fn preceding_binding<'tree>(child: Node<'tree>, name: &str, text: &str) -> Optio
     }
 
     let statement_list = child.parent()?;
+    if binding.is_some()
+        && let Some(initial) = case_entry_binding(statement_list, name, text)
+    {
+        return Some(initial);
+    }
     let block = statement_list.parent()?;
     let function = block.parent()?;
     if binding.is_some()
@@ -483,6 +487,32 @@ fn preceding_binding<'tree>(child: Node<'tree>, name: &str, text: &str) -> Optio
         return function_binding(function, name, text).or(binding);
     }
     binding
+}
+
+// The implicit block of a select or type-switch case already contains its
+// receive variables or guard variable before the first statement is reached.
+fn case_entry_binding<'tree>(
+    statements: Node<'tree>,
+    name: &str,
+    text: &str,
+) -> Option<Binding<'tree>> {
+    if statements.kind() != "statement_list" {
+        return None;
+    }
+    let case = statements.parent()?;
+    match case.kind() {
+        "communication_case" => case
+            .child_by_field_name("communication")
+            .filter(|n| n.kind() == "receive_statement" && has_short_operator(*n))
+            .and_then(|receive| left_binding(receive, name, text)),
+        "type_case" | "default_case" => {
+            let switch = case
+                .parent()
+                .filter(|s| s.kind() == "type_switch_statement")?;
+            type_case_binding(switch, case, statements.start_byte(), name, text)
+        }
+        _ => None,
+    }
 }
 
 fn function_binding<'tree>(
@@ -603,14 +633,22 @@ pub(crate) fn reference_binding<'tree>(node: Node<'tree>, text: &str) -> Option<
             .parent()
             .filter(|node| node.kind() == "statement_list")
         && let Some(previous) = previous
-        && same_short_declaration_scope(previous, block)
+        && same_short_declaration_scope(previous, block, spelling, text)
     {
         return Some(previous);
     }
     Some(node)
 }
 
-fn same_short_declaration_scope(previous: Node<'_>, block: Node<'_>) -> bool {
+fn same_short_declaration_scope(
+    previous: Node<'_>,
+    block: Node<'_>,
+    spelling: &str,
+    text: &str,
+) -> bool {
+    if case_entry_binding(block, spelling, text).is_some_and(|binding| binding.name == previous) {
+        return true;
+    }
     let Some(body) = block.parent() else {
         return false;
     };
@@ -780,6 +818,62 @@ fn binding<'tree>(
 mod tests {
     use super::VisibleBindingKind::*;
     use super::*;
+
+    #[test]
+    fn case_scope_short_declarations_reuse_the_guard_or_receive_variable() {
+        for (text, first_case, second_case) in [
+            (
+                "package p\nfunc f(a any) { switch value := a.(type) { case int: ptr := &value; value, n := value+1, 2; _, _, _ = ptr, value, n; case string: _ = value } }",
+                "ptr :=",
+                "case string",
+            ),
+            (
+                "package p\nfunc f(c chan int) { select { case value := <-c: ptr := &value; value, n := value+1, 2; _, _, _ = ptr, value, n; case <-c: value := 8; _ = value } }",
+                "ptr :=",
+                "case <-c",
+            ),
+        ] {
+            let mut parser = tree_sitter::Parser::new();
+            parser
+                .set_language(&tree_sitter_go::LANGUAGE.into())
+                .unwrap();
+            let tree = parser.parse(text, None).unwrap();
+            assert!(!tree.root_node().has_error());
+            let guard = text.find("value :=").unwrap();
+            let start = text.find(first_case).unwrap();
+            let end = text.find(second_case).unwrap();
+            let uses: Vec<_> = text[start..end]
+                .match_indices("value")
+                .map(|(index, _)| start + index)
+                .collect();
+            assert_eq!(uses.len(), 4);
+            for at in uses {
+                let node = tree
+                    .root_node()
+                    .named_descendant_for_byte_range(at, at + 1)
+                    .unwrap();
+                assert_eq!(
+                    reference_binding(node, text).unwrap().start_byte(),
+                    guard,
+                    "use at byte {at} in {text}"
+                );
+            }
+            let last = text.rfind("value").unwrap();
+            let node = tree
+                .root_node()
+                .named_descendant_for_byte_range(last, last + 1)
+                .unwrap();
+            let expected = if second_case == "case string" {
+                guard
+            } else {
+                text.rfind("value :=").unwrap()
+            };
+            assert_eq!(
+                reference_binding(node, text).unwrap().start_byte(),
+                expected
+            );
+        }
+    }
 
     fn at_cursor(text: &str, check: impl FnOnce(&str, &[VisibleBinding<'_>])) {
         let offset = text.find('|').unwrap();

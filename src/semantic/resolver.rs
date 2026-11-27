@@ -496,7 +496,7 @@ impl<'w> Resolver<'w, '_> {
         Ok(None)
     }
 
-    fn literal_type(
+    pub(super) fn literal_type(
         &mut self,
         from: &'w Package,
         source: &Source,

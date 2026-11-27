@@ -1,0 +1,115 @@
+{
+  "project": "tools/fixtures/rename/workspace",
+  "host": "Windows amd64",
+  "goSdk": {
+    "version": "1.27.0",
+    "home": "C:/Program Files/Go"
+  },
+  "goLand": {
+    "build": "GO-263.7307.354",
+    "goos": "default",
+    "goarch": "default",
+    "cgo": "UNSURE",
+    "buildTags": []
+  },
+  "rsGopls": {
+    "sha256": "9a78f81f80b489c8a340dceff2ecaba60c6ebfa83d9eb440de63028b29c5a4b6",
+    "goEnv": {
+      "CGO_ENABLED": "0",
+      "GOARCH": "amd64",
+      "GOFLAGS": "",
+      "GOOS": "windows",
+      "GOROOT": "C:\\Program Files\\Go",
+      "GOVERSION": "go1.27.0",
+      "GOWORK": "off"
+    }
+  },
+  "filesSha256": {
+    "api/api.go": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+    "api/api_test.go": "0d5a8b7df4a659fa536d768297a53c995f16a0f7d46a8d79586a42c44732cbaf",
+    "api/contracts.go": "9e986f3598666479ab8484c6d726d8811f6b9ae699c29142aeef9962ad6a0ce5",
+    "client/alias.go": "9b36c30e0d362384870c9c46b4b643828fb34c46196e82fe2a150cabaae94afa",
+    "client/client.go": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+    "client/client_test.go": "5537d69fd6b6966246890beef411b02612cb6b3fb9c3b2145bc2ce559c771ff6",
+    "go.mod": "841f922083615916e28d477662b989c7b7e3797f953feb6f046427527cc21047"
+  },
+  "openFiles": [
+    "api/api.go",
+    "api/contracts.go"
+  ],
+  "workload": {
+    "method": "textDocument/implementation",
+    "goLandActions": {
+      "implementation": "Go to Implementation",
+      "super": "Go to Super"
+    },
+    "source": "api/contracts.go",
+    "overlayPrefix": "// rs-gopls benchmark overlay\n",
+    "scenarioOrder": [
+      "first for each case",
+      "for each case: 5 warmup, 30 repeat, insert prefix and commit edit, 1 edited, restore, 1 restored"
+    ],
+    "rangeFormat": [
+      "workspace-relative path",
+      "start line (zero-based)",
+      "start UTF-16 character",
+      "end line (zero-based)",
+      "end UTF-16 character"
+    ],
+    "units": "milliseconds",
+    "percentiles": "nearest rank",
+    "goLandTimer": "indexed smart-mode action through extracting all identifier ranges; temporary editor already positioned; no popup",
+    "rsGoplsTimer": "stdio JSON-RPC round trip after nonempty no-match workspace/symbol confirmed the active graph including tests; no query-result warmup before the first lane",
+    "editedTimer": "after applying the unsaved prefix; modified file and targets shifted by one line"
+  },
+  "archiveSha256": {
+    "goland.json": "586bf09f9400aa7aae4147148d20e5c26ce4a12f2589123c1783d14010ef6739",
+    "rust.json": "695a79aad02b42b159bd6150e8d2dac6f5c3bc8b83d5e32ae5f1cba85b32295e",
+    "spec.json": "833e916bd5c078d8c62ce68a61d1caddd506aa45115351581e1f354e6bcb473d",
+    "comparison.json": "b7241eb04938e33d197e8ceab696de84008215b1259c04a12be99da4666e9d09"
+  },
+  "summary": {
+    "GoLand": {
+      "first": {
+        "n": 6,
+        "p50": 10.6565,
+        "p95": 665.7074
+      },
+      "repeat": {
+        "n": 180,
+        "p50": 3.561,
+        "p95": 7.5607
+      },
+      "edited": {
+        "n": 6,
+        "p50": 7.6169,
+        "p95": 21.1977
+      }
+    },
+    "rs-gopls": {
+      "first": {
+        "n": 6,
+        "p50": 0.7198,
+        "p95": 973.9047
+      },
+      "repeat": {
+        "n": 180,
+        "p50": 0.2069,
+        "p95": 0.3177
+      },
+      "edited": {
+        "n": 6,
+        "p50": 0.2596,
+        "p95": 0.4091
+      }
+    }
+  },
+  "cases": [
+    {"id":"first-type","action":"implementation","line":2,"column":5,"token":"First","targets":[["api/contracts.go",12,5,12,13],["api/contracts.go",17,5,17,9],["api/contracts.go",23,5,23,12],["api/contracts.go",28,5,28,12]],"editedTargets":[["api/contracts.go",13,5,13,13],["api/contracts.go",18,5,18,9],["api/contracts.go",24,5,24,12],["api/contracts.go",29,5,29,12]],"elapsedMs":{"GoLand":{"first":[665.7074],"warmup":[7.8815,9.0159,7.5117,7.0802,7.5054],"repeat":[8.2027,10.9221,6.6812,7.4462,6.919,7.5607,8.306,6.4857,7.7181,6.1744,5.9173,4.7585,5.4898,7.107,9.3639,7.4243,7.9885,5.907,4.9805,7.8762,5.4672,6.9235,6.9005,6.7249,7.878,8.3231,7.1567,6.3456,5.7262,4.8477],"edited":[21.1977],"restored":[13.5]},"rs-gopls":{"first":[64.0461],"warmup":[0.2962,0.2418,0.2527,0.1954,0.2894],"repeat":[0.408,0.2795,0.35,0.4078,0.2744,0.2446,0.2477,0.2617,0.2571,0.2473,0.2112,0.2339,0.2707,0.2085,0.2069,0.2385,0.2108,0.2471,0.2406,0.1985,0.2523,0.2031,0.2141,0.2744,0.334,0.3177,0.2822,0.2214,0.2016,0.2065],"edited":[0.4091],"restored":[0.2605]}}},
+    {"id":"first-one","action":"implementation","line":4,"column":1,"token":"One","targets":[["api/contracts.go",20,12,20,15],["api/contracts.go",26,16,26,19]],"editedTargets":[["api/contracts.go",21,12,21,15],["api/contracts.go",27,16,27,19]],"elapsedMs":{"GoLand":{"first":[10.6565],"warmup":[4.6023,3.8219,4.8254,5.0338,5.1811],"repeat":[6.7392,4.0809,5.6681,5.1593,4.6697,4.5489,3.7473,3.7085,6.5961,3.8136,5.4218,5.8357,4.6611,4.1978,3.5737,4.4353,4.0906,3.4159,4.391,5.6034,4.4544,4.8148,4.5252,5.0007,5.0856,5.6872,5.4891,3.561,5.5708,4.7897],"edited":[13.2428],"restored":[12.0838]},"rs-gopls":{"first":[0.6041],"warmup":[0.1926,0.2202,0.2321,0.1891,0.2015],"repeat":[0.2173,0.1833,0.2141,0.18,0.231,0.2541,0.2161,0.2402,0.2192,0.187,0.263,0.2599,0.2879,0.2312,0.213,0.2561,0.2612,0.2494,0.2303,0.2262,0.1881,0.2094,0.2069,0.1809,0.3658,0.1855,1.2036,0.2819,0.2448,0.2271],"edited":[0.3126],"restored":[0.276]}}},
+    {"id":"second-click","action":"implementation","line":8,"column":1,"token":"Click","targets":[["api/contracts.go",19,12,19,17]],"editedTargets":[["api/contracts.go",20,12,20,17]],"elapsedMs":{"GoLand":{"first":[5.0617],"warmup":[4.9973,4.2747,3.1521,4.2133,4.2941],"repeat":[4.8619,3.5977,4.5442,6.111,4.5324,4.6311,4.3208,4.3783,4.5014,3.9855,3.482,3.4343,3.4455,2.8933,4.1922,3.9312,3.1241,2.8275,2.7791,3.8375,2.7913,3.0958,2.7685,2.6536,2.2903,3.568,4.2832,5.0315,2.6013,2.419],"edited":[7.6169],"restored":[9.2527]},"rs-gopls":{"first":[0.7198],"warmup":[0.181,0.1559,0.1596,0.2598,0.2227],"repeat":[0.2932,0.2172,0.2923,0.2355,0.2076,0.1932,0.1621,0.1467,0.1894,0.1415,0.1607,0.1698,0.1893,0.1891,0.1932,0.2462,0.1607,0.1593,0.2173,0.1472,0.1504,0.1649,0.1603,0.1582,0.152,0.1849,0.1407,0.1761,0.1975,0.2768],"edited":[0.2596],"restored":[0.2032]}}},
+    {"id":"pointer-type","action":"super","line":23,"column":5,"token":"Pointer","targets":[["api/contracts.go",2,5,2,10]],"editedTargets":[["api/contracts.go",3,5,3,10]],"elapsedMs":{"GoLand":{"first":[165.495],"warmup":[3.9691,3.993,2.0301,1.9334,2.0219],"repeat":[2.4754,2.6586,2.1566,2.0548,2.3784,2.2009,2.1611,1.944,2.5253,1.5802,1.3799,2.2099,2.3298,1.9432,2.6793,2.3324,2.0652,1.4488,2.1335,2.1579,1.7802,1.8921,1.4489,1.5085,1.7919,1.5273,1.7782,1.8238,2.7628,1.68],"edited":[5.1601],"restored":[7.9808]},"rs-gopls":{"first":[59.1974],"warmup":[0.1822,0.1962,0.175,0.1946,0.2043],"repeat":[0.1881,0.1511,0.2267,0.2122,0.2252,0.2805,0.2315,0.2721,0.2531,0.1849,0.1572,0.183,0.1502,0.1447,0.1531,0.1969,0.2564,0.1663,0.1621,0.2007,0.1572,0.1553,0.1508,0.1523,0.1601,0.1395,0.1508,0.1632,0.148,0.2157],"edited":[0.2139],"restored":[0.1796]}}},
+    {"id":"both-click","action":"super","line":19,"column":12,"token":"Click","targets":[["api/contracts.go",3,1,3,6],["api/contracts.go",8,1,8,6]],"editedTargets":[["api/contracts.go",4,1,4,6],["api/contracts.go",9,1,9,6]],"elapsedMs":{"GoLand":{"first":[83.2137],"warmup":[5.1449,3.8627,3.3703,3.3841,3.9634],"repeat":[2.3795,2.4237,3.3903,5.1218,3.9117,4.0,3.4674,4.3504,3.83,3.7142,3.3194,3.7211,3.0086,2.522,2.8919,4.4186,3.9175,2.3686,3.4941,2.2255,4.7728,2.6115,3.8408,3.7648,5.3165,4.112,4.7146,4.2533,3.2952,3.1468],"edited":[7.8347],"restored":[8.3392]},"rs-gopls":{"first":[0.4075],"warmup":[0.1784,0.2333,0.2078,0.2001,0.2404],"repeat":[0.2082,0.2119,0.2142,0.2751,0.4206,0.2074,0.2852,0.2234,0.1789,0.1952,0.2299,0.8852,0.347,0.2814,0.2307,0.1956,0.2191,0.2053,0.2711,0.1947,0.2315,0.2213,0.2498,0.2412,0.2372,0.1942,0.2177,0.2403,0.221,0.2509],"edited":[0.2887],"restored":[0.1817]}}},
+    {"id":"wrapped-extra","action":"super","line":30,"column":15,"token":"Extra","targets":[["api/contracts.go",14,1,14,6]],"editedTargets":[["api/contracts.go",15,1,15,6]],"elapsedMs":{"GoLand":{"first":[2.0212],"warmup":[3.6897,2.2163,1.9471,2.9869,1.6023],"repeat":[2.4149,1.4088,2.2172,2.5073,3.3323,1.3009,1.2728,1.5352,1.2367,1.2808,1.234,2.0023,2.1467,1.4256,2.7852,1.5303,1.2135,1.1788,1.2031,1.3271,2.2513,1.3494,1.2507,1.7794,1.5564,2.2246,2.5276,2.3366,1.7026,1.8263],"edited":[5.6497],"restored":[7.1292]},"rs-gopls":{"first":[973.9047],"warmup":[0.2335,0.2105,0.2505,0.1975,0.1962],"repeat":[0.1884,0.167,0.1565,0.1675,0.1755,0.1565,0.152,0.1629,0.1711,0.1574,0.1512,0.1937,0.1574,0.1386,0.1509,0.1456,0.1376,0.1442,0.1505,0.143,0.1423,0.1398,0.1428,0.1355,0.1449,0.1433,0.1405,0.1603,0.2331,0.1986],"edited":[0.2057],"restored":[0.1709]}}}
+  ]
+}

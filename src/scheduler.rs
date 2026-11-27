@@ -33,6 +33,10 @@ pub(super) trait DeferredQuery {
         None
     }
 
+    fn requires_stable_workspace(&self) -> bool {
+        false
+    }
+
     fn load_failed(&self, _engine: &mut Engine, message: &str) -> RequestResult {
         Err((ErrorCode::RequestFailed, message.to_owned()))
     }
@@ -85,11 +89,16 @@ impl Scheduler {
         };
         engine.prewarm_completion_sdk(true);
         let roots = engine.roots().to_vec();
+        let track_rename_inputs = engine.track_rename_inputs;
         let results = results.clone();
         thread::Builder::new()
             .name("go-package-loader".into())
             .spawn(move || {
-                let result = Workspace::load_roots(&roots, load.include_tests);
+                let result = if track_rename_inputs {
+                    Workspace::load_roots_for_rename(&roots, load.include_tests)
+                } else {
+                    Workspace::load_roots(&roots, load.include_tests)
+                };
                 let _ = results.send(WorkspaceResult { load, result });
             })
             .context("starting Go package loader")?;
@@ -283,7 +292,10 @@ impl Scheduler {
             let key = path_key(path);
             self.cancel_pending(
                 connection,
-                |request| request.document_key.as_ref() == Some(&key),
+                |request| {
+                    request.query.requires_stable_workspace()
+                        || request.document_key.as_ref() == Some(&key)
+                },
                 ErrorCode::ContentModified,
                 "the document changed while loading Go packages",
             )?;
@@ -301,6 +313,12 @@ impl Scheduler {
         connection: &Connection,
         load: WorkspaceLoad,
     ) -> Result<()> {
+        self.cancel_pending(
+            connection,
+            |request| request.query.requires_stable_workspace(),
+            ErrorCode::ContentModified,
+            WORKSPACE_CHANGED,
+        )?;
         self.cancel_searches(
             connection,
             |_| true,
@@ -366,6 +384,10 @@ mod tests {
 
     impl Session {
         fn start(project: &TestProject) -> Self {
+            Self::with_capabilities(project, json!({}))
+        }
+
+        fn with_capabilities(project: &TestProject, capabilities: Value) -> Self {
             let (server, client) = Connection::memory();
             let mut session = Self {
                 server,
@@ -377,7 +399,7 @@ mod tests {
                 0,
                 Initialize::METHOD,
                 json!({
-                    "rootUri": path_uri(&project.root).unwrap(), "capabilities": {}
+                    "rootUri": path_uri(&project.root).unwrap(), "capabilities": capabilities
                 }),
             );
             assert!(session.reply(0).result.is_some());
@@ -533,6 +555,169 @@ mod tests {
         let mut params = position(path, line, character);
         params["context"] = json!({ "includeDeclaration": true });
         params
+    }
+
+    #[test]
+    fn rename_requires_versioned_edits_and_negotiates_prepare_separately() {
+        let project = TestProject::new();
+        for (document_changes, prepare, expected) in [
+            (false, true, Value::Null),
+            (true, false, json!(true)),
+            (true, true, json!({"prepareProvider": true})),
+        ] {
+            let mut session = Session::with_capabilities(
+                &project,
+                json!({
+                    "workspace": {"workspaceEdit": {"documentChanges": document_changes}},
+                    "textDocument": {"rename": {"prepareSupport": prepare}}
+                }),
+            );
+            let init = session.reply(0).result.as_ref().unwrap();
+            assert_eq!(init["capabilities"]["renameProvider"], expected);
+            // Malformed arguments distinguish registration from an unsupported method.
+            for (id, method, supported) in [
+                (1, "textDocument/rename", document_changes),
+                (2, "textDocument/prepareRename", document_changes && prepare),
+            ] {
+                session.request(id, method, Value::Null);
+                let code = if supported {
+                    ErrorCode::InvalidParams
+                } else {
+                    ErrorCode::MethodNotFound
+                };
+                assert_eq!(session.reply(id).error.as_ref().unwrap().code, code as i32);
+            }
+        }
+    }
+
+    #[test]
+    fn pending_rename_is_cancelled_once_when_another_input_changes() {
+        let project = TestProject::new();
+        let source = project.write("target.go", "package sample\nfunc Target() {}\n");
+        let other = project.write("usage.go", "package sample\nfunc Use() { Target() }\n");
+        let mut session = Session::with_capabilities(
+            &project,
+            json!({
+                "workspace": {"workspaceEdit": {"documentChanges": true}}
+            }),
+        );
+        let mut params = position(&source, 1, 6);
+        params["newName"] = json!("Updated");
+        session.request(1, "textDocument/rename", params.clone());
+        assert_eq!(session.scheduler().pending.len(), 1);
+        let load = session.begin_load();
+        session.cancel(1);
+        assert_eq!(
+            session.reply(1).error.as_ref().unwrap().code,
+            ErrorCode::RequestCanceled as i32
+        );
+        session.request(2, "textDocument/rename", params);
+        session.open(&other, "package sample\nfunc Use() {}\n");
+        assert_eq!(
+            session.reply(2).error.as_ref().unwrap().code,
+            ErrorCode::ContentModified as i32
+        );
+        session.deliver(
+            load,
+            Ok(project.workspace(&["target.go", "usage.go"], true)),
+        );
+        session.finish_searches();
+        session.count(3); // initialize and one response to each rename
+    }
+
+    #[test]
+    fn adding_a_folder_cancels_pending_rename_and_allows_rename_in_the_new_root() {
+        let first = TestProject::new();
+        first.write("go.mod", "module example.test/one\n\ngo 1.22\n");
+        let unrelated = first.write("file.go", "package one\nvar Target = 1\n");
+        let second = TestProject::new();
+        second.write("go.mod", "module example.test/two\n\ngo 1.22\n");
+        let source = second.write("file.go", "package two\nvar Target = 2\nvar use = Target\n");
+        let mut session = Session::with_capabilities(
+            &first,
+            json!({"workspace": {"workspaceEdit": {"documentChanges": true}}}),
+        );
+        let rename = |path| {
+            let mut request = position(path, 1, 5);
+            request["newName"] = json!("Updated");
+            request
+        };
+        session.request(1, "textDocument/rename", rename(&unrelated));
+        let folder = json!({"name": "two", "uri": path_uri(&second.root).unwrap()});
+        session.notify(
+            DidChangeWorkspaceFolders::METHOD,
+            json!({"event": {"added": [folder], "removed": []}}),
+        );
+        session.error(1, ErrorCode::ContentModified, WORKSPACE_CHANGED);
+        session.request(2, "textDocument/rename", rename(&source));
+        session.finish_requested_load();
+        session.finish_searches();
+        let edit = session.reply(2).result.as_ref().unwrap();
+        let changes = edit["documentChanges"].as_array().unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(
+            changes[0]["textDocument"]["uri"],
+            json!(path_uri(&source).unwrap())
+        );
+        assert_eq!(changes[0]["edits"].as_array().unwrap().len(), 2);
+        session.count(3);
+    }
+
+    #[test]
+    fn pending_rename_refuses_a_replaced_disk_target_at_the_same_cursor() {
+        let project = TestProject::new();
+        let source = project.write("target.go", "package sample\nvar First int\n");
+        let mut session = Session::with_capabilities(
+            &project,
+            json!({
+                "workspace": {"workspaceEdit": {"documentChanges": true}}
+            }),
+        );
+        let mut arguments = position(&source, 1, 5);
+        arguments["newName"] = json!("Updated");
+        session.request(1, "textDocument/rename", arguments);
+        let load = session.begin_load();
+        project.write("target.go", "package sample\nvar Other int\n");
+        session.deliver(load, Ok(project.workspace(&["target.go"], true)));
+        session.finish_searches();
+        assert_eq!(
+            session.reply(1).error.as_ref().unwrap().code,
+            ErrorCode::ContentModified as i32
+        );
+        session.count(2);
+    }
+
+    #[test]
+    fn active_rename_detects_a_disk_change_without_a_watch_notification() {
+        let project = TestProject::new();
+        let source = project.write("target.go", "package sample\nvar Target int\n");
+        let mut files = vec![String::from("target.go")];
+        for index in 0..96 {
+            let name = format!("use_{index}.go");
+            project.write(&name, &format!("package sample\nvar U{index} = Target\n"));
+            files.push(name);
+        }
+        let mut session = Session::with_capabilities(
+            &project,
+            json!({
+                "workspace": {"workspaceEdit": {"documentChanges": true}}
+            }),
+        );
+        let mut arguments = position(&source, 1, 5);
+        arguments["newName"] = json!("Updated");
+        session.request(1, "textDocument/rename", arguments);
+        let load = session.begin_load();
+        let names = files.iter().map(String::as_str).collect::<Vec<_>>();
+        session.deliver(load, Ok(project.workspace(&names, true)));
+        session.step();
+        assert_eq!(session.scheduler().searches.len(), 1);
+        project.write("target.go", "package sample\n// shifted\nvar Target int\n");
+        session.finish_searches();
+        assert_eq!(
+            session.reply(1).error.as_ref().unwrap().code,
+            ErrorCode::ContentModified as i32
+        );
+        session.count(2);
     }
 
     #[test]

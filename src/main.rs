@@ -40,8 +40,7 @@ use protocol::{
     RequestResult, file_path, invalid_params, path_uri, send_notification, send_response,
 };
 use scheduler::{Scheduler, WorkspaceResult};
-use semantic::completion::CompletionClientCapabilities;
-use semantic::{EditorFoldingOptions, Engine};
+use semantic::Engine;
 use workspace::path_key;
 
 #[cfg(test)]
@@ -58,10 +57,8 @@ enum State {
 struct Running {
     engine: Engine,
     watch_files: bool,
-    hierarchical_document_symbols: bool,
+    client_features: dispatch::ClientFeatures,
     diagnostic_updates: DiagnosticUpdates,
-    completion_capabilities: CompletionClientCapabilities,
-    folding_options: EditorFoldingOptions,
     scheduler: Scheduler,
 }
 
@@ -268,9 +265,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 connection,
                 &mut running.engine,
                 &mut running.scheduler,
-                running.hierarchical_document_symbols,
-                running.completion_capabilities,
-                running.folding_options,
+                running.client_features,
                 Request { id, method, params },
             );
         }
@@ -291,20 +286,8 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|workspace| workspace.did_change_watched_files.as_ref())
         .is_some_and(|watches| watches.dynamic_registration == Some(true));
-    let hierarchical_document_symbols = params
-        .capabilities
-        .text_document
-        .as_ref()
-        .and_then(|document| document.document_symbol.as_ref())
-        .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
-    let completion_capabilities = CompletionClientCapabilities::from_initialize(&params);
+    let client_features = dispatch::ClientFeatures::from_initialize(&params);
     let document = params.capabilities.text_document.as_ref();
-    let folding_options = EditorFoldingOptions {
-        line_folding_only: document
-            .and_then(|document| document.folding_range.as_ref())
-            .and_then(|folding| folding.line_folding_only)
-            .unwrap_or_default(),
-    };
     let pull = document.and_then(|d| d.diagnostic.as_ref()).is_some();
     let publish = document
         .and_then(|d| d.publish_diagnostics.as_ref())
@@ -344,7 +327,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         ..Default::default()
     };
     let result = serde_json::json!({
-        "capabilities": dispatch::capabilities(capabilities),
+        "capabilities": dispatch::capabilities(capabilities, client_features),
         "serverInfo": ServerInfo {
             name: env!("CARGO_PKG_NAME").into(),
             version: Some(env!("CARGO_PKG_VERSION").into()),
@@ -353,11 +336,9 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
     Ok((
         Running {
             watch_files,
-            hierarchical_document_symbols,
+            client_features,
             diagnostic_updates,
             engine: Engine::with_roots(roots),
-            completion_capabilities,
-            folding_options,
             scheduler: Scheduler::default(),
         },
         result,

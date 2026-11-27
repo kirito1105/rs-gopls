@@ -83,6 +83,28 @@ Call hierarchy groups incoming and outgoing calls by declaration. Type hierarchy
 
 Document formatting runs the Go SDK's `gofmt` on the unsaved buffer and preserves its line endings. Organize Imports groups standard, third-party, and local imports while preserving comments and cgo preambles. Quick fixes can add missing imports, remove unused imports, and repair unused variables or short declarations. [GoLand formatting and code actions baseline](docs/goland-actions-baseline.md)
 
+## Try safe rename in VS Code on Windows
+
+After building the release executable, run these commands from the repository root. They create a fresh copy of the two-package Go example and open it in a dedicated VS Code profile. The Generic LSP Client starts this repository's release binary over stdio.
+
+```powershell
+$target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
+$demo = python -B tools/fixtures/rename/replay.py copy
+$workspace = Join-Path (Split-Path -Parent $demo) 'rs-gopls.code-workspace'
+@{
+    folders = @(@{ path = 'workspace' })
+    settings = @{
+        'glspc.server.command' = (Join-Path $target 'release/rs-gopls.exe')
+        'glspc.server.languageId' = @('go')
+    }
+    extensions = @{ recommendations = @('zsol.vscode-glspc') }
+} | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 -LiteralPath $workspace
+code --profile 'rs-gopls Demo' --new-window $workspace --goto "${demo}/client/client.go:9:26"
+code --profile 'rs-gopls Demo' --install-extension zsol.vscode-glspc
+```
+
+Trust the example workspace when prompted. In `client/client.go`, press **F12** on `Bonus` to jump to its declaration, or press **F2** and rename it to `Award` to update three files. To try a rejected rename, open `Capture` in `api/api.go` and rename `result` to `total`. The server reports the reference whose binding would change. Run `go test ./...` in the example's terminal to check your edits. [GoLand and rs-gopls rename results](docs/goland-rename-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.

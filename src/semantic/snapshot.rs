@@ -55,7 +55,7 @@ impl EngineState {
     pub(super) fn snapshot(&mut self, include_tests: bool) -> EngineSnapshot<'_> {
         EngineSnapshot {
             roots: &self.roots,
-            workspace: self.workspace.as_ref(),
+            workspace: self.workspace.as_deref(),
             graph_changes: &self.graph_changes,
             documents: &self.documents,
             new_documents: &self.new_documents,
