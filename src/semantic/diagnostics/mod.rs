@@ -1,7 +1,6 @@
 mod cache;
 mod declarations;
 mod imports;
-#[allow(dead_code)]
 mod model;
 mod package_errors;
 mod syntax;

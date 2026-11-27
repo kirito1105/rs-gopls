@@ -12,7 +12,6 @@ use crate::semantic::snapshot::DocumentSnapshot;
 use crate::semantic::source::{decoded_import_path, node_text};
 
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) enum ImportOperation<'a> {
     AddImport {
         path: &'a str,
@@ -68,7 +67,6 @@ impl fmt::Display for ImportEditError {
 
 impl std::error::Error for ImportEditError {}
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn import_edits(
     document: &DocumentSnapshot<'_>,
     operation: ImportOperation<'_>,

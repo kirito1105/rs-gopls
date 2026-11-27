@@ -102,7 +102,6 @@ fn resolve_call<'w>(
     call_item(origin, declaration)
 }
 
-#[allow(dead_code)]
 pub(crate) fn prepare_call_hierarchy(
     engine: &mut Engine,
     path: &Path,
@@ -166,7 +165,6 @@ pub(crate) struct IncomingCallsTask {
     callers: CallSites,
 }
 
-#[allow(dead_code)]
 pub(crate) fn incoming_calls(
     engine: &mut Engine,
     item: &CallHierarchyItem,
@@ -273,7 +271,6 @@ fn callee_name(call: Node<'_>) -> Option<Node<'_>> {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) fn outgoing_calls(
     engine: &mut Engine,
     item: &CallHierarchyItem,

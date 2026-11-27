@@ -166,18 +166,10 @@ impl Workspace {
         &self.roots
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "local module paths for import actions")
-    )]
     pub(crate) fn module_paths(&self) -> &[String] {
         &self.module_paths
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "package graph contract for diagnostics")
-    )]
     pub(crate) fn package_errors(&self) -> &[PackageLoadError] {
         &self.package_errors
     }

@@ -112,7 +112,6 @@ fn expression_at(source: &Source, position: Position) -> Option<Node<'_>> {
     None
 }
 
-#[allow(dead_code)]
 pub(crate) fn prepare_type_hierarchy(
     engine: &mut Engine,
     path: &Path,
@@ -394,7 +393,6 @@ pub(crate) struct TypeHierarchyTask {
     items: Items,
 }
 
-#[allow(dead_code)]
 pub(crate) fn supertypes(
     engine: &mut Engine,
     item: &TypeHierarchyItem,
@@ -402,7 +400,6 @@ pub(crate) fn supertypes(
     related_types(engine, item, Direction::Super)
 }
 
-#[allow(dead_code)]
 pub(crate) fn subtypes(
     engine: &mut Engine,
     item: &TypeHierarchyItem,

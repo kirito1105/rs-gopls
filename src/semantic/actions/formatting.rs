@@ -1,18 +1,18 @@
+use std::collections::HashMap;
 use std::env;
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 
 use anyhow::{Context, Result, bail, ensure};
 use lsp_types::TextEdit;
 
 use crate::semantic::snapshot::DocumentSnapshot;
+use crate::workspace::path_key;
 
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "document formatting request entry point")
-)]
 pub(crate) fn format_document(
     document: &DocumentSnapshot<'_>,
     workdir: Option<&Path>,
@@ -58,29 +58,68 @@ pub(crate) fn format_document(
     )
 }
 
-fn gofmt_path(workdir: Option<&Path>) -> PathBuf {
-    fn from_root(root: &Path) -> Option<PathBuf> {
-        let path = root
-            .join("bin")
-            .join(format!("gofmt{}", env::consts::EXE_SUFFIX));
-        (root.is_absolute() && path.is_file()).then_some(path)
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct GofmtContext {
+    workdir: PathBuf,
+    goroot: Option<PathBuf>,
+    path: Option<OsString>,
+    toolchain: Option<OsString>,
+}
+
+impl GofmtContext {
+    fn new(workdir: Option<&Path>) -> Self {
+        let dir = workdir.unwrap_or(Path::new("."));
+        Self {
+            workdir: path_key(&dir.canonicalize().unwrap_or_else(|_| dir.to_owned())),
+            goroot: env::var_os("GOROOT").map(PathBuf::from),
+            path: env::var_os("PATH"),
+            toolchain: env::var_os("GOTOOLCHAIN"),
+        }
     }
 
-    if let Some(path) = env::var_os("GOROOT").and_then(|root| from_root(Path::new(&root))) {
-        return path;
+    fn resolve(
+        self,
+        paths: &mut HashMap<Self, PathBuf>,
+        query_root: impl FnOnce(&Path) -> Option<PathBuf>,
+    ) -> PathBuf {
+        if let Some(path) = self.goroot.as_deref().and_then(sdk_gofmt) {
+            return path;
+        }
+        paths
+            .entry(self)
+            .or_insert_with_key(|context| {
+                query_root(&context.workdir)
+                    .as_deref()
+                    .and_then(sdk_gofmt)
+                    .unwrap_or_else(|| PathBuf::from("gofmt"))
+            })
+            .clone()
     }
-    let mut go = Command::new("go");
-    if let Some(dir) = workdir {
-        go.current_dir(dir);
-    }
-    if let Ok(output) = go.args(["env", "GOROOT"]).output()
-        && output.status.success()
-        && let Ok(root) = std::str::from_utf8(&output.stdout)
-        && let Some(path) = from_root(Path::new(root.trim_end_matches(['\r', '\n'])))
-    {
-        return path;
-    }
-    PathBuf::from("gofmt")
+}
+
+fn sdk_gofmt(root: &Path) -> Option<PathBuf> {
+    let path = root
+        .join("bin")
+        .join(format!("gofmt{}", env::consts::EXE_SUFFIX));
+    (root.is_absolute() && path.is_file()).then_some(path)
+}
+
+fn gofmt_path(workdir: Option<&Path>) -> PathBuf {
+    static PATHS: LazyLock<Mutex<HashMap<GofmtContext, PathBuf>>> = LazyLock::new(Mutex::default);
+    GofmtContext::new(workdir).resolve(&mut PATHS.lock().unwrap(), |dir| {
+        let output = Command::new("go")
+            .args(["env", "GOROOT"])
+            .current_dir(dir)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let root = std::str::from_utf8(&output.stdout)
+            .ok()?
+            .trim_end_matches(['\r', '\n']);
+        Some(PathBuf::from(root))
+    })
 }
 
 pub(super) fn formatting_edits(
@@ -131,4 +170,76 @@ fn matching_bytes(left: impl Iterator<Item = char>, right: impl Iterator<Item = 
 
 fn splits_crlf(text: &str, offset: usize) -> bool {
     text[..offset].ends_with('\r') && text[offset..].starts_with('\n')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestProject;
+
+    #[test]
+    fn gofmt_resolution_is_cached_per_directory_and_toolchain_environment() {
+        let project = TestProject::new();
+        let tool = format!("bin/gofmt{}", env::consts::EXE_SUFFIX);
+        let first = project.write(&format!("first/{tool}"), "");
+        let second = project.write(&format!("second/{tool}"), "");
+        let context = GofmtContext {
+            goroot: None,
+            ..GofmtContext::new(Some(&project.root))
+        };
+        let mut paths = HashMap::new();
+        let resolve_once = |_: &Path| -> Option<PathBuf> { panic!("unexpected go env GOROOT") };
+
+        assert_eq!(
+            context.clone().resolve(&mut paths, |dir| {
+                assert_eq!(dir, path_key(&project.root));
+                Some(project.root.join("first"))
+            }),
+            first
+        );
+        let same_dir = GofmtContext {
+            workdir: GofmtContext::new(Some(&project.root.join("first/.."))).workdir,
+            ..context.clone()
+        };
+        assert_eq!(same_dir.resolve(&mut paths, resolve_once), first);
+
+        let explicit = GofmtContext {
+            goroot: Some(project.root.join("second")),
+            ..context.clone()
+        };
+        assert_eq!(explicit.resolve(&mut paths, resolve_once), second);
+        let missing = GofmtContext {
+            goroot: Some(project.root.join("missing")),
+            ..context.clone()
+        };
+        assert_eq!(
+            missing.clone().resolve(&mut paths, |_| None),
+            Path::new("gofmt")
+        );
+        assert_eq!(
+            missing.resolve(&mut paths, resolve_once),
+            Path::new("gofmt")
+        );
+        assert_eq!(context.clone().resolve(&mut paths, resolve_once), first);
+
+        for changed in [
+            GofmtContext {
+                workdir: project.root.join("second"),
+                ..context.clone()
+            },
+            GofmtContext {
+                path: Some(project.root.clone().into_os_string()),
+                ..context.clone()
+            },
+            GofmtContext {
+                toolchain: Some("test-toolchain".into()),
+                ..context
+            },
+        ] {
+            assert_eq!(
+                changed.resolve(&mut paths, |_| Some(project.root.join("second"))),
+                second
+            );
+        }
+    }
 }

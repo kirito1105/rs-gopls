@@ -118,6 +118,10 @@ impl Serialize for DiagnosticCode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[expect(
+    dead_code,
+    reason = "the diagnostic model represents all LSP severities"
+)]
 pub(crate) enum DiagnosticSeverity {
     Error,
     Warning,
@@ -128,6 +132,13 @@ pub(crate) enum DiagnosticSeverity {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum DiagnosticTag {
     Unnecessary,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the diagnostic model supports the LSP deprecated tag"
+        )
+    )]
     Deprecated,
 }
 

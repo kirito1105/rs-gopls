@@ -13,7 +13,6 @@ pub(crate) struct DiagnosticsCache {
 }
 
 impl DiagnosticsCache {
-    #[allow(dead_code, reason = "snapshot lookup for code actions")]
     pub(crate) fn get(
         &self,
         document: &DocumentSnapshot<'_>,
@@ -44,7 +43,6 @@ impl DiagnosticsCache {
         self.reports.insert(path.clone(), report);
     }
 
-    #[allow(dead_code, reason = "document lifecycle entry point")]
     pub(crate) fn invalidate_document(&mut self, path_key: &Path) {
         // A resolved report can depend on bindings in any open buffer.
         self.reports
@@ -52,7 +50,6 @@ impl DiagnosticsCache {
         self.order.retain(|key| self.reports.contains_key(key));
     }
 
-    #[allow(dead_code, reason = "workspace lifecycle entry point")]
     pub(crate) fn clear(&mut self) {
         self.reports.clear();
         self.order.clear();
