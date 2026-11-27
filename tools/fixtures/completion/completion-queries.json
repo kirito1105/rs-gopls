@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "build": "GO-263.7307.354",
-  "sdkHome": "C:/Users/rick/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.windows-amd64",
+  "sdkHome": "$GOROOT",
   "sdkVersion": "1.27.4",
   "completionType": "BASIC",
   "projects": [

@@ -46,8 +46,6 @@ def load_goland_bench(path, corpus):
     for key in METADATA:
         if bench[key] != corpus.data[key]:
             raise ValueError(f"{path} and the completion fixture disagree on {key}")
-    if Path(bench["root"]).resolve() != corpus.root:
-        raise ValueError(f"GoLand timings captured {bench['root']}, running in {corpus.root}")
 
     # The paired capture contains the candidate identities that the timing rows
     # describe only by query ID and result count.

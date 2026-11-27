@@ -20,7 +20,7 @@ use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 /// A query's view of the open documents and the installed package graph.
 /// The parser and disk indexes are borrowed for lazy reads.
 pub(crate) struct EngineSnapshot<'a> {
-    root: &'a Path,
+    roots: &'a [PathBuf],
     workspace: Option<&'a Workspace>,
     graph_changes: &'a GraphChanges,
     documents: &'a HashMap<PathBuf, IndexedSource>,
@@ -54,7 +54,7 @@ impl EngineState {
     // preferences or a feature cache on the engine.
     pub(super) fn snapshot(&mut self, include_tests: bool) -> EngineSnapshot<'_> {
         EngineSnapshot {
-            root: &self.root,
+            roots: &self.roots,
             workspace: self.workspace.as_ref(),
             graph_changes: &self.graph_changes,
             documents: &self.documents,
@@ -157,7 +157,11 @@ impl<'a> EngineSnapshot<'a> {
     }
 
     pub(super) fn root(&self) -> &'a Path {
-        self.root
+        self.roots.first().map_or(Path::new("."), PathBuf::as_path)
+    }
+
+    pub(super) fn roots(&self) -> &'a [PathBuf] {
+        self.roots
     }
 
     pub(super) fn completion_source_generation(&self) -> u64 {

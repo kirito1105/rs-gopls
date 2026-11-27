@@ -13,7 +13,7 @@ use tree_sitter::Node;
 
 use crate::protocol::path_uri;
 use crate::semantic::{
-    actions::imports::{ImportOperation, import_edits},
+    actions::{ImportOperation, import_edits},
     index::{CompletionRead, text_fingerprint},
     presentation::{documentation, function_signature, syntax_text},
     snapshot::{DocumentSnapshot, EngineSnapshot},
@@ -382,7 +382,7 @@ pub(super) fn build_import_edits(
 ) -> Option<Vec<TextEdit>> {
     import_edits(
         document,
-        ImportOperation::Add {
+        ImportOperation::CompleteImport {
             path: &import.path,
             alias: import.alias.as_deref(),
         },

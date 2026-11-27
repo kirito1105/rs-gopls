@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "project": "localchat",
-  "root": "E:\\Code\\localchat\\server",
+  "project": "external",
+  "root": "$WORKSPACE",
   "revision": "532228d3d36bd9f0fffb4bda35c180485b2eadd6",
   "build": "GO-263.7307.354",
   "sdk": {
@@ -14,7 +14,7 @@
       {
         "name": "server",
         "sdkVersion": "1.27.4",
-        "sdkHome": "C:/Users/rick/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.windows-amd64",
+        "sdkHome": "$GOROOT",
         "goos": "default",
         "goarch": "default",
         "cgo": "UNSURE",
@@ -141,7 +141,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/language/language.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/language/language.go",
           "sourcePackage": "golang.org/x/text/language",
           "packageName": "language"
         },
@@ -193,7 +193,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/gopkg.in/check.v1@v1.0.0-20201130134442-10cb98267c6c/checkers.go",
+          "sourcePath": "$GOMODCACHE/gopkg.in/check.v1@v1.0.0-20201130134442-10cb98267c6c/checkers.go",
           "sourcePackage": "gopkg.in/check.v1",
           "packageName": "check"
         },
@@ -401,7 +401,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/oauth2@v0.36.0/nokiahealth/nokiahealth.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/oauth2@v0.36.0/nokiahealth/nokiahealth.go",
           "sourcePackage": "golang.org/x/oauth2/nokiahealth",
           "packageName": "nokiahealth"
         },
@@ -427,7 +427,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -453,7 +453,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/composition.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/composition.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -479,7 +479,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/iter.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/iter.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -505,7 +505,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/iter.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/iter.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -531,7 +531,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/tables17.0.0.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/tables17.0.0.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -557,7 +557,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -583,7 +583,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -609,7 +609,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -635,7 +635,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/normalize.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -661,7 +661,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/forminfo.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/forminfo.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -687,7 +687,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/unicode/norm/tables17.0.0.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/unicode/norm/tables17.0.0.go",
           "sourcePackage": "golang.org/x/text/unicode/norm",
           "packageName": "norm"
         },
@@ -713,7 +713,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -739,7 +739,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -765,7 +765,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -791,7 +791,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -817,7 +817,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -843,7 +843,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -869,7 +869,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -895,7 +895,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -921,7 +921,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -947,7 +947,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -973,7 +973,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -999,7 +999,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -1025,7 +1025,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -1051,7 +1051,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -1077,7 +1077,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/note/note.go",
           "sourcePackage": "golang.org/x/mod/sumdb/note",
           "packageName": "note"
         },
@@ -1103,7 +1103,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/squirrel_ctx.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/squirrel_ctx.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -1129,7 +1129,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/oauth2@v0.36.0/oauth2.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/oauth2@v0.36.0/oauth2.go",
           "sourcePackage": "golang.org/x/oauth2",
           "packageName": "oauth2"
         },
@@ -1155,7 +1155,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/expr.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/expr.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -1181,7 +1181,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/expr.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/expr.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -1207,7 +1207,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/expr.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/expr.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -1311,7 +1311,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/encoding/encoding.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/encoding/encoding.go",
           "sourcePackage": "golang.org/x/text/encoding",
           "packageName": "encoding"
         },
@@ -1337,7 +1337,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/transform/transform.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/transform/transform.go",
           "sourcePackage": "golang.org/x/text/transform",
           "packageName": "transform"
         },
@@ -1389,7 +1389,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/notice.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/notice.go",
           "sourcePackage": "github.com/lib/pq",
           "packageName": "pq"
         },
@@ -1415,7 +1415,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgconn",
           "packageName": "pgconn"
         },
@@ -1441,7 +1441,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/notice.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/notice.go",
           "sourcePackage": "github.com/lib/pq",
           "packageName": "pq"
         },
@@ -1467,7 +1467,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgconn",
           "packageName": "pgconn"
         },
@@ -1493,7 +1493,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/notify.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/notify.go",
           "sourcePackage": "github.com/lib/pq",
           "packageName": "pq"
         },
@@ -1519,7 +1519,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/notify.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/notify.go",
           "sourcePackage": "github.com/lib/pq",
           "packageName": "pq"
         },
@@ -1545,7 +1545,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgconn",
           "packageName": "pgconn"
         },
@@ -1571,7 +1571,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgconn/pgconn.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgconn",
           "packageName": "pgconn"
         },
@@ -1649,7 +1649,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/node.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/node.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -1675,7 +1675,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/gopkg.in/yaml.v3@v3.0.1/yaml.go",
+          "sourcePath": "$GOMODCACHE/gopkg.in/yaml.v3@v3.0.1/yaml.go",
           "sourcePackage": "gopkg.in/yaml.v3",
           "packageName": "yaml"
         },
@@ -1779,7 +1779,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/node.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/node.go",
           "sourcePackage": "golang.org/x/net/html",
           "packageName": "html"
         },
@@ -1805,7 +1805,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.yaml.in/yaml/v3@v3.0.4/yaml.go",
+          "sourcePath": "$GOMODCACHE/go.yaml.in/yaml/v3@v3.0.4/yaml.go",
           "sourcePackage": "go.yaml.in/yaml/v3",
           "packageName": "yaml"
         },
@@ -1831,7 +1831,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/go/ssa/ssa.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/go/ssa/ssa.go",
           "sourcePackage": "golang.org/x/tools/go/ssa",
           "packageName": "ssa"
         },
@@ -1857,7 +1857,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/go/callgraph/callgraph.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/go/callgraph/callgraph.go",
           "sourcePackage": "golang.org/x/tools/go/callgraph",
           "packageName": "callgraph"
         },
@@ -1883,7 +1883,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/node.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/node.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -1909,7 +1909,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/panjf2000/gnet/v2@v2.9.7/gnet.go",
+          "sourcePath": "$GOMODCACHE/github.com/panjf2000/gnet/v2@v2.9.7/gnet.go",
           "sourcePackage": "github.com/panjf2000/gnet/v2",
           "packageName": "gnet"
         },
@@ -1987,7 +1987,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/secure/precis/options.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/secure/precis/options.go",
           "sourcePackage": "golang.org/x/text/secure/precis",
           "packageName": "precis"
         },
@@ -2039,7 +2039,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/tx.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/tx.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -2065,7 +2065,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2091,7 +2091,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2117,7 +2117,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2143,7 +2143,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2169,7 +2169,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2195,7 +2195,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgproto3/no_data.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgproto3/no_data.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgproto3",
           "packageName": "pgproto3"
         },
@@ -2221,7 +2221,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2247,7 +2247,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2273,7 +2273,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2299,7 +2299,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2325,7 +2325,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2351,7 +2351,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -2377,7 +2377,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/chacha20/chacha_generic.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/chacha20/chacha_generic.go",
           "sourcePackage": "golang.org/x/crypto/chacha20",
           "packageName": "chacha20"
         },
@@ -2403,7 +2403,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -2429,7 +2429,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/chacha20/chacha_generic.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/chacha20/chacha_generic.go",
           "sourcePackage": "golang.org/x/crypto/chacha20",
           "packageName": "chacha20"
         },
@@ -2455,7 +2455,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/chacha20poly1305/chacha20poly1305.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/chacha20poly1305/chacha20poly1305.go",
           "sourcePackage": "golang.org/x/crypto/chacha20poly1305",
           "packageName": "chacha20poly1305"
         },
@@ -2481,7 +2481,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/chacha20poly1305/chacha20poly1305.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/chacha20poly1305/chacha20poly1305.go",
           "sourcePackage": "golang.org/x/crypto/chacha20poly1305",
           "packageName": "chacha20poly1305"
         },
@@ -2507,7 +2507,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/oauth2@v0.36.0/endpoints/endpoints.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/oauth2@v0.36.0/endpoints/endpoints.go",
           "sourcePackage": "golang.org/x/oauth2/endpoints",
           "packageName": "endpoints"
         },
@@ -2533,7 +2533,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/otr/otr.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/otr/otr.go",
           "sourcePackage": "golang.org/x/crypto/otr",
           "packageName": "otr"
         },
@@ -2559,7 +2559,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgconn/errors.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgconn/errors.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgconn",
           "packageName": "pgconn"
         },
@@ -2585,7 +2585,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgproto3/notice_response.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgproto3/notice_response.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgproto3",
           "packageName": "pgproto3"
         },
@@ -2611,7 +2611,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgproto3/notification_response.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgproto3/notification_response.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgproto3",
           "packageName": "pgproto3"
         },
@@ -2637,7 +2637,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/pkcs12/errors.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/pkcs12/errors.go",
           "sourcePackage": "golang.org/x/crypto/pkcs12",
           "packageName": "pkcs12"
         },
@@ -2663,7 +2663,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/ssh/knownhosts/knownhosts.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/ssh/knownhosts/knownhosts.go",
           "sourcePackage": "golang.org/x/crypto/ssh/knownhosts",
           "packageName": "knownhosts"
         },
@@ -2689,7 +2689,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/compressed.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/compressed.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -2715,7 +2715,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/panjf2000/gnet/v2@v2.9.7/pkg/pool/goroutine/goroutine.go",
+          "sourcePath": "$GOMODCACHE/github.com/panjf2000/gnet/v2@v2.9.7/pkg/pool/goroutine/goroutine.go",
           "sourcePackage": "github.com/panjf2000/gnet/v2/pkg/pool/goroutine",
           "packageName": "goroutine"
         },
@@ -2767,7 +2767,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/gopkg.in/check.v1@v1.0.0-20201130134442-10cb98267c6c/checkers.go",
+          "sourcePath": "$GOMODCACHE/gopkg.in/check.v1@v1.0.0-20201130134442-10cb98267c6c/checkers.go",
           "sourcePackage": "gopkg.in/check.v1",
           "packageName": "check"
         },
@@ -2793,7 +2793,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -2819,7 +2819,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -3781,7 +3781,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -3807,7 +3807,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -3833,7 +3833,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -3859,7 +3859,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -3885,7 +3885,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -3911,7 +3911,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -3937,7 +3937,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -3963,7 +3963,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -3989,7 +3989,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4015,7 +4015,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4041,7 +4041,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4067,7 +4067,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4093,7 +4093,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4119,7 +4119,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4145,7 +4145,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4171,7 +4171,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4197,7 +4197,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4223,7 +4223,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4249,7 +4249,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4275,7 +4275,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4301,7 +4301,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4327,7 +4327,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4353,7 +4353,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4379,7 +4379,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4405,7 +4405,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4431,7 +4431,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4457,7 +4457,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4483,7 +4483,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4509,7 +4509,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4535,7 +4535,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4561,7 +4561,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4587,7 +4587,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4613,7 +4613,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4639,7 +4639,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4665,7 +4665,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4691,7 +4691,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4717,7 +4717,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4743,7 +4743,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4769,7 +4769,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4795,7 +4795,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4821,7 +4821,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4847,7 +4847,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4873,7 +4873,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4899,7 +4899,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4925,7 +4925,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -4951,7 +4951,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -4977,7 +4977,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertions.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -5003,7 +5003,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/assertion_format.go",
           "sourcePackage": "github.com/stretchr/testify/assert",
           "packageName": "assert"
         },
@@ -5029,7 +5029,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5055,7 +5055,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5081,7 +5081,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5107,7 +5107,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5133,7 +5133,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5159,7 +5159,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5185,7 +5185,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5211,7 +5211,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5237,7 +5237,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5263,7 +5263,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5289,7 +5289,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5315,7 +5315,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5341,7 +5341,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5367,7 +5367,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5393,7 +5393,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5419,7 +5419,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5445,7 +5445,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5471,7 +5471,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -5497,7 +5497,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/cases/cases.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/cases/cases.go",
           "sourcePackage": "golang.org/x/text/cases",
           "packageName": "cases"
         },
@@ -5523,7 +5523,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/currency/query.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/currency/query.go",
           "sourcePackage": "golang.org/x/text/currency",
           "packageName": "currency"
         },
@@ -5549,7 +5549,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/date/tables.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/date/tables.go",
           "sourcePackage": "golang.org/x/text/date",
           "packageName": "date"
         },
@@ -5575,7 +5575,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/date/tables.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/date/tables.go",
           "sourcePackage": "golang.org/x/text/date",
           "packageName": "date"
         },
@@ -5601,7 +5601,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/date/tables.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/date/tables.go",
           "sourcePackage": "golang.org/x/text/date",
           "packageName": "date"
         },
@@ -5627,7 +5627,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/date/tables.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/date/tables.go",
           "sourcePackage": "golang.org/x/text/date",
           "packageName": "date"
         },
@@ -5653,7 +5653,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/node.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/node.go",
           "sourcePackage": "golang.org/x/net/html",
           "packageName": "html"
         },
@@ -5679,7 +5679,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/language/tags.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/language/tags.go",
           "sourcePackage": "golang.org/x/text/language",
           "packageName": "language"
         },
@@ -5705,7 +5705,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/number/option.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/number/option.go",
           "sourcePackage": "golang.org/x/text/number",
           "packageName": "number"
         },
@@ -5731,7 +5731,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/present/code.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/present/code.go",
           "sourcePackage": "golang.org/x/tools/present",
           "packageName": "present"
         },
@@ -5757,7 +5757,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/runes/runes.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/runes/runes.go",
           "sourcePackage": "golang.org/x/text/runes",
           "packageName": "runes"
         },
@@ -5783,7 +5783,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/transform/transform.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/transform/transform.go",
           "sourcePackage": "golang.org/x/text/transform",
           "packageName": "transform"
         },
@@ -5809,7 +5809,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -5835,7 +5835,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -5861,7 +5861,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -5887,7 +5887,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -5913,7 +5913,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -5939,7 +5939,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -5965,7 +5965,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -5991,7 +5991,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -6017,7 +6017,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -6043,7 +6043,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -6069,7 +6069,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/language/display/dict.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/language/display/dict.go",
           "sourcePackage": "golang.org/x/text/language/display",
           "packageName": "display"
         },
@@ -6095,7 +6095,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/sumdb/tlog/tlog.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/sumdb/tlog/tlog.go",
           "sourcePackage": "golang.org/x/mod/sumdb/tlog",
           "packageName": "tlog"
         },
@@ -6121,7 +6121,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/go/ast/astutil/enclosing.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/go/ast/astutil/enclosing.go",
           "sourcePackage": "golang.org/x/tools/go/ast/astutil",
           "packageName": "astutil"
         },
@@ -6147,7 +6147,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/svc/mgr/recovery.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/svc/mgr/recovery.go",
           "sourcePackage": "golang.org/x/sys/windows/svc/mgr",
           "packageName": "mgr"
         },
@@ -6199,7 +6199,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6225,7 +6225,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6251,7 +6251,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6277,7 +6277,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6303,7 +6303,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/ocfb.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/ocfb.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -6329,7 +6329,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/ocfb.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/ocfb.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -6355,7 +6355,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/opaque.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/opaque.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -6433,7 +6433,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/types_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/types_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -6485,7 +6485,7 @@
             17
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/number/option.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/number/option.go",
           "sourcePackage": "golang.org/x/text/number",
           "packageName": "number"
         },
@@ -6511,7 +6511,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -6537,7 +6537,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -6563,7 +6563,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6589,7 +6589,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6615,7 +6615,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6641,7 +6641,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -6667,7 +6667,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/memory_encoder.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/memory_encoder.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -6693,7 +6693,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/benchmark/parse/parse.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/benchmark/parse/parse.go",
           "sourcePackage": "golang.org/x/tools/benchmark/parse",
           "packageName": "parse"
         },
@@ -6719,7 +6719,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/number/option.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/number/option.go",
           "sourcePackage": "golang.org/x/text/number",
           "packageName": "number"
         },
@@ -6745,7 +6745,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -6771,7 +6771,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/sampler.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/sampler.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -6797,7 +6797,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -6823,7 +6823,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -6849,7 +6849,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -6875,7 +6875,7 @@
             17
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -6901,7 +6901,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/ssh/session.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/ssh/session.go",
           "sourcePackage": "golang.org/x/crypto/ssh",
           "packageName": "ssh"
         },
@@ -6953,7 +6953,7 @@
             17
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/currency/currency.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/currency/currency.go",
           "sourcePackage": "golang.org/x/text/currency",
           "packageName": "currency"
         },
@@ -6979,7 +6979,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7005,7 +7005,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/security_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/security_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7031,7 +7031,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/security_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/security_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7057,7 +7057,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/security_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/security_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7083,7 +7083,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7109,7 +7109,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/types_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/types_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7135,7 +7135,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/types_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/types_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7161,7 +7161,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/syscall_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/syscall_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7187,7 +7187,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/types_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/types_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7213,7 +7213,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/security_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/security_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7239,7 +7239,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/registry/value.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/registry/value.go",
           "sourcePackage": "golang.org/x/sys/windows/registry",
           "packageName": "registry"
         },
@@ -7265,7 +7265,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/registry/key.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/registry/key.go",
           "sourcePackage": "golang.org/x/sys/windows/registry",
           "packageName": "registry"
         },
@@ -7291,7 +7291,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7317,7 +7317,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/types_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/types_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -7343,7 +7343,7 @@
             17
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -8374,7 +8374,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/statement.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/statement.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -8972,7 +8972,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -9076,7 +9076,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -13132,7 +13132,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version4.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version4.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14510,7 +14510,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/time.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/time.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14536,7 +14536,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14562,7 +14562,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14588,7 +14588,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14614,7 +14614,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14640,7 +14640,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14666,7 +14666,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/time.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/time.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14692,7 +14692,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14718,7 +14718,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14744,7 +14744,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14770,7 +14770,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14796,7 +14796,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14822,7 +14822,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14848,7 +14848,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14874,7 +14874,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14900,7 +14900,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14926,7 +14926,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14952,7 +14952,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -14978,7 +14978,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15004,7 +15004,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15030,7 +15030,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version4.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version4.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15056,7 +15056,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version4.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version4.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15082,7 +15082,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/hash.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/hash.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15108,7 +15108,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version4.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version4.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15134,7 +15134,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version1.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version1.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15160,7 +15160,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version6.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version6.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15186,7 +15186,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/version7.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/version7.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15212,7 +15212,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/node.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/node.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15238,7 +15238,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/node.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/node.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15264,7 +15264,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/null.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/null.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15290,7 +15290,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15316,7 +15316,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15342,7 +15342,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/dce.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/dce.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15368,7 +15368,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15394,7 +15394,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15420,7 +15420,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/time.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/time.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15446,7 +15446,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/node.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/node.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15472,7 +15472,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/node.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/node.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15498,7 +15498,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15524,7 +15524,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/time.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/time.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15550,7 +15550,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15576,7 +15576,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15602,7 +15602,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15628,7 +15628,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/google/uuid@v1.6.0/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/google/uuid@v1.6.0/uuid.go",
           "sourcePackage": "github.com/google/uuid",
           "packageName": "uuid"
         },
@@ -15706,7 +15706,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/gopkg.in/yaml.v3@v3.0.1/yaml.go",
+          "sourcePath": "$GOMODCACHE/gopkg.in/yaml.v3@v3.0.1/yaml.go",
           "sourcePackage": "gopkg.in/yaml.v3",
           "packageName": "yaml"
         },
@@ -15810,7 +15810,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.yaml.in/yaml/v3@v3.0.4/yaml.go",
+          "sourcePath": "$GOMODCACHE/go.yaml.in/yaml/v3@v3.0.4/yaml.go",
           "sourcePackage": "go.yaml.in/yaml/v3",
           "packageName": "yaml"
         },
@@ -15836,7 +15836,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/assert/yaml/yaml_default.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/assert/yaml/yaml_default.go",
           "sourcePackage": "github.com/stretchr/testify/assert/yaml",
           "packageName": "yaml"
         },
@@ -15862,7 +15862,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/update.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/update.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -15966,7 +15966,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/websocket@v1.5.3/server.go",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/websocket@v1.5.3/server.go",
           "sourcePackage": "github.com/gorilla/websocket",
           "packageName": "websocket"
         },
@@ -15992,7 +15992,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/websocket@v1.5.3/server.go",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/websocket@v1.5.3/server.go",
           "sourcePackage": "github.com/gorilla/websocket",
           "packageName": "websocket"
         },
@@ -16018,7 +16018,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16044,7 +16044,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16070,7 +16070,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16096,7 +16096,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16122,7 +16122,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16148,7 +16148,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16174,7 +16174,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16200,7 +16200,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16226,7 +16226,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16252,7 +16252,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16278,7 +16278,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16304,7 +16304,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16330,7 +16330,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16356,7 +16356,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16382,7 +16382,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16408,7 +16408,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16434,7 +16434,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16460,7 +16460,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16486,7 +16486,7 @@
             5
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16512,7 +16512,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16538,7 +16538,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16564,7 +16564,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16590,7 +16590,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/export.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/export.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16616,7 +16616,7 @@
             5
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/export.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/export.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16642,7 +16642,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16668,7 +16668,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -16980,7 +16980,7 @@
             5
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/pmezard/go-difflib@v1.0.0/difflib/difflib.go",
+          "sourcePath": "$GOMODCACHE/github.com/pmezard/go-difflib@v1.0.0/difflib/difflib.go",
           "sourcePackage": "github.com/pmezard/go-difflib/difflib",
           "packageName": "difflib"
         },
@@ -17006,7 +17006,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/field.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/field.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -17032,7 +17032,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/field.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/field.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -17058,7 +17058,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/field.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/field.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -17084,7 +17084,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/field.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/field.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -17136,7 +17136,7 @@
             5
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/registry/key.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/registry/key.go",
           "sourcePackage": "golang.org/x/sys/windows/registry",
           "packageName": "registry"
         }
@@ -17413,7 +17413,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/kr/text@v0.2.0/indent.go",
+          "sourcePath": "$GOMODCACHE/github.com/kr/text@v0.2.0/indent.go",
           "sourcePackage": "github.com/kr/text",
           "packageName": "text"
         },
@@ -17439,7 +17439,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/go.uber.org/zap@v1.28.0/zapcore/increase_level.go",
+          "sourcePath": "$GOMODCACHE/go.uber.org/zap@v1.28.0/zapcore/increase_level.go",
           "sourcePackage": "go.uber.org/zap/zapcore",
           "packageName": "zapcore"
         },
@@ -17465,7 +17465,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/go/gcexportdata/importer.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/go/gcexportdata/importer.go",
           "sourcePackage": "golang.org/x/tools/go/gcexportdata",
           "packageName": "gcexportdata"
         },
@@ -17491,7 +17491,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/secure/precis/profile.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/secure/precis/profile.go",
           "sourcePackage": "golang.org/x/text/secure/precis",
           "packageName": "precis"
         },
@@ -17517,7 +17517,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/userid.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/userid.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -17543,7 +17543,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17569,7 +17569,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17595,7 +17595,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17621,7 +17621,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17647,7 +17647,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17673,7 +17673,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17699,7 +17699,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17725,7 +17725,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17751,7 +17751,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17777,7 +17777,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17803,7 +17803,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17829,7 +17829,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17855,7 +17855,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17881,7 +17881,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17907,7 +17907,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17933,7 +17933,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17959,7 +17959,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -17985,7 +17985,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -18011,7 +18011,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         },
@@ -18037,7 +18037,7 @@
             14
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/aholstenson/loro-go@v0.4.0/loro.go",
+          "sourcePath": "$GOMODCACHE/github.com/aholstenson/loro-go@v0.4.0/loro.go",
           "sourcePackage": "github.com/aholstenson/loro-go",
           "packageName": "loro"
         }
@@ -20097,7 +20097,7 @@
             5
           ],
           "kind": "PsiDirectoryImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/mux@v1.8.1",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/mux@v1.8.1",
           "sourcePackage": null,
           "packageName": null
         },
@@ -20227,7 +20227,7 @@
             5
           ],
           "kind": "PsiDirectoryImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/websocket@v1.5.3",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/websocket@v1.5.3",
           "sourcePackage": null,
           "packageName": null
         },
@@ -22757,7 +22757,7 @@
             46
           ],
           "kind": "GoMethodDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/mux@v1.8.1/mux.go",
           "sourcePackage": "github.com/gorilla/mux",
           "packageName": "mux"
         }
@@ -22912,7 +22912,7 @@
             10
           ],
           "kind": "PsiDirectoryImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/panjf2000/gnet/v2@v2.9.7/pkg/math",
+          "sourcePath": "$GOMODCACHE/github.com/panjf2000/gnet/v2@v2.9.7/pkg/math",
           "sourcePackage": null,
           "packageName": null
         }
@@ -24013,7 +24013,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/mux@v1.8.1/route.go",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/mux@v1.8.1/route.go",
           "sourcePackage": "github.com/gorilla/mux",
           "packageName": "mux"
         },
@@ -24039,7 +24039,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/mux@v1.8.1/mux.go",
           "sourcePackage": "github.com/gorilla/mux",
           "packageName": "mux"
         },
@@ -24065,7 +24065,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/gorilla/mux@v1.8.1/mux.go",
+          "sourcePath": "$GOMODCACHE/github.com/gorilla/mux@v1.8.1/mux.go",
           "sourcePackage": "github.com/gorilla/mux",
           "packageName": "mux"
         },
@@ -24117,7 +24117,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/row.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/row.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -24143,7 +24143,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/!masterminds/squirrel@v1.5.4/row.go",
+          "sourcePath": "$GOMODCACHE/github.com/!masterminds/squirrel@v1.5.4/row.go",
           "sourcePackage": "github.com/Masterminds/squirrel",
           "packageName": "squirrel"
         },
@@ -24195,7 +24195,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24299,7 +24299,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/stdlib/sql.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/stdlib/sql.go",
           "sourcePackage": "github.com/jackc/pgx/v5/stdlib",
           "packageName": "stdlib"
         },
@@ -24325,7 +24325,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24351,7 +24351,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -24559,7 +24559,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/panjf2000/gnet/v2@v2.9.7/gnet.go",
+          "sourcePath": "$GOMODCACHE/github.com/panjf2000/gnet/v2@v2.9.7/gnet.go",
           "sourcePackage": "github.com/panjf2000/gnet/v2",
           "packageName": "gnet"
         },
@@ -24585,7 +24585,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/panjf2000/gnet/v2@v2.9.7/load_balancer.go",
+          "sourcePath": "$GOMODCACHE/github.com/panjf2000/gnet/v2@v2.9.7/load_balancer.go",
           "sourcePackage": "github.com/panjf2000/gnet/v2",
           "packageName": "gnet"
         },
@@ -24611,7 +24611,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24637,7 +24637,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24663,7 +24663,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24689,7 +24689,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24715,7 +24715,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24741,7 +24741,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24767,7 +24767,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24793,7 +24793,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24819,7 +24819,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24845,7 +24845,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24871,7 +24871,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -24897,7 +24897,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/rows.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/rows.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -25105,7 +25105,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/panjf2000/ants/v2@v2.12.0/multipool.go",
+          "sourcePath": "$GOMODCACHE/github.com/panjf2000/ants/v2@v2.12.0/multipool.go",
           "sourcePackage": "github.com/panjf2000/ants/v2",
           "packageName": "ants"
         },
@@ -25131,7 +25131,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/date/tables.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/date/tables.go",
           "sourcePackage": "golang.org/x/text/date",
           "packageName": "date"
         },
@@ -25157,7 +25157,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/http2/transport.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/http2/transport.go",
           "sourcePackage": "golang.org/x/net/http2",
           "packageName": "http2"
         },
@@ -25183,7 +25183,7 @@
             4
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/language/tags.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/language/tags.go",
           "sourcePackage": "golang.org/x/text/language",
           "packageName": "language"
         },
@@ -25209,7 +25209,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/nettest/nettest.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/nettest/nettest.go",
           "sourcePackage": "golang.org/x/net/nettest",
           "packageName": "nettest"
         },
@@ -25235,7 +25235,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/net@v0.52.0/html/atom/table.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/net@v0.52.0/html/atom/table.go",
           "sourcePackage": "golang.org/x/net/html/atom",
           "packageName": "atom"
         },
@@ -25261,7 +25261,7 @@
             4
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/text@v0.36.0/language/display/dict.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/text@v0.36.0/language/display/dict.go",
           "sourcePackage": "golang.org/x/text/language/display",
           "packageName": "display"
         },
@@ -25287,7 +25287,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25313,7 +25313,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25339,7 +25339,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25365,7 +25365,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25391,7 +25391,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25417,7 +25417,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25443,7 +25443,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25469,7 +25469,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25495,7 +25495,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25521,7 +25521,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25547,7 +25547,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25573,7 +25573,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25599,7 +25599,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25625,7 +25625,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25677,7 +25677,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/tx.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/tx.go",
           "sourcePackage": "github.com/jackc/pgx/v5",
           "packageName": "pgx"
         },
@@ -25703,7 +25703,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/ocsp/ocsp.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/ocsp/ocsp.go",
           "sourcePackage": "golang.org/x/crypto/ocsp",
           "packageName": "ocsp"
         },
@@ -25729,7 +25729,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -25833,7 +25833,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zsyscall_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -25859,7 +25859,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/stdlib/sql.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/stdlib/sql.go",
           "sourcePackage": "github.com/jackc/pgx/v5/stdlib",
           "packageName": "stdlib"
         },
@@ -25885,7 +25885,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/pgtype.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -25937,7 +25937,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/types_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/types_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26093,7 +26093,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26119,7 +26119,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26145,7 +26145,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26171,7 +26171,7 @@
             4
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgproto3/row_description.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgproto3/row_description.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgproto3",
           "packageName": "pgproto3"
         },
@@ -26223,7 +26223,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26249,7 +26249,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26275,7 +26275,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26301,7 +26301,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26327,7 +26327,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -26353,7 +26353,7 @@
             4
           ],
           "kind": "GoVarDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/lib/pq@v1.12.3/pqerror/codes.go",
+          "sourcePath": "$GOMODCACHE/github.com/lib/pq@v1.12.3/pqerror/codes.go",
           "sourcePackage": "github.com/lib/pq/pqerror",
           "packageName": "pqerror"
         },
@@ -26405,7 +26405,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/registry/key.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/registry/key.go",
           "sourcePackage": "golang.org/x/sys/windows/registry",
           "packageName": "registry"
         },
@@ -26431,7 +26431,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/registry/key.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/registry/key.go",
           "sourcePackage": "golang.org/x/sys/windows/registry",
           "packageName": "registry"
         },
@@ -26899,7 +26899,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -26925,7 +26925,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -26951,7 +26951,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -26977,7 +26977,7 @@
             4
           ],
           "kind": "GoFunctionDeclarationImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/stretchr/testify@v1.11.1/require/require.go",
+          "sourcePath": "$GOMODCACHE/github.com/stretchr/testify@v1.11.1/require/require.go",
           "sourcePackage": "github.com/stretchr/testify/require",
           "packageName": "require"
         },
@@ -27003,7 +27003,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27029,7 +27029,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27055,7 +27055,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27081,7 +27081,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27107,7 +27107,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27133,7 +27133,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27159,7 +27159,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27185,7 +27185,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27211,7 +27211,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27237,7 +27237,7 @@
             4
           ],
           "kind": "GoConstDefinitionImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/zerrors_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27344,7 +27344,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/mod@v0.34.0/modfile/work.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/mod@v0.34.0/modfile/work.go",
           "sourcePackage": "golang.org/x/mod/modfile",
           "packageName": "modfile"
         },
@@ -27526,7 +27526,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/userattribute.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/userattribute.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -27552,7 +27552,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/crypto@v0.50.0/openpgp/packet/userid.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/crypto@v0.50.0/openpgp/packet/userid.go",
           "sourcePackage": "golang.org/x/crypto/openpgp/packet",
           "packageName": "packet"
         },
@@ -27656,7 +27656,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/sys@v0.43.0/windows/security_windows.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/sys@v0.43.0/windows/security_windows.go",
           "sourcePackage": "golang.org/x/sys/windows",
           "packageName": "windows"
         },
@@ -27708,7 +27708,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/uuid.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/uuid.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -27734,7 +27734,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/uint32.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/uint32.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -27760,7 +27760,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/uint64.go",
+          "sourcePath": "$GOMODCACHE/github.com/jackc/pgx/v5@v5.9.2/pgtype/uint64.go",
           "sourcePackage": "github.com/jackc/pgx/v5/pgtype",
           "packageName": "pgtype"
         },
@@ -27864,7 +27864,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/go/analysis/passes/usesgenerics/usesgenerics.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/go/analysis/passes/usesgenerics/usesgenerics.go",
           "sourcePackage": "golang.org/x/tools/go/analysis/passes/usesgenerics",
           "packageName": "usesgenerics"
         },
@@ -27890,7 +27890,7 @@
             12
           ],
           "kind": "GoTypeSpecImpl",
-          "sourcePath": "C:/Users/rick/go/pkg/mod/golang.org/x/tools@v0.43.0/go/analysis/passes/usesgenerics/usesgenerics.go",
+          "sourcePath": "$GOMODCACHE/golang.org/x/tools@v0.43.0/go/analysis/passes/usesgenerics/usesgenerics.go",
           "sourcePackage": "golang.org/x/tools/go/analysis/passes/usesgenerics",
           "packageName": "usesgenerics"
         },

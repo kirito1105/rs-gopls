@@ -175,7 +175,15 @@ try {
     int warmupRuns = 5
     int sampleRuns = 30
     String editPrefix = '// GoLand completion benchmark buffer edit\n\n'
-    def sdkRoot = Path.of(spec.sdkHome).toRealPath()
+    def go = new ProcessBuilder('go', 'env', '-json', 'GOROOT', 'GOMODCACHE')
+    go.environment().put('GOTOOLCHAIN', 'go' + spec.sdkVersion)
+    go.environment().put('GOPROXY', 'off')
+    def probe = go.redirectErrorStream(true).start()
+    def output = probe.inputStream.getText('UTF-8')
+    if (probe.waitFor() != 0) throw new IllegalStateException("Cannot locate capture toolchain: $output")
+    def goEnv = gson.fromJson(output, Map)
+    def sdkRoot = Path.of(spec.sdkHome == '$GOROOT' ? goEnv.GOROOT : spec.sdkHome).toRealPath()
+    def moduleCache = Path.of(goEnv.GOMODCACHE).toAbsolutePath().normalize()
     def goModule = PluginManagerCore.pluginSet.enabledModules.find {
         it instanceof ContentModuleDescriptor && it.moduleNameString == 'intellij.go.impl'
     }
@@ -209,13 +217,18 @@ try {
             previous = stamps
             Thread.sleep(200)
         }
+        def relativePath = { VirtualFile file ->
+            if (!file?.isInLocalFileSystem()) return null
+            Path path = file.toNioPath()
+            if (path.startsWith(root)) return root.relativize(path).toString().replace('\\', '/')
+            if (path.startsWith(sdkRoot)) return '$GOROOT/' + sdkRoot.relativize(path).toString().replace('\\', '/')
+            if (path.startsWith(moduleCache)) return '$GOMODCACHE/' + moduleCache.relativize(path).toString().replace('\\', '/')
+            throw new IllegalStateException("Completion source outside the project, Go SDK and module cache: $path")
+        }
         def environment = dumb.runReadActionInSmartMode({
             def sdkService = sdkClass.getInstance(project)
             [
-                openFiles: FileEditorManager.getInstance(project).openFiles.collect { file ->
-                    Path path = file.toNioPath()
-                    path.startsWith(root) ? root.relativize(path).toString().replace('\\', '/') : file.path
-                },
+                openFiles: FileEditorManager.getInstance(project).openFiles.collect(relativePath),
                 vgoEnabled: vgoClass.getInstance(project).isIntegrationEnabled(),
                 goWork: input.goWork,
                 modules: ModuleManager.getInstance(project).modules.collect { module ->
@@ -231,6 +244,8 @@ try {
             it.sdkVersion == spec.sdkVersion && Path.of(it.sdkHome).toRealPath() == sdkRoot
         }) throw new IllegalStateException("Unexpected project SDK or module setup: $environment")
 
+        environment.modules.each { it.sdkHome = '$GOROOT' }
+
         Map sourceFiles = input.queries*.path.unique().collectEntries { String relative ->
             Path path = root.resolve(relative).toRealPath()
             if (!path.startsWith(root)) throw new IllegalArgumentException("Source outside workspace: $path")
@@ -239,13 +254,6 @@ try {
                 ProjectFileIndex.getInstance(project).isInContent(file)
             } as Computable)) throw new IllegalStateException("Source outside project content: $path")
             [(relative): [path: path, file: file]]
-        }
-        def relativePath = { VirtualFile file ->
-            if (!file?.isInLocalFileSystem()) return file?.path
-            Path path = file.toNioPath()
-            if (path.startsWith(root)) return root.relativize(path).toString().replace('\\', '/')
-            if (path.startsWith(sdkRoot)) return '$GOROOT/' + sdkRoot.relativize(path).toString().replace('\\', '/')
-            file.path
         }
         def declaration = { item, Map byFile ->
             def object = item.object
@@ -485,7 +493,7 @@ try {
                 runOnce(item.query, editor, document, offset, true).result.acceptance
             }
         }
-        Map meta = [schemaVersion: 1, project: input.id, root: root.toString(), revision: input.revision,
+        Map meta = [schemaVersion: 1, project: input.id, root: '$WORKSPACE', revision: input.revision,
                     build: build, sdk: environment, completionType: 'BASIC', invocationCount: 1,
                     editPrefix: editPrefix]
         outputJson(input.id + '-completion.json', meta + [cases: cases.collect { item ->
@@ -519,11 +527,11 @@ try {
     }
     progress("begin build=$build pid=${ProcessHandle.current().pid()} headless=${application.headlessEnvironment}")
     spec.projects.each { Map input ->
-        if (!(input.id in ['fixture', 'localchat']) || !input.queries ||
+        if (!(input.id in ['fixture', 'external']) || !input.queries ||
             input.queries*.id.unique().size() != input.queries.size()) {
             throw new IllegalArgumentException("Expected a known project and distinct queries: ${input.id}")
         }
-        Path root = Path.of(input.root).toRealPath()
+        Path root = Path.of(input.root == '$WORKSPACE' ? System.getenv('RS_GOPLS_BENCH_WORKSPACE') : input.root).toRealPath()
         progress(input.id + ' opening ' + root)
         def project = ProjectManager.instance.openProjects.find {
             it.basePath && Path.of(it.basePath).toRealPath() == root
@@ -559,7 +567,7 @@ try {
                         }
                         settingsClass.getInstance(module).setGoSupportEnabled(true)
                     }
-                    sdkClass.getInstance(project).setSdkHomePath(spec.sdkHome)
+                    sdkClass.getInstance(project).setSdkHomePath(sdkRoot.toString())
                     vgoClass.getInstance(project).setIntegrationEnabled(true)
                 } as ThrowableRunnable)
             }

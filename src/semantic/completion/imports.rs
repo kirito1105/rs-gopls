@@ -568,13 +568,13 @@ impl Search {
             let _phase = trace.as_ref().map(|trace| trace.phase("import_catalog"));
             cache.prepare(generation, workspace);
             if !self.graph_prepared {
-                self.enqueue(&cache.graph, caller, document);
+                self.enqueue(&cache.graph, workspace, caller, document);
                 self.graph_prepared = true;
             }
             if !self.sdk_prepared
                 && let Some(sdk) = cache.sdk(workspace, root, trace.as_ref(), &mut resolver.indexes)
             {
-                self.enqueue(&sdk, caller, document);
+                self.enqueue(&sdk, workspace, caller, document);
                 self.sdk_prepared = true;
             }
         }
@@ -890,6 +890,7 @@ impl Search {
     fn enqueue(
         &mut self,
         entries: &[Importable],
+        workspace: &Workspace,
         caller: Option<&Package>,
         document: &DocumentSnapshot<'_>,
     ) {
@@ -902,6 +903,11 @@ impl Search {
             .iter()
             .filter(|entry| can_import(entry, caller, &directory, test))
         {
+            if let (Some(caller), Some(id)) = (caller, &entry.package_id)
+                && !workspace.matches_import_variant(caller, &entry.path, id)
+            {
+                continue;
+            }
             if matches!(&self.kind, SearchKind::Symbols(query) if !query.matches_package(entry)) {
                 continue;
             }

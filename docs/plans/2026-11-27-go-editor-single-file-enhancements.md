@@ -220,3 +220,19 @@ GoLand `GO-263.7307.354` 的运行态记录含 85 个成功采集、0 个部分�
 | 折叠（纯行） | 4 / 4 | 82 | 60 条。59 个范围保留独占一行的关闭符，1 个同行范围在投影时去除。 |
 
 四项查询按当前文档能证明的身份、签名和值返回结果。无别名导入按路径末段及版本后缀近似。GoLand 的折叠组联动与初始折叠状态保存在采集元数据中，LSP 响应提供起止坐标与类型。12 项验收全部通过，无遗留阻塞。[逐样本差异与投影](../goland-editor-baseline.md#rs-gopls-重放)
+
+### 2026-11-27 · 合入主线后的回归
+
+合入 `origin/main`（`d7e08e2`）。初始化测试完整核对 Track E、诊断、格式化、代码操作、调用与类型层级以及工作区文件夹能力。所有合并冲突已解决，`git diff --check` 通过。
+
+| 验证命令 | 实测结果 |
+| --- | --- |
+| `cargo check -p rs-gopls --locked` | 退出 0，零告警，耗时 4.39 秒。 |
+| `cargo test -p rs-gopls --locked` | 退出 0，210 项通过，失败、忽略和告警均为 0。测试运行 25.43 秒。 |
+| `cargo build -p rs-gopls --release --locked` | 退出 0，零告警，耗时 23.76 秒。 |
+| `cargo metadata --format-version 1 --no-deps --locked` | 退出 0，从配置的产物目录定位 `target/release/rs-gopls.exe`。 |
+| `python -B tools/check_goland_editor.py $editorServer` | 退出 0，85/85 个基线样本和 4/4 个纯行折叠请求通过，共 89 个 LSP 请求，未约定差异为 0。 |
+| `python -B tools/check_workspace_updates.py $editorServer --module editor` | 退出 0，4/4 通过。 |
+| `python -B tools/check_workspace_updates.py $editorServer` | 退出 0，38/38 通过，含主线新增的诊断、格式化与代码操作、多工作区和层级用例。 |
+
+三项 Python 回归均使用 Go SDK `1.27.4`，零失败、零告警。合并后发布二进制的 SHA-256 为 `8681e0aa8071c9256d22862adbc3ceb765accb789f90267bde88ad09d687f83f`。
