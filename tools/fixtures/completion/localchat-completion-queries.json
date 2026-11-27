@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 1,
+  "build": "GO-263.7307.354",
+  "sdkHome": "C:/Users/rick/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.windows-amd64",
+  "sdkVersion": "1.27.4",
+  "completionType": "BASIC",
+  "projects": [
+    {
+      "id": "localchat",
+      "root": "E:/Code/localchat/server",
+      "revision": "532228d3d36bd9f0fffb4bda35c180485b2eadd6",
+      "goWork": "off",
+      "queries": [
+        {
+          "id": "local-inferred",
+          "kind": "scope",
+          "path": "internal/model/user.go",
+          "description": "The inferred local now in User.PreSave.",
+          "line": 47,
+          "character": 16,
+          "lineText": "\tu.CreateAt = now"
+        },
+        {
+          "id": "local-receiver",
+          "kind": "scope",
+          "path": "internal/model/user.go",
+          "description": "The *User method receiver.",
+          "line": 43,
+          "character": 5,
+          "lineText": "\tif u.Id == \"\" {"
+        },
+        {
+          "id": "local-same-package",
+          "kind": "scope",
+          "path": "internal/model/user.go",
+          "description": "A same-package function declared in another file.",
+          "line": 44,
+          "character": 13,
+          "lineText": "\t\tu.Id = NewId()"
+        },
+        {
+          "id": "local-field",
+          "kind": "selector",
+          "path": "internal/model/user.go",
+          "description": "A field selected through a pointer receiver.",
+          "line": 56,
+          "character": 9,
+          "lineText": "\tif u.Locale == \"\" {"
+        },
+        {
+          "id": "local-stdlib-selector",
+          "kind": "selector",
+          "path": "internal/model/user.go",
+          "description": "An already imported stdlib function.",
+          "line": 95,
+          "character": 25,
+          "lineText": "\tif _, err := mail.ParseAddress(u.Email); err != nil {"
+        },
+        {
+          "id": "local-interface",
+          "kind": "type",
+          "path": "internal/filestore/filestore.go",
+          "description": "A local interface type in a result list.",
+          "line": 21,
+          "character": 61,
+          "lineText": "func NewFileBackend(settings config.FileStoreSettings) (FileBackend, error) {"
+        },
+        {
+          "id": "local-package-qualifier",
+          "kind": "selector",
+          "path": "internal/api/user.go",
+          "description": "The imported model package in a type position.",
+          "line": 27,
+          "character": 16,
+          "lineText": "\tvar user model.User"
+        },
+        {
+          "id": "local-package-function",
+          "kind": "selector",
+          "path": "internal/api/user.go",
+          "description": "A cross-package function in an argument list.",
+          "line": 29,
+          "character": 29,
+          "lineText": "\t\tWriteError(w, model.NewAppError(\"createUser\", \"api.user.create.decode\", http.StatusBadRequest, \"invalid request body\"))"
+        },
+        {
+          "id": "local-external-selector",
+          "kind": "selector",
+          "path": "internal/api/user.go",
+          "description": "The stdlib json qualifier and a constructor.",
+          "line": 28,
+          "character": 20,
+          "lineText": "\tif err := json.NewDecoder(r.Body).Decode(&user); err != nil {"
+        },
+        {
+          "id": "local-unqualified-api",
+          "kind": "scope",
+          "path": "internal/api/user.go",
+          "description": "An unqualified API-package helper.",
+          "line": 29,
+          "character": 9,
+          "lineText": "\t\tWriteError(w, model.NewAppError(\"createUser\", \"api.user.create.decode\", http.StatusBadRequest, \"invalid request body\"))"
+        },
+        {
+          "id": "local-literal",
+          "kind": "literal",
+          "path": "internal/api/api.go",
+          "description": "An existing keyed composite literal at its first key.",
+          "line": 65,
+          "character": 2,
+          "lineText": "\t\tapp: application,"
+        },
+        {
+          "id": "local-type-position",
+          "kind": "type",
+          "path": "internal/api/api.go",
+          "description": "An imported type in a function parameter.",
+          "line": 63,
+          "character": 29,
+          "lineText": "func Init(application *app.App, router *mux.Router) *API {"
+        },
+        {
+          "id": "local-method",
+          "kind": "selector",
+          "path": "internal/api/api.go",
+          "description": "A method from the imported Gorilla router type.",
+          "line": 76,
+          "character": 41,
+          "lineText": "\tapi.Routes.User = api.Routes.Users.PathPrefix(\"/{user_id:[a-z0-9]{26}}\").Subrouter()"
+        },
+        {
+          "id": "local-interface-field",
+          "kind": "selector",
+          "path": "internal/filestore/filestore.go",
+          "description": "A field on a config package structure.",
+          "line": 22,
+          "character": 24,
+          "lineText": "\tswitch settings.DriverName {"
+        },
+        {
+          "id": "local-import-path",
+          "kind": "importPath",
+          "path": "internal/filestore/filestore.go",
+          "description": "A workspace import path that already has a closing quote.",
+          "line": 6,
+          "character": 55,
+          "lineText": "\t\"github.com/anthropic/chatting/mm/server/internal/config\""
+        },
+        {
+          "id": "local-stdlib-import-path",
+          "kind": "importPath",
+          "path": "internal/model/user.go",
+          "description": "A stdlib import path with an identifier suffix.",
+          "line": 4,
+          "character": 8,
+          "lineText": "\t\"net/mail\""
+        },
+        {
+          "id": "local-edit-selector",
+          "kind": "recovery",
+          "path": "internal/model/user.go",
+          "description": "A saved field access edited into a dangling selector before a newline.",
+          "line": 47,
+          "character": 7,
+          "lineText": "\t_ = u.",
+          "edits": [
+            {
+              "range": [
+                47,
+                1,
+                47,
+                17
+              ],
+              "expectedText": "u.CreateAt = now",
+              "text": "_ = u."
+            }
+          ]
+        },
+        {
+          "id": "local-edit-receiver-method",
+          "kind": "recovery",
+          "path": "internal/model/user.go",
+          "description": "Live completion after editing the body of User.PreSave.",
+          "line": 72,
+          "character": 10,
+          "lineText": "\t_ = u.Pre",
+          "edits": [
+            {
+              "range": [
+                72,
+                0,
+                75,
+                24
+              ],
+              "expectedText": "\treturn nil\n}\n\nfunc (u *User) PreUpdate",
+              "text": "\t_ = u.Pre\n\treturn nil\n}\n\nfunc (u *User) PreUpdate"
+            }
+          ]
+        },
+        {
+          "id": "local-edit-literal",
+          "kind": "literal",
+          "path": "internal/api/api.go",
+          "description": "A typed field prefix inserted into the route initializer.",
+          "line": 65,
+          "character": 4,
+          "lineText": "\t\tRo",
+          "edits": [
+            {
+              "range": [
+                64,
+                1,
+                65,
+                0
+              ],
+              "expectedText": "api := &API{\n",
+              "text": "api := &API{\n\t\tRo\n"
+            }
+          ]
+        },
+        {
+          "id": "local-edit-type",
+          "kind": "type",
+          "path": "internal/api/user.go",
+          "description": "An unqualified type name in a temporarily edited local declaration.",
+          "line": 27,
+          "character": 12,
+          "lineText": "\tvar user Us",
+          "edits": [
+            {
+              "range": [
+                26,
+                0,
+                27,
+                20
+              ],
+              "expectedText": "func (api *API) createUser(c *Context, w http.ResponseWriter, r *http.Request) {\n\tvar user model.User",
+              "text": "func (api *API) createUser(c *Context, w http.ResponseWriter, r *http.Request) {\n\tvar user Us"
+            }
+          ]
+        },
+        {
+          "id": "local-autoimport-json",
+          "kind": "autoImport",
+          "path": "internal/model/user.go",
+          "description": "Unresolved JSON package with no existing encoding/json import.",
+          "line": 47,
+          "character": 13,
+          "lineText": "\t_ = json.Mar",
+          "edits": [
+            {
+              "range": [
+                47,
+                1,
+                47,
+                17
+              ],
+              "expectedText": "u.CreateAt = now",
+              "text": "_ = json.Mar"
+            }
+          ],
+          "accept": {
+            "lookupString": "json.Marshal",
+            "sourcePackage": "encoding/json"
+          }
+        },
+        {
+          "id": "local-edit-import-path",
+          "kind": "importPath",
+          "path": "internal/filestore/filestore.go",
+          "description": "An incomplete workspace import path with its closing quote removed.",
+          "line": 6,
+          "character": 51,
+          "lineText": "\t\"github.com/anthropic/chatting/mm/server/internal/",
+          "edits": [
+            {
+              "range": [
+                6,
+                1,
+                6,
+                58
+              ],
+              "expectedText": "\"github.com/anthropic/chatting/mm/server/internal/config\"",
+              "text": "\"github.com/anthropic/chatting/mm/server/internal/"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

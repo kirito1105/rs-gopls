@@ -12,6 +12,12 @@ pub(crate) enum QueryProgress<T, Task = Infallible> {
 }
 
 pub(crate) trait SemanticTask<T> {
+    fn ready(&self, _engine: &Engine) -> bool {
+        true
+    }
+
+    fn discard(&mut self, _code: lsp_server::ErrorCode) {}
+
     fn advance(&mut self, engine: &mut Engine) -> Result<bool>;
     fn finish(self) -> T;
 }

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::OnceCell;
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::Deref;
@@ -8,17 +8,25 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use anyhow::{Context, Result};
-use lsp_types::{Range, TextDocumentContentChangeEvent};
+use lsp_types::{CompletionItemKind, Range, TextDocumentContentChangeEvent};
 use tree_sitter::Parser;
 
-use super::source::{Import, Source, TextEditDelta, node_text, read_source};
-use crate::symbols::{self, FileSymbols};
+use super::completion::{
+    InferredMemo, Trace,
+    prefilter::{BYTE_LIMIT, FileNames, SOURCE_LIMIT, Stamp},
+    render::{Description, describe_token, package_name},
+};
+use super::resolver::is_exported;
+use super::source::{Import, Source, TextEditDelta, node_at_range, node_text, read_source};
+use crate::symbols::{self, FileSymbols, TypeDetails};
 use crate::workspace::{Package, Workspace, path_key};
 
 pub(super) struct FileIndex {
     pub(super) symbols: FileSymbols,
     pub(super) imports: Vec<Import>,
     pub(super) package_signature: u64,
+    pub(super) presentation: HashMap<Range, Description>,
+    pub(super) package_name: Option<String>,
 }
 
 impl FileIndex {
@@ -43,19 +51,53 @@ impl FileIndex {
         signature.finish()
     }
 
-    fn new(source: &Source) -> Self {
+    fn new(source: &Source, public_only: bool) -> Self {
+        let mut presentation = HashMap::new();
+        let kind = CompletionItemKind::VARIABLE;
+        let symbols = symbols::collect(
+            &source.tree,
+            &source.text,
+            |name| source.range(name),
+            |token, name, symbol| {
+                if public_only && !is_exported(name) {
+                    return;
+                }
+                presentation.entry(symbol.range).or_insert_with(|| {
+                    describe_token(Some(token), &source.text, name, kind, true, true)
+                });
+            },
+        );
+        for (name, symbol) in symbols.members() {
+            if public_only && !is_exported(name) {
+                continue;
+            }
+            presentation.entry(symbol.range).or_insert_with(|| {
+                describe_token(
+                    node_at_range(source, symbol.range),
+                    &source.text,
+                    name,
+                    kind,
+                    true,
+                    true,
+                )
+            });
+        }
         Self {
-            symbols: symbols::collect(&source.tree, &source.text, |name| source.range(name)),
+            symbols,
             imports: source.imports.clone(),
             package_signature: Self::package_signature(source),
+            presentation,
+            package_name: package_name(source).map(str::to_owned),
         }
     }
 }
 
 pub(super) struct IndexedSource {
     source: Source,
-    declarations: OnceCell<FileIndex>,
+    declarations: OnceCell<Rc<FileIndex>>,
     pub(super) document_version: Option<i32>,
+    declarations_only: bool,
+    public_presentation: bool,
 }
 
 impl IndexedSource {
@@ -64,12 +106,14 @@ impl IndexedSource {
             source,
             declarations: OnceCell::new(),
             document_version,
+            declarations_only: false,
+            public_presentation: false,
         }
     }
 
     pub(super) fn declarations(&self) -> &FileIndex {
         self.declarations
-            .get_or_init(|| FileIndex::new(&self.source))
+            .get_or_init(|| Rc::new(FileIndex::new(&self.source, self.public_presentation)))
     }
 
     pub(super) fn edit(
@@ -95,7 +139,7 @@ impl Deref for IndexedSource {
 }
 
 pub(super) struct DiskIndex {
-    pub(super) declarations: FileIndex,
+    pub(super) declarations: Rc<FileIndex>,
     pub(super) fingerprint: u64,
     reference_source: Option<Rc<IndexedSource>>,
 }
@@ -103,14 +147,19 @@ pub(super) struct DiskIndex {
 impl DiskIndex {
     pub(super) fn new(source: &Source) -> Self {
         Self {
-            declarations: FileIndex::new(source),
+            declarations: Rc::new(FileIndex::new(source, false)),
             fingerprint: text_fingerprint(&source.text),
             reference_source: None,
         }
     }
 
-    pub(super) fn still_current(&self, path: &Path) -> bool {
-        fs::read_to_string(path).is_ok_and(|text| self.fingerprint == text_fingerprint(&text))
+    fn from_indexed(source: &IndexedSource, fingerprint: u64) -> Self {
+        source.declarations();
+        Self {
+            declarations: Rc::clone(source.declarations.get().unwrap()),
+            fingerprint,
+            reference_source: None,
+        }
     }
 }
 
@@ -227,10 +276,110 @@ pub(super) fn draft_package<'w>(workspace: &'w Workspace, source: &Source) -> Op
 }
 
 pub(super) struct IndexReader<'a> {
+    pub(super) workspace: &'a Workspace,
     pub(super) parser: &'a mut Parser,
     pub(super) documents: &'a HashMap<PathBuf, IndexedSource>,
     pub(super) disk_index: &'a mut HashMap<PathBuf, DiskIndex>,
     pub(super) drafts: DraftFiles<'a>,
+    pub(super) disk_names: &'a mut HashMap<PathBuf, FileNames>,
+    pub(super) completion: Option<&'a mut CompletionRead>,
+    pub(super) inferred_weights: &'a mut HashMap<InferredMemo, i32>,
+}
+
+pub(super) struct CompletionRead {
+    pub(super) trace: Option<Trace>,
+    pub(super) prefetched: HashMap<PathBuf, String>,
+    sources: VecDeque<(PathBuf, Rc<IndexedSource>)>,
+    pub(super) document: Option<(Rc<IndexedSource>, Stamp)>,
+    bytes: usize,
+    // The completion task owns this value for a single graph and set of
+    // overlays. Edits and graph replacements discard the task and its keys.
+    types: HashMap<String, HashMap<String, Option<(PathBuf, TypeDetails)>>>,
+    pub(super) type_kinds: HashMap<(String, String), (Option<CompletionItemKind>, bool)>,
+}
+
+impl CompletionRead {
+    pub(super) fn new(trace: Option<Trace>) -> Self {
+        Self {
+            trace,
+            prefetched: HashMap::new(),
+            sources: VecDeque::new(),
+            document: None,
+            bytes: 0,
+            types: HashMap::new(),
+            type_kinds: HashMap::new(),
+        }
+    }
+
+    fn get(&mut self, key: &Path, allow_elided: bool) -> Option<Rc<IndexedSource>> {
+        let position = self.sources.iter().position(|(path, source)| {
+            path == key && (allow_elided || !source.declarations_only)
+        })?;
+        let entry = self.sources.remove(position).unwrap();
+        let source = Rc::clone(&entry.1);
+        self.sources.push_back(entry);
+        Some(source)
+    }
+
+    fn store(&mut self, key: PathBuf, source: Rc<IndexedSource>) {
+        let len = source.text.len();
+        let doc_size = self.document.as_ref().map_or(0, |(doc, _)| doc.text.len());
+        if len > BYTE_LIMIT - doc_size {
+            return;
+        }
+        if let Some(position) = self.sources.iter().position(|(path, _)| path == &key) {
+            self.bytes -= self.sources.remove(position).unwrap().1.text.len();
+        }
+        self.make_room(1, len);
+        self.bytes += len;
+        self.sources.push_back((key, source));
+        self.report_size();
+    }
+
+    pub(super) fn pin_document(&mut self, source: IndexedSource, stamp: Stamp) {
+        let len = source.text.len();
+        if len <= BYTE_LIMIT {
+            self.make_room(1, len);
+            self.bytes += len;
+            self.document = Some((Rc::new(source), stamp));
+            self.report_size();
+        }
+    }
+
+    fn make_room(&mut self, count: usize, len: usize) {
+        let pinned = usize::from(self.document.is_some());
+        while self.sources.len() + pinned + count > SOURCE_LIMIT || self.bytes + len > BYTE_LIMIT {
+            self.bytes -= self.sources.pop_front().unwrap().1.text.len();
+        }
+    }
+
+    fn report_size(&self) {
+        if let Some(trace) = &self.trace {
+            trace.cache_size(
+                self.sources.len() + usize::from(self.document.is_some()),
+                self.bytes,
+            );
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn retained_sources(&self) -> Vec<std::rc::Weak<IndexedSource>> {
+        self.sources
+            .iter()
+            .map(|(_, source)| Rc::downgrade(source))
+            .collect()
+    }
+}
+
+impl Drop for CompletionRead {
+    fn drop(&mut self) {
+        self.sources.clear();
+        self.document.take();
+        self.prefetched.clear();
+        if let Some(trace) = &self.trace {
+            trace.cache_released();
+        }
+    }
 }
 
 pub(super) enum ReferenceSource<'a> {
@@ -249,6 +398,21 @@ impl AsRef<IndexedSource> for ReferenceSource<'_> {
 
 impl<'a> IndexReader<'a> {
     pub(super) fn reference_source(&mut self, path: &Path) -> Result<Option<ReferenceSource<'a>>> {
+        self.get_source(path, false)
+    }
+
+    pub(super) fn declaration_source(
+        &mut self,
+        path: &Path,
+    ) -> Result<Option<ReferenceSource<'a>>> {
+        self.get_source(path, true)
+    }
+
+    fn get_source(
+        &mut self,
+        path: &Path,
+        allow_elided: bool,
+    ) -> Result<Option<ReferenceSource<'a>>> {
         let key = path_key(path);
         if let Some(source) = self.documents.get(&key) {
             return Ok(Some(ReferenceSource::Open(source)));
@@ -260,26 +424,30 @@ impl<'a> IndexReader<'a> {
         {
             return Ok(Some(ReferenceSource::Disk(Rc::clone(source))));
         }
+        if let Some(request) = &mut self.completion {
+            if let Some(source) = request.get(&key, allow_elided) {
+                return Ok(Some(ReferenceSource::Disk(source)));
+            }
+            return match self.completion_source(path, &key, allow_elided) {
+                Ok(source) => Ok(Some(ReferenceSource::Disk(source))),
+                Err(error) if missing_source(&error) => Ok(None),
+                Err(error) => Err(error),
+            };
+        }
         let source = match read_source(self.parser, path) {
             Ok(source) => Rc::new(IndexedSource::new(source, None)),
-            Err(error)
-                if error
-                    .downcast_ref::<std::io::Error>()
-                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
-            {
-                return Ok(None);
-            }
+            Err(error) if missing_source(&error) => return Ok(None),
             Err(error) => return Err(error),
         };
         let fingerprint = text_fingerprint(&source.text);
         let entry = match self.disk_index.entry(key) {
             Entry::Occupied(mut entry) => {
                 if entry.get().fingerprint != fingerprint {
-                    entry.insert(DiskIndex::new(&source));
+                    entry.insert(DiskIndex::from_indexed(&source, fingerprint));
                 }
                 entry.into_mut()
             }
-            Entry::Vacant(entry) => entry.insert(DiskIndex::new(&source)),
+            Entry::Vacant(entry) => entry.insert(DiskIndex::from_indexed(&source, fingerprint)),
         };
         entry.reference_source = Some(Rc::clone(&source));
         Ok(Some(ReferenceSource::Disk(source)))
@@ -304,6 +472,12 @@ impl<'a> IndexReader<'a> {
         if let Some(source) = self.documents.get(&key) {
             return Ok(source.declarations());
         }
+        if self.completion.is_some() {
+            if !self.disk_index.contains_key(&key) {
+                self.completion_source(file, &key, true)?;
+            }
+            return Ok(&self.disk_index[&key].declarations);
+        }
         let cached = match self.disk_index.entry(key) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
@@ -312,6 +486,206 @@ impl<'a> IndexReader<'a> {
             }
         };
         Ok(&cached.declarations)
+    }
+
+    pub(super) fn trace(&self) -> Option<&Trace> {
+        self.completion.as_ref()?.trace.as_ref()
+    }
+
+    pub(super) fn known_index(&self, key: &Path) -> Option<&FileIndex> {
+        if let Some(source) = self.documents.get(key) {
+            return Some(source.declarations());
+        }
+        self.disk_index
+            .get(key)
+            .map(|entry| entry.declarations.as_ref())
+    }
+
+    pub(super) fn content_identity(&self, key: &Path) -> Option<ContentIdentity> {
+        self.documents
+            .get(key)
+            .and_then(|source| source.document_version)
+            .map(ContentIdentity::Buffer)
+            .or_else(|| {
+                self.disk_index
+                    .get(key)
+                    .map(|index| ContentIdentity::Disk(index.fingerprint))
+            })
+    }
+
+    fn completion_source(
+        &mut self,
+        path: &Path,
+        key: &Path,
+        allow_elided: bool,
+    ) -> Result<Rc<IndexedSource>> {
+        let text = self.completion_text(path, key, false, false)?;
+        self.index_text(path, key, text, allow_elided)
+    }
+
+    fn completion_text(
+        &mut self,
+        path: &Path,
+        key: &Path,
+        prefilter: bool,
+        project: bool,
+    ) -> Result<String> {
+        if let Some(text) = self
+            .completion
+            .as_mut()
+            .and_then(|request| request.prefetched.remove(key))
+        {
+            if let Some(trace) = self.trace() {
+                trace.text_handoff();
+            }
+            return Ok(text);
+        }
+        if let Some(trace) = self.trace() {
+            trace.read(key, prefilter, project, self.disk_index.contains_key(key));
+        }
+        fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+    }
+
+    fn index_text(
+        &mut self,
+        path: &Path,
+        key: &Path,
+        text: String,
+        allow_elided: bool,
+    ) -> Result<Rc<IndexedSource>> {
+        let _phase = self.trace().map(|trace| trace.phase("file_index"));
+        let sample = self
+            .trace()
+            .map(|trace| (trace.clone(), std::time::Instant::now()));
+        let fingerprint = text_fingerprint(&text);
+        let external = self.workspace.package_of_file(path).is_some_and(|package| {
+            package.is_external() && !self.workspace.is_project_package(package)
+        });
+        if external
+            && allow_elided
+            && !self.disk_names.contains_key(key)
+            && let Ok(metadata) = fs::metadata(path)
+        {
+            self.disk_names
+                .insert(key.to_owned(), FileNames::new(metadata.into(), &text, true));
+        }
+        let names = self
+            .disk_names
+            .get(key)
+            .filter(|names| names.fingerprint == fingerprint);
+        let bodies = if allow_elided {
+            names
+                .filter(|names| names.elide_bodies)
+                .and_then(|names| names.names.as_ref())
+                .map_or(&[][..], |names| names.bodies.as_slice())
+        } else {
+            &[]
+        };
+        let (source, declarations_only) = {
+            let _parse = self.trace().map(|trace| trace.phase("tree_sitter"));
+            Source::parse_declarations(self.parser, path.to_owned(), text, bodies)?
+        };
+        if let Some(trace) = self.trace() {
+            if declarations_only {
+                trace.declaration_parse();
+            } else {
+                trace.parse();
+            }
+        }
+        let source = Rc::new(IndexedSource {
+            declarations_only,
+            public_presentation: external || names.is_some_and(|names| names.elide_bodies),
+            ..IndexedSource::new(source, None)
+        });
+        if self
+            .disk_index
+            .get(key)
+            .is_none_or(|entry| entry.fingerprint != fingerprint)
+        {
+            let _phase = self.trace().map(|trace| trace.phase("index_summaries"));
+            self.disk_index.insert(
+                key.to_owned(),
+                DiskIndex::from_indexed(&source, fingerprint),
+            );
+        }
+        if let Some(request) = &mut self.completion {
+            request.store(key.to_owned(), Rc::clone(&source));
+        }
+        if let Some((trace, started)) = sample {
+            trace.index_time(path, source.text.len(), declarations_only, started);
+        }
+        Ok(source)
+    }
+
+    pub(super) fn type_details(
+        &mut self,
+        package: &Package,
+        name: &str,
+        project: bool,
+    ) -> Result<Option<(PathBuf, TypeDetails)>> {
+        if let Some(cached) = self
+            .completion
+            .as_ref()
+            .and_then(|request| request.types.get(&package.id)?.get(name))
+        {
+            if let Some(trace) = self.trace() {
+                trace.type_location_hit();
+            }
+            return Ok(cached.clone());
+        }
+        let mut result = None;
+        for file in self.files(package).iter() {
+            let index = if self.completion.is_some() && !package.load_error {
+                self.filtered_index(file, project, package.is_external(), |names| {
+                    names.may_declare_type(name)
+                })?
+            } else {
+                Some(self.file_index(file)?)
+            };
+            if let Some(details) = index.and_then(|index| index.symbols.type_details(name)) {
+                result = Some((file.clone(), details.clone()));
+                break;
+            }
+        }
+        if let Some(request) = &mut self.completion {
+            request
+                .types
+                .entry(package.id.clone())
+                .or_default()
+                .insert(name.to_owned(), result.clone());
+        }
+        Ok(result)
+    }
+
+    pub(super) fn filtered_index(
+        &mut self,
+        file: &Path,
+        project: bool,
+        external: bool,
+        mut accepts: impl FnMut(&FileNames) -> bool,
+    ) -> Result<Option<&FileIndex>> {
+        let key = path_key(file);
+        if self.documents.contains_key(&key) || self.disk_index.contains_key(&key) {
+            return Ok(self.known_index(&key));
+        }
+        if let Some(names) = self.disk_names.get(&key) {
+            return if accepts(names) {
+                self.file_index(file).map(Some)
+            } else {
+                Ok(None)
+            };
+        }
+        let text = self.completion_text(file, &key, true, project)?;
+        if let Ok(metadata) = fs::metadata(file) {
+            let names = FileNames::new(metadata.into(), &text, external && !project);
+            let matches = accepts(&names);
+            self.disk_names.insert(key.clone(), names);
+            if !matches {
+                return Ok(None);
+            }
+        }
+        self.index_text(file, &key, text, true)?;
+        Ok(self.known_index(&key))
     }
 
     pub(super) fn find(
@@ -352,6 +726,18 @@ impl<'a> IndexReader<'a> {
         }
         Ok(found)
     }
+}
+
+#[derive(Eq, Hash, PartialEq)]
+pub(super) enum ContentIdentity {
+    Buffer(i32),
+    Disk(u64),
+}
+
+fn missing_source(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
 }
 
 impl IndexReader<'_> {
@@ -398,5 +784,43 @@ mod tests {
             assert!(names.declaration(name).is_some(), "missing {name}");
         }
         assert!(names.declaration("fourth").is_some());
+    }
+
+    #[test]
+    fn completion_source_cache_bounds_count_and_bytes_and_drops_the_sources() {
+        let mut engine = Engine::new(PathBuf::new());
+        let mut file = |name: &str, len: usize| {
+            let path = PathBuf::from(name);
+            let mut source = Source::parse(
+                &mut engine.state.parser,
+                path.clone(),
+                "package sample\n".into(),
+                None,
+            )
+            .unwrap();
+            source.text = " ".repeat(len);
+            (path, Rc::new(IndexedSource::new(source, None)))
+        };
+        let mut cache = CompletionRead::new(None);
+        let mut weak = Vec::new();
+        for index in 0..=SOURCE_LIMIT {
+            let (path, source) = file(&format!("{index}.go"), 64);
+            weak.push(Rc::downgrade(&source));
+            cache.store(path, source);
+        }
+        assert_eq!(cache.sources.len(), SOURCE_LIMIT);
+        assert!(weak[0].upgrade().is_none());
+        let (path, source) = file("large.go", BYTE_LIMIT);
+        weak.push(Rc::downgrade(&source));
+        cache.store(path, source);
+        assert_eq!(cache.sources.len(), 1);
+        assert_eq!(cache.bytes, BYTE_LIMIT);
+        let (path, source) = file("oversize.go", BYTE_LIMIT + 1);
+        weak.push(Rc::downgrade(&source));
+        cache.store(path, source);
+        assert_eq!(cache.sources.len(), 1);
+        assert!(weak.last().unwrap().upgrade().is_none());
+        drop(cache);
+        assert!(weak.iter().all(|source| source.upgrade().is_none()));
     }
 }
