@@ -149,6 +149,21 @@ impl std::ops::DerefMut for Running {
 }
 
 fn main() -> Result<()> {
+    let mut args = env::args_os().skip(1);
+    if args.next().is_some_and(|arg| arg == "version") {
+        let name = env!("CARGO_PKG_NAME");
+        let version = env!("CARGO_PKG_VERSION");
+        match args.next() {
+            None => println!("{name} {version}"),
+            Some(flag) if flag == "-json" && args.next().is_none() => {
+                let info = serde_json::json!({ "Main": { "Path": name, "Version": version } });
+                println!("{info}");
+            }
+            _ => anyhow::bail!("usage: {name} version [-json]"),
+        }
+        return Ok(());
+    }
+
     let (connection, threads) = Connection::stdio();
     let result = serve(&connection);
     drop(connection);

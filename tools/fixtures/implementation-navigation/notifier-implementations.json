@@ -1,0 +1,25 @@
+{
+  "description": "Expected Go to Implementations results for the Notifier example (zero-based LSP positions).",
+  "cases": [
+    {
+      "id": "notifier-type",
+      "action": "implementation",
+      "query": {"path": "api/notifier.go", "line": 3, "character": 6, "token": "Notifier"},
+      "implementations": [
+        {"path": "email/sender.go", "range": {"start": {"line": 2, "character": 5}, "end": {"line": 2, "character": 11}}, "token": "Sender"},
+        {"path": "sms/sender.go", "range": {"start": {"line": 2, "character": 5}, "end": {"line": 2, "character": 11}}, "token": "Sender"}
+      ],
+      "super": []
+    },
+    {
+      "id": "notifier-method",
+      "action": "implementation",
+      "query": {"path": "api/notifier.go", "line": 4, "character": 2, "token": "Notify"},
+      "implementations": [
+        {"path": "email/sender.go", "range": {"start": {"line": 4, "character": 14}, "end": {"line": 4, "character": 20}}, "token": "Notify"},
+        {"path": "sms/sender.go", "range": {"start": {"line": 4, "character": 15}, "end": {"line": 4, "character": 21}}, "token": "Notify"}
+      ],
+      "super": []
+    }
+  ]
+}
