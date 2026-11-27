@@ -11,37 +11,42 @@ mod test_support;
 mod workspace;
 mod workspace_roots;
 
-use std::{env, path::PathBuf};
+use std::{
+    collections::HashSet,
+    env,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, ensure};
 use crossbeam_channel::{bounded, never, select_biased, unbounded};
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request};
 use lsp_types::{
     CancelParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, InitializeParams, InitializeResult,
-    NumberOrString, PositionEncodingKind, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams, InitializeParams, NumberOrString, OneOf, PositionEncodingKind,
+    PublishDiagnosticsParams, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextDocumentSyncSaveOptions, Uri,
+    WorkspaceFolder, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     notification::{
-        Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
-        DidOpenTextDocument, Exit, Initialized, Notification as _,
+        Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+        DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument, Exit, Initialized,
+        Notification as _, PublishDiagnostics,
     },
-    request::{Initialize, Request as _, Shutdown},
+    request::{Initialize, Request as _, Shutdown, WorkspaceDiagnosticRefresh},
 };
 use serde_json::Value;
 
-use protocol::{RequestResult, file_path, invalid_params, send_response};
+use protocol::{
+    RequestResult, file_path, invalid_params, path_uri, send_notification, send_response,
+};
 use scheduler::{Scheduler, WorkspaceResult};
 use semantic::Engine;
+use workspace::path_key;
 
 #[cfg(test)]
 use lsp_server::{RequestId, Response};
 #[cfg(test)]
-use lsp_types::{
-    Uri,
-    request::{DocumentSymbolRequest, WorkspaceSymbolRequest},
-};
-#[cfg(test)]
-use protocol::path_uri;
+use lsp_types::request::{DocumentSymbolRequest, WorkspaceSymbolRequest};
 
 enum State {
     Starting,
@@ -53,13 +58,72 @@ struct Running {
     engine: Engine,
     watch_files: bool,
     client_features: dispatch::ClientFeatures,
+    diagnostic_updates: DiagnosticUpdates,
     scheduler: Scheduler,
+}
+
+enum DiagnosticUpdates {
+    None,
+    Publish,
+    Refresh { sequence: u64 },
 }
 
 impl Running {
     fn workspace_loaded(&mut self, connection: &Connection, update: WorkspaceResult) -> Result<()> {
-        self.scheduler
-            .workspace_loaded(&mut self.engine, connection, update)
+        if self
+            .scheduler
+            .workspace_loaded(&mut self.engine, connection, update)?
+        {
+            self.workspace_diagnostics_changed(connection)?;
+        }
+        Ok(())
+    }
+
+    fn publish_document(&mut self, connection: &Connection, path: &Path, uri: Uri) -> Result<()> {
+        if matches!(self.diagnostic_updates, DiagnosticUpdates::Publish)
+            && self.engine.is_open(path)
+        {
+            let (report, load) = self.engine.diagnostics_report(path)?;
+            if let Some(load) = load {
+                self.scheduler.request_workspace(load);
+            }
+            send_notification::<PublishDiagnostics>(
+                connection,
+                PublishDiagnosticsParams::new(
+                    uri,
+                    report.to_lsp_diagnostics(),
+                    report.snapshot.version,
+                ),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn publish_open_documents(&mut self, connection: &Connection) -> Result<()> {
+        if matches!(self.diagnostic_updates, DiagnosticUpdates::Publish) {
+            for path in self.engine.open_document_paths() {
+                if let Err(error) = self.publish_document(connection, &path, path_uri(&path)?) {
+                    eprintln!("rs-gopls: diagnostics for {}: {error:#}", path.display());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn workspace_diagnostics_changed(&mut self, connection: &Connection) -> Result<()> {
+        if let DiagnosticUpdates::Refresh { sequence } = &mut self.diagnostic_updates {
+            *sequence += 1;
+            let id = format!("rs-gopls/diagnostic-refresh/{sequence}");
+            connection
+                .sender
+                .send(
+                    Request::new(id.into(), WorkspaceDiagnosticRefresh::METHOD.to_owned(), ())
+                        .into(),
+                )
+                .context("requesting a diagnostic refresh")
+        } else {
+            self.publish_open_documents(connection)
+        }
     }
 
     fn advance_search(&mut self, connection: &Connection) -> Result<()> {
@@ -101,11 +165,16 @@ fn serve(connection: &Connection) -> Result<()> {
         .send(())
         .context("scheduling navigation searches")?;
     loop {
-        let search_receiver = if matches!(&state, State::Running(running) if !running.scheduler.searches.is_empty())
-        {
-            &search_ready
-        } else {
-            &search_idle
+        let (search_receiver, completion_wake) = match &state {
+            State::Running(running) => (
+                if running.scheduler.ready_search(&running.engine).is_some() {
+                    &search_ready
+                } else {
+                    &search_idle
+                },
+                running.engine.completion_wake(),
+            ),
+            _ => (&search_idle, &search_idle),
         };
         select_biased! {
             recv(connection.receiver) -> message => {
@@ -113,7 +182,13 @@ fn serve(connection: &Connection) -> Result<()> {
                     break;
                 };
                 match message {
-                    Message::Request(request) => handle_request(connection, &mut state, request)?,
+                    Message::Request(request) => {
+                        let initializing = matches!(state, State::Starting) && request.method == Initialize::METHOD;
+                        handle_request(connection, &mut state, request)?;
+                        if initializing && let State::Running(running) = &state {
+                            running.engine.prewarm_completion_sdk(false);
+                        }
+                    }
                     Message::Notification(notification) if notification.method == Exit::METHOD => {
                         ensure!(
                             matches!(state, State::Shutdown),
@@ -139,6 +214,7 @@ fn serve(connection: &Connection) -> Result<()> {
                     running.workspace_loaded(connection, update.context("receiving Go package metadata")?)?;
                 }
             }
+            recv(completion_wake) -> _ => {}
             recv(search_receiver) -> ready => {
                 ready.context("receiving navigation search work")?;
                 if let State::Running(running) = &mut state {
@@ -198,6 +274,10 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
 }
 
 fn initialize(params: Value) -> Result<(Running, Value)> {
+    // lsp-types 0.97 deserializes workspace.diagnostic, while LSP 3.17 uses workspace.diagnostics.
+    let refresh_support = params
+        .pointer("/capabilities/workspace/diagnostics/refreshSupport")
+        .and_then(Value::as_bool);
     let params = serde_json::from_value::<InitializeParams>(params)
         .context("invalid initialize parameters")?;
     let watch_files = params
@@ -206,38 +286,59 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|workspace| workspace.did_change_watched_files.as_ref())
         .is_some_and(|watches| watches.dynamic_registration == Some(true));
-    let client_features = dispatch::ClientFeatures::from_capabilities(&params.capabilities);
-    let root = workspace_root(params)?;
-    ensure!(
-        root.is_dir(),
-        "workspace is not a directory: {}",
-        root.display()
-    );
+    let client_features = dispatch::ClientFeatures::from_initialize(&params);
+    let document = params.capabilities.text_document.as_ref();
+    let pull = document.and_then(|d| d.diagnostic.as_ref()).is_some();
+    let publish = document
+        .and_then(|d| d.publish_diagnostics.as_ref())
+        .is_some();
+    let refresh = refresh_support.or_else(|| {
+        params
+            .capabilities
+            .workspace
+            .as_ref()
+            .and_then(|w| w.diagnostic.as_ref())
+            .and_then(|d| d.refresh_support)
+    }) == Some(true);
+    let diagnostic_updates = match (pull, refresh, publish) {
+        (true, true, _) => DiagnosticUpdates::Refresh { sequence: 0 },
+        (false, _, true) => DiagnosticUpdates::Publish,
+        _ => DiagnosticUpdates::None,
+    };
+    let roots = workspace_roots(params)?;
 
-    let mut capabilities = ServerCapabilities {
+    let capabilities = ServerCapabilities {
         position_encoding: Some(PositionEncodingKind::UTF16),
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
                 open_close: Some(true),
                 change: Some(TextDocumentSyncKind::INCREMENTAL),
+                save: Some(TextDocumentSyncSaveOptions::Supported(true)),
                 ..Default::default()
             },
         )),
+        workspace: Some(WorkspaceServerCapabilities {
+            workspace_folders: Some(WorkspaceFoldersServerCapabilities {
+                supported: Some(true),
+                change_notifications: Some(OneOf::Left(true)),
+            }),
+            ..Default::default()
+        }),
         ..Default::default()
     };
-    dispatch::write_capabilities(&mut capabilities, client_features);
-    let result = serde_json::to_value(InitializeResult {
-        capabilities,
-        server_info: Some(ServerInfo {
+    let result = serde_json::json!({
+        "capabilities": dispatch::capabilities(capabilities, client_features),
+        "serverInfo": ServerInfo {
             name: env!("CARGO_PKG_NAME").into(),
             version: Some(env!("CARGO_PKG_VERSION").into()),
-        }),
-    })?;
+        }
+    });
     Ok((
         Running {
             watch_files,
             client_features,
-            engine: Engine::new(root),
+            diagnostic_updates,
+            engine: Engine::with_roots(roots),
             scheduler: Scheduler::default(),
         },
         result,
@@ -245,20 +346,39 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
 }
 
 #[allow(deprecated)]
-fn workspace_root(params: InitializeParams) -> Result<PathBuf> {
-    if let Some(folders) = params.workspace_folders {
-        ensure!(folders.len() <= 1, "only one workspace folder is supported");
-        if let Some(folder) = folders.first() {
-            return file_path(&folder.uri);
+fn workspace_roots(params: InitializeParams) -> Result<Vec<PathBuf>> {
+    let mut roots = Vec::new();
+    add_workspace_folders(&mut roots, params.workspace_folders.unwrap_or_default())?;
+    if roots.is_empty() {
+        let root = match (params.root_uri, params.root_path) {
+            (Some(uri), _) => file_path(&uri)?,
+            (None, Some(path)) => env::current_dir()?.join(path),
+            (None, None) => env::current_dir()
+                .context("getting the current directory for a client without a workspace")?,
+        };
+        roots.push(workspace_directory(root)?);
+    }
+    Ok(roots)
+}
+
+fn add_workspace_folders(roots: &mut Vec<PathBuf>, folders: Vec<WorkspaceFolder>) -> Result<()> {
+    let mut seen: HashSet<_> = roots.iter().map(|root| path_key(root)).collect();
+    for folder in folders {
+        let path = workspace_directory(file_path(&folder.uri)?)?;
+        if seen.insert(path_key(&path)) {
+            roots.push(path);
         }
     }
-    if let Some(uri) = params.root_uri {
-        return file_path(&uri);
-    }
-    if let Some(path) = params.root_path {
-        return Ok(env::current_dir()?.join(path));
-    }
-    env::current_dir().context("getting the current directory for a client without a workspace")
+    Ok(())
+}
+
+fn workspace_directory(path: PathBuf) -> Result<PathBuf> {
+    ensure!(
+        path.is_dir(),
+        "workspace is not a directory: {}",
+        path.display()
+    );
+    Ok(path)
 }
 
 fn register_file_watches(connection: &Connection) -> Result<()> {
@@ -296,6 +416,25 @@ fn handle_notification(
     params: Value,
 ) -> Result<()> {
     match method {
+        DidChangeWorkspaceFolders::METHOD => {
+            let params: DidChangeWorkspaceFoldersParams = serde_json::from_value(params)?;
+            let removed = params
+                .event
+                .removed
+                .iter()
+                .map(|folder| file_path(&folder.uri).map(|path| path_key(&path)))
+                .collect::<Result<HashSet<_>>>()?;
+            let mut roots = running.engine.roots().to_vec();
+            roots.retain(|root| !removed.contains(&path_key(root)));
+            add_workspace_folders(&mut roots, params.event.added)?;
+            if running.engine.update_roots(roots) {
+                running
+                    .scheduler
+                    .workspace_modified(connection, running.engine.workspace_load())?;
+                running.workspace_diagnostics_changed(connection)?;
+            }
+            Ok(())
+        }
         DidChangeWatchedFiles::METHOD => {
             let params: DidChangeWatchedFilesParams = serde_json::from_value(params)?;
             let before = running.engine.workspace_load();
@@ -311,7 +450,7 @@ fn handle_notification(
             if after != before {
                 running.scheduler.workspace_modified(connection, after)?;
             }
-            Ok(())
+            running.publish_open_documents(connection)
         }
         DidOpenTextDocument::METHOD => {
             let params: DidOpenTextDocumentParams = serde_json::from_value(params)?;
@@ -320,7 +459,8 @@ fn handle_notification(
             running
                 .engine
                 .open(path.clone(), document.text, document.version)?;
-            running.scheduler.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)?;
+            running.publish_document(connection, &path, document.uri)
         }
         DidChangeTextDocument::METHOD => {
             let params: DidChangeTextDocumentParams = serde_json::from_value(params)?;
@@ -328,13 +468,36 @@ fn handle_notification(
             running
                 .engine
                 .edit(&path, &params.content_changes, params.text_document.version)?;
-            running.scheduler.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)?;
+            running.publish_document(connection, &path, params.text_document.uri)
         }
         DidCloseTextDocument::METHOD => {
             let params: DidCloseTextDocumentParams = serde_json::from_value(params)?;
             let path = file_path(&params.text_document.uri)?;
+            let was_open = running.engine.is_open(&path);
             running.engine.close(&path);
-            running.scheduler.document_modified(connection, &path)
+            running.scheduler.document_modified(connection, &path)?;
+            if was_open && matches!(running.diagnostic_updates, DiagnosticUpdates::Publish) {
+                send_notification::<PublishDiagnostics>(
+                    connection,
+                    PublishDiagnosticsParams::new(params.text_document.uri, Vec::new(), None),
+                )?;
+            }
+            Ok(())
+        }
+        DidSaveTextDocument::METHOD => {
+            let params: DidSaveTextDocumentParams = serde_json::from_value(params)?;
+            let path = file_path(&params.text_document.uri)?;
+            let before = running.engine.workspace_load();
+            running
+                .engine
+                .file_changed(&path, lsp_types::FileChangeType::CHANGED);
+            running.scheduler.document_modified(connection, &path)?;
+            let after = running.engine.workspace_load();
+            if after != before {
+                running.scheduler.workspace_modified(connection, after)?;
+            }
+            Ok(())
         }
         Cancel::METHOD => {
             let params: CancelParams = serde_json::from_value(params)?;

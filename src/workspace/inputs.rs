@@ -11,13 +11,48 @@ use super::path_key;
 // file watcher. Capture before go list so a newly added importer, package or
 // build-selected source cannot silently fall outside the installed graph.
 pub(super) struct PackageInputs {
-    root: PathBuf,
+    folders: Vec<PathBuf>,
+    configuration: BTreeMap<PathBuf, u64>,
     files: BTreeMap<PathBuf, u64>,
 }
 
 impl PackageInputs {
-    pub(super) fn capture(root: &Path, roots: &[PathBuf]) -> Result<Self> {
-        let mut files = BTreeMap::new();
+    // Module and work files can live above an editor folder. Take their
+    // fingerprints before discovering the build groups and Go project roots.
+    pub(super) fn configuration(folders: &[PathBuf]) -> Result<Self> {
+        let folders = folders
+            .iter()
+            .map(std::path::absolute)
+            .collect::<std::io::Result<Vec<_>>>()?;
+        let mut configuration = BTreeMap::new();
+        for dir in folders.iter().flat_map(|folder| folder.ancestors()) {
+            for name in ["go.work", "go.work.sum", "go.mod", "go.sum"] {
+                let path = dir.join(name);
+                if path.is_file() {
+                    record(&mut configuration, &path)?;
+                }
+            }
+        }
+        if let Some(path) = std::env::var_os("GOWORK").map(PathBuf::from)
+            && path.is_absolute()
+            && path.is_file()
+        {
+            record(&mut configuration, &path)?;
+            let mut sum = path.into_os_string();
+            sum.push(".sum");
+            let sum = PathBuf::from(sum);
+            if sum.is_file() {
+                record(&mut configuration, &sum)?;
+            }
+        }
+        Ok(Self {
+            folders,
+            configuration,
+            files: BTreeMap::new(),
+        })
+    }
+
+    pub(super) fn with_sources(mut self, roots: &[PathBuf]) -> Result<Self> {
         let mut pending = roots.to_vec();
         let mut seen = HashSet::new();
         while let Some(dir) = pending.pop() {
@@ -45,32 +80,17 @@ impl PackageInputs {
                         "go.mod" | "go.sum" | "go.work" | "go.work.sum"
                     )
                 {
-                    record(&mut files, &path)?;
+                    record(&mut self.files, &path)?;
                 }
             }
         }
-        for dir in root.ancestors() {
-            for name in ["go.work", "go.work.sum", "go.mod", "go.sum"] {
-                let path = dir.join(name);
-                if path.is_file() {
-                    record(&mut files, &path)?;
-                }
-            }
-        }
-        if let Some(path) = std::env::var_os("GOWORK").map(PathBuf::from)
-            && path.is_absolute()
-            && path.is_file()
-        {
-            record(&mut files, &path)?;
-        }
-        Ok(Self {
-            root: root.to_owned(),
-            files,
-        })
+        Ok(self)
     }
 
     pub(super) fn current(&self, roots: &[PathBuf]) -> Result<bool> {
-        Ok(Self::capture(&self.root, roots)?.files == self.files)
+        let current = Self::configuration(&self.folders)?;
+        Ok(current.configuration == self.configuration
+            && current.with_sources(roots)?.files == self.files)
     }
 }
 

@@ -1,0 +1,26 @@
+{
+  "build": "GO-263.7307.354",
+  "root": "hierarchy",
+  "cases": [
+    {"id": "prepare-function", "request": "textDocument/prepareCallHierarchy", "path": "hierarchy.go", "line": 4, "character": 5, "token": "Dispatch"},
+    {"id": "prepare-cross-package-call", "request": "textDocument/prepareCallHierarchy", "path": "hierarchy.go", "line": 6, "character": 73, "token": "Leaf"},
+    {"id": "prepare-interface-call", "request": "textDocument/prepareCallHierarchy", "path": "hierarchy.go", "line": 5, "character": 9, "token": "Close"},
+    {"id": "prepare-method-call", "request": "textDocument/prepareCallHierarchy", "path": "hierarchy.go", "line": 6, "character": 33, "token": "Run"},
+    {"id": "leaf-callers", "request": "callHierarchy/incomingCalls", "path": "worker/worker.go", "line": 41, "character": 5, "token": "Leaf"},
+    {"id": "recursive-callers", "request": "callHierarchy/incomingCalls", "path": "worker/worker.go", "line": 45, "character": 5, "token": "Recursive"},
+    {"id": "interface-method-callers", "request": "callHierarchy/incomingCalls", "path": "worker/worker.go", "line": 3, "character": 1, "token": "Read"},
+    {"id": "dispatch-callees", "request": "callHierarchy/outgoingCalls", "path": "hierarchy.go", "line": 4, "character": 5, "token": "Dispatch"},
+    {"id": "method-callees", "request": "callHierarchy/outgoingCalls", "path": "worker/worker.go", "line": 52, "character": 23, "token": "Run"},
+    {"id": "recursive-callees", "request": "callHierarchy/outgoingCalls", "path": "worker/worker.go", "line": 45, "character": 5, "token": "Recursive"},
+    {"id": "leaf-callees", "request": "callHierarchy/outgoingCalls", "path": "worker/worker.go", "line": 41, "character": 5, "token": "Leaf"},
+    {"id": "prepare-interface", "request": "textDocument/prepareTypeHierarchy", "path": "worker/worker.go", "line": 11, "character": 5, "token": "Service"},
+    {"id": "prepare-struct", "request": "textDocument/prepareTypeHierarchy", "path": "worker/worker.go", "line": 28, "character": 5, "token": "Derived"},
+    {"id": "prepare-alias-use", "request": "textDocument/prepareTypeHierarchy", "path": "hierarchy.go", "line": 4, "character": 53, "token": "Alias"},
+    {"id": "reader-subtypes", "request": "typeHierarchy/subtypes", "path": "worker/worker.go", "line": 2, "character": 5, "token": "Reader"},
+    {"id": "read-closer-subtypes", "request": "typeHierarchy/subtypes", "path": "worker/worker.go", "line": 6, "character": 5, "token": "ReadCloser"},
+    {"id": "base-subtypes", "request": "typeHierarchy/subtypes", "path": "worker/worker.go", "line": 20, "character": 5, "token": "Base"},
+    {"id": "service-supertypes", "request": "typeHierarchy/supertypes", "path": "worker/worker.go", "line": 11, "character": 5, "token": "Service"},
+    {"id": "read-closer-supertypes", "request": "typeHierarchy/supertypes", "path": "worker/worker.go", "line": 6, "character": 5, "token": "ReadCloser"},
+    {"id": "derived-supertypes", "request": "typeHierarchy/supertypes", "path": "worker/worker.go", "line": 28, "character": 5, "token": "Derived"}
+  ]
+}

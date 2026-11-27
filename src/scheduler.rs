@@ -16,6 +16,12 @@ const SHUTTING_DOWN: &str = "the server is shutting down";
 pub(super) type RequestProgress = QueryProgress<RequestResult, Box<dyn SearchTask>>;
 
 pub(super) trait SearchTask {
+    fn ready(&self, _engine: &Engine) -> bool {
+        true
+    }
+
+    fn discard(&mut self, _code: ErrorCode) {}
+
     fn advance(&mut self, engine: &mut Engine) -> Result<bool>;
     fn finish(self: Box<Self>) -> RequestResult;
 }
@@ -34,6 +40,8 @@ pub(super) trait DeferredQuery {
     fn load_failed(&self, _engine: &mut Engine, message: &str) -> RequestResult {
         Err((ErrorCode::RequestFailed, message.to_owned()))
     }
+
+    fn discard(&mut self, _code: ErrorCode) {}
 }
 
 pub(super) struct Pending {
@@ -62,7 +70,7 @@ pub(super) struct Scheduler {
 }
 
 impl Scheduler {
-    fn request_workspace(&mut self, load: WorkspaceLoad) {
+    pub(super) fn request_workspace(&mut self, load: WorkspaceLoad) {
         if self.loading != Some(load) {
             self.requested = Some(load);
         }
@@ -79,16 +87,17 @@ impl Scheduler {
         let Some(load) = self.requested.take() else {
             return Ok(());
         };
-        let root = engine.root().to_owned();
+        engine.prewarm_completion_sdk(true);
+        let roots = engine.roots().to_vec();
         let track_rename_inputs = engine.track_rename_inputs;
         let results = results.clone();
         thread::Builder::new()
             .name("go-package-loader".into())
             .spawn(move || {
                 let result = if track_rename_inputs {
-                    Workspace::load_for_rename(&root, load.include_tests)
+                    Workspace::load_roots_for_rename(&roots, load.include_tests)
                 } else {
-                    Workspace::load(&root, load.include_tests)
+                    Workspace::load_roots(&roots, load.include_tests)
                 };
                 let _ = results.send(WorkspaceResult { load, result });
             })
@@ -102,13 +111,15 @@ impl Scheduler {
         engine: &mut Engine,
         connection: &Connection,
         update: WorkspaceResult,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if self.loading == Some(update.load) {
             self.loading = None;
         }
+        let mut installed = false;
         match update.result {
             Ok(workspace) => {
                 if engine.install_workspace(update.load, workspace) {
+                    installed = true;
                     for pending in std::mem::take(&mut self.pending) {
                         let Pending {
                             id,
@@ -139,7 +150,7 @@ impl Scheduler {
         if !self.pending.is_empty() {
             self.request_workspace(engine.workspace_load());
         }
-        Ok(())
+        Ok(installed)
     }
 
     pub(super) fn submit(
@@ -190,13 +201,15 @@ impl Scheduler {
         engine: &mut Engine,
         connection: &Connection,
     ) -> Result<()> {
-        let Some(mut search) = self.searches.pop_front() else {
+        let Some(next) = self.ready_search(engine) else {
             return Ok(());
         };
+        let mut search = self.searches.remove(next).unwrap();
         let current_generation = engine.workspace_load().generation;
         let result = if current_generation == search.generation {
             let progress = search.task.advance(engine);
             if engine.workspace_load().generation != search.generation {
+                search.task.discard(ErrorCode::ContentModified);
                 Err((ErrorCode::ContentModified, WORKSPACE_CHANGED.to_owned()))
             } else {
                 match progress {
@@ -205,13 +218,24 @@ impl Scheduler {
                         return Ok(());
                     }
                     Ok(true) => search.task.finish(),
-                    Err(error) => Err(internal_error(error)),
+                    Err(error) => {
+                        search.task.discard(ErrorCode::InternalError);
+                        Err(internal_error(error))
+                    }
                 }
             }
         } else {
+            search.task.discard(ErrorCode::ContentModified);
             Err((ErrorCode::ContentModified, WORKSPACE_CHANGED.to_owned()))
         };
         send_response(connection, search.id, result)
+    }
+
+    pub(super) fn ready_search(&self, engine: &Engine) -> Option<usize> {
+        let generation = engine.workspace_load().generation;
+        self.searches
+            .iter()
+            .position(|search| search.generation != generation || search.task.ready(engine))
     }
 
     fn cancel_searches(
@@ -221,8 +245,10 @@ impl Scheduler {
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
-        for search in std::mem::take(&mut self.searches) {
+        for mut search in std::mem::take(&mut self.searches) {
             if matches(&search.id) {
+                search.task.discard(code);
+                drop(search.task);
                 send_response(connection, search.id, Err((code, message.to_owned())))?;
             } else {
                 self.searches.push_back(search);
@@ -238,7 +264,9 @@ impl Scheduler {
         code: ErrorCode,
         message: &str,
     ) -> Result<()> {
-        for request in self.pending.extract_if(.., matches) {
+        for mut request in self.pending.extract_if(.., matches) {
+            request.query.discard(code);
+            drop(request.query);
             send_response(connection, request.id, Err((code, message.to_owned())))?;
         }
         Ok(())
@@ -331,8 +359,8 @@ mod tests {
     use lsp_types::{
         FileChangeType,
         notification::{
-            Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidOpenTextDocument, Exit,
-            Initialized, Notification as _,
+            Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
+            DidOpenTextDocument, Exit, Initialized, Notification as _,
         },
         request::{
             GotoImplementation, HoverRequest, Initialize, References, Request as _, Shutdown,
@@ -450,6 +478,18 @@ mod tests {
             let load = scheduler.requested.take().expect("a load was scheduled");
             scheduler.loading = Some(load);
             load
+        }
+
+        fn finish_requested_load(&mut self) {
+            let (sender, receiver) = crossbeam_channel::bounded(1);
+            let running = self.running();
+            running
+                .scheduler
+                .start_workspace_load(&running.engine, &sender)
+                .unwrap();
+            drop(sender);
+            let update = receiver.recv().unwrap();
+            self.deliver(update.load, Ok(update.result.unwrap()));
         }
 
         fn step(&mut self) {
@@ -585,6 +625,44 @@ mod tests {
     }
 
     #[test]
+    fn adding_a_folder_cancels_pending_rename_and_allows_rename_in_the_new_root() {
+        let first = TestProject::new();
+        first.write("go.mod", "module example.test/one\n\ngo 1.22\n");
+        let unrelated = first.write("file.go", "package one\nvar Target = 1\n");
+        let second = TestProject::new();
+        second.write("go.mod", "module example.test/two\n\ngo 1.22\n");
+        let source = second.write("file.go", "package two\nvar Target = 2\nvar use = Target\n");
+        let mut session = Session::with_capabilities(
+            &first,
+            json!({"workspace": {"workspaceEdit": {"documentChanges": true}}}),
+        );
+        let rename = |path| {
+            let mut request = position(path, 1, 5);
+            request["newName"] = json!("Updated");
+            request
+        };
+        session.request(1, "textDocument/rename", rename(&unrelated));
+        let folder = json!({"name": "two", "uri": path_uri(&second.root).unwrap()});
+        session.notify(
+            DidChangeWorkspaceFolders::METHOD,
+            json!({"event": {"added": [folder], "removed": []}}),
+        );
+        session.error(1, ErrorCode::ContentModified, WORKSPACE_CHANGED);
+        session.request(2, "textDocument/rename", rename(&source));
+        session.finish_requested_load();
+        session.finish_searches();
+        let edit = session.reply(2).result.as_ref().unwrap();
+        let changes = edit["documentChanges"].as_array().unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(
+            changes[0]["textDocument"]["uri"],
+            json!(path_uri(&source).unwrap())
+        );
+        assert_eq!(changes[0]["edits"].as_array().unwrap().len(), 2);
+        session.count(3);
+    }
+
+    #[test]
     fn pending_rename_refuses_a_replaced_disk_target_at_the_same_cursor() {
         let project = TestProject::new();
         let source = project.write("target.go", "package sample\nvar First int\n");
@@ -639,6 +717,158 @@ mod tests {
             ErrorCode::ContentModified as i32
         );
         session.count(2);
+    }
+
+    #[test]
+    fn initializes_with_valid_distinct_folders_and_legacy_fallbacks() {
+        let first = TestProject::new();
+        let second = TestProject::new();
+        let uri = path_uri(&first.root).unwrap();
+        let a = json!({"name": "one", "uri": uri});
+        let b = json!({"name": "two", "uri": path_uri(&second.root).unwrap()});
+        let roots = |mut params: Value| {
+            params["capabilities"] = json!({});
+            crate::initialize(params).map(|(session, _)| session.engine.roots().to_vec())
+        };
+        assert_eq!(
+            roots(json!({"workspaceFolders": [b, a, b], "rootUri": "untitled:ignored"})).unwrap(),
+            [second.root.clone(), first.root.clone()]
+        );
+        assert_eq!(
+            roots(json!({"workspaceFolders": [], "rootUri": uri, "rootPath": second.root}))
+                .unwrap(),
+            [first.root.clone()]
+        );
+        assert_eq!(
+            roots(json!({"rootPath": second.root})).unwrap(),
+            [second.root.clone()]
+        );
+        assert_eq!(
+            roots(json!({})).unwrap(),
+            [std::env::current_dir().unwrap()]
+        );
+        let file = first.write("file.go", "package sample\n");
+        for invalid in [
+            path_uri(&file).unwrap().to_string(),
+            "untitled:folder".into(),
+        ] {
+            assert!(
+                roots(json!({"workspaceFolders": [a, {"name":"invalid", "uri":invalid}]})).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn folder_changes_reload_the_graph_and_rescope_open_drafts_and_searches() {
+        let first = TestProject::new();
+        first.write("go.mod", "module example.test/first\n\ngo 1.22\n");
+        first.write("file.go", "package first\nvar FolderSymbolOne int\n");
+        let second = TestProject::new();
+        second.write("go.work", "go 1.22\n\nuse ./member\n");
+        second.write("member/go.mod", "module example.test/second\n\ngo 1.22\n");
+        second.write(
+            "member/file.go",
+            "package second\nvar FolderSymbolTwo int\n",
+        );
+        let a = json!({"name":"one", "uri":path_uri(&first.root).unwrap()});
+        let b = json!({"name":"two", "uri":path_uri(&second.root).unwrap()});
+        let folders = DidChangeWorkspaceFolders::METHOD;
+        let mut session = Session::start(&first);
+        let symbols = |session: &mut Session, id| {
+            session.request(
+                id,
+                WorkspaceSymbolRequest::METHOD,
+                json!({"query":"FolderSymbol"}),
+            );
+        };
+        let names = |session: &mut Session, id| {
+            session.finish_searches();
+            let mut names: Vec<_> = session
+                .reply(id)
+                .result
+                .as_ref()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|symbol| symbol["name"].as_str().unwrap().to_owned())
+                .collect();
+            names.sort();
+            names
+        };
+        symbols(&mut session, 1);
+        let stale = session.begin_load();
+        session.open(
+            &second.root.join("draft.go"),
+            "package draft\nvar FolderSymbolDraft int\n",
+        );
+        session.notify(folders, json!({"event":{"removed":[], "added":[a, b, b]}}));
+        let current = session.running().engine.workspace_load();
+        assert_eq!(current.generation, stale.generation + 1);
+        assert_eq!(session.scheduler().requested, Some(current));
+        session.deliver(stale, Ok(first.workspace(&["file.go"], true)));
+        session.count(1);
+        session.finish_requested_load();
+        assert_eq!(
+            names(&mut session, 1),
+            ["FolderSymbolDraft", "FolderSymbolOne", "FolderSymbolTwo"]
+        );
+        session.open(
+            &second.root.join("late.go"),
+            "package draft\nvar FolderSymbolLate int\n",
+        );
+        symbols(&mut session, 2);
+        assert_eq!(
+            names(&mut session, 2),
+            [
+                "FolderSymbolDraft",
+                "FolderSymbolLate",
+                "FolderSymbolOne",
+                "FolderSymbolTwo"
+            ]
+        );
+
+        session.notify(folders, json!({"event":{"removed":[], "added":[b]}}));
+        assert_eq!(session.running().engine.workspace_load(), current);
+        assert!(session.scheduler().requested.is_none());
+        let State::Running(running) = &mut session.state else {
+            unreachable!()
+        };
+        let missing =
+            json!({"name":"missing", "uri":path_uri(&second.root.join("absent")).unwrap()});
+        assert!(
+            handle_notification(
+                &session.server,
+                running,
+                folders,
+                json!({"event":{"removed":[a], "added":[missing]}})
+            )
+            .is_err()
+        );
+        assert_eq!(
+            running.engine.roots(),
+            [first.root.clone(), second.root.clone()]
+        );
+        assert_eq!(running.engine.workspace_load(), current);
+
+        symbols(&mut session, 3);
+        session.notify(folders, json!({"event":{"removed":[b], "added":[]}}));
+        session.error(3, ErrorCode::ContentModified, WORKSPACE_CHANGED);
+        symbols(&mut session, 4);
+        session.finish_requested_load();
+        assert_eq!(names(&mut session, 4), ["FolderSymbolOne"]);
+        session.notify(folders, json!({"event":{"removed":[a], "added":[]}}));
+        assert!(session.running().engine.roots().is_empty());
+        symbols(&mut session, 5);
+        session.finish_requested_load();
+        assert!(names(&mut session, 5).is_empty());
+        session.notify(folders, json!({"event":{"removed":[], "added":[b]}}));
+        symbols(&mut session, 6);
+        session.finish_requested_load();
+        assert_eq!(
+            names(&mut session, 6),
+            ["FolderSymbolDraft", "FolderSymbolLate", "FolderSymbolTwo"]
+        );
     }
 
     #[test]
@@ -1077,15 +1307,26 @@ mod tests {
             initialize["capabilities"],
             json!({
                 "positionEncoding": "utf-16",
-                "textDocumentSync": { "openClose": true, "change": 2 },
+                "textDocumentSync": { "openClose": true, "change": 2, "save": true },
                 "definitionProvider": true,
                 "typeDefinitionProvider": true,
                 "implementationProvider": true,
                 "referencesProvider": true,
                 "hoverProvider": true,
                 "signatureHelpProvider": { "triggerCharacters": ["(", ","], "retriggerCharacters": [","] },
+                "completionProvider": {
+                    "triggerCharacters": ["."],
+                    "resolveProvider": true,
+                    "completionItem": { "labelDetailsSupport": true }
+                },
                 "documentSymbolProvider": true,
                 "workspaceSymbolProvider": true,
+                "diagnosticProvider": { "identifier": "rs-gopls", "interFileDependencies": true, "workspaceDiagnostics": false },
+                "callHierarchyProvider": true,
+                "typeHierarchyProvider": true,
+                "documentFormattingProvider": true,
+                "codeActionProvider": { "codeActionKinds": ["quickfix", "source.organizeImports"] },
+                "workspace": { "workspaceFolders": { "supported": true, "changeNotifications": true } }
             })
         );
         let Message::Request(registration) = client.receiver.try_recv().unwrap() else {

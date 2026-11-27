@@ -1,16 +1,15 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, ensure};
 use lsp_types::{Position, Range};
 
-use super::Engine;
 use super::index::active_package;
 use super::query::{QueryProgress, SemanticTask};
 use super::resolver::{Resolver, TypeIdentity, TypeKind, is_exported};
 use super::source::{ReferenceQuery, Source, TextEditDelta, is_type_declaration, node_text};
+use super::{Engine, Rc, VecDeque};
 use crate::symbols::{self, TypeRef, TypeRefKind};
 use crate::workspace::{Package, path_key};
 
@@ -20,7 +19,7 @@ mod interface_probe;
 mod method_sets;
 
 pub(super) use candidates::InterfaceSources;
-use candidates::{CandidatePackages, PackageProbe, PackageProbeKey};
+use candidates::{CandidatePackages, PackageProbeKey};
 use interface_index::{IndexedInterface, InterfaceIndex};
 pub(in crate::semantic) use method_sets::RenameMethod;
 use method_sets::{InterfaceMethods, MethodKey, MethodShape};
@@ -208,14 +207,14 @@ enum Direction {
     Interfaces {
         package_id: String,
         name: String,
-        shapes: Option<Rc<HashSet<MethodShape>>>,
+        shapes: Option<HashSet<MethodShape>>,
     },
 }
 
 impl Direction {
     fn receiver_shapes(&self) -> Option<&HashSet<MethodShape>> {
         match self {
-            Self::Interfaces { shapes, .. } => shapes.as_deref(),
+            Self::Interfaces { shapes, .. } => shapes.as_ref(),
             Self::Implementations { .. } => None,
         }
     }
@@ -309,10 +308,7 @@ impl Engine {
         } else if let TypeKind::Named { name, .. } = &subject.owner.kind {
             let concrete = TypeIdentity::named(subject.owner.package, name);
             let shapes = if subject.method.is_none() {
-                resolver
-                    .concrete_method_shapes(&concrete)
-                    .unwrap_or(None)
-                    .map(Rc::new)
+                resolver.concrete_method_shapes(&concrete).unwrap_or(None)
             } else {
                 None
             };
@@ -333,41 +329,46 @@ impl Engine {
             .method
             .as_ref()
             .is_some_and(|method| !method.is_exported());
-        let mut packages: VecDeque<_> = workspace
-            .navigation_packages()
-            .filter(|candidate| {
-                !package_only || candidate.directory_and_name() == package.directory_and_name()
-            })
-            .map(|candidate| candidate.id.clone())
-            .collect();
-        let filter_method = match &direction {
-            Direction::Implementations { anchor, .. } => Some(anchor.as_str()),
-            Direction::Interfaces { .. } => subject.method.as_ref().map(MethodKey::name),
-        };
         // The predeclared error interface can supply Error outside the go list graph.
-        let probe = if let Some(method) =
-            filter_method.filter(|method| !package_only && *method != "Error")
-        {
-            Some(PackageProbe::Method(method.to_owned()))
-        } else if let Direction::Interfaces {
-            shapes: Some(shapes),
-            ..
-        } = &direction
-        {
-            (!shapes.iter().any(|shape| shape.name == "Error"))
-                .then(|| PackageProbe::Interface(Rc::clone(shapes)))
-        } else {
-            None
-        };
-        let package_filter = probe.and_then(|probe| {
-            let key = probe.key();
-            if let Some(eligible) = self.implementation_cache.packages.get(&key) {
-                packages.retain(|id| eligible.contains(id));
-                None
-            } else {
-                Some(CandidatePackages::new(probe, key, &packages))
+        let probe = match &direction {
+            Direction::Implementations { anchor, .. } if !package_only && anchor != "Error" => {
+                Some(PackageProbeKey::Method(anchor.clone()))
             }
-        });
+            Direction::Interfaces {
+                shapes: Some(shapes),
+                ..
+            } => {
+                let mut shapes: Vec<_> = shapes.iter().cloned().collect();
+                shapes.sort_unstable();
+                Some(PackageProbeKey::Interface(shapes))
+            }
+            Direction::Interfaces { .. } => subject
+                .method
+                .as_ref()
+                .filter(|method| method.is_exported())
+                .map(|method| PackageProbeKey::InterfaceMethod(method.name().to_owned())),
+            _ => None,
+        };
+        let (packages, package_filter) = match probe {
+            Some(key) => match self.implementation_cache.packages.get(&key) {
+                Some(eligible) => (eligible.iter().cloned().collect(), None),
+                None => (
+                    VecDeque::new(),
+                    Some(CandidatePackages::new(key, workspace)),
+                ),
+            },
+            None => {
+                let packages = workspace
+                    .navigation_packages()
+                    .filter(|candidate| {
+                        !package_only
+                            || candidate.directory_and_name() == package.directory_and_name()
+                    })
+                    .map(|candidate| candidate.id.clone())
+                    .collect();
+                (packages, None)
+            }
+        };
         Ok(QueryProgress::Searching(ImplementationSearch {
             key,
             direction,
@@ -394,7 +395,7 @@ impl SemanticTask<Vec<Location>> for ImplementationSearch {
         let mut resolver = snapshot.resolver(workspace);
         if let Some(filter) = &mut self.package_filter {
             if filter.advance(&resolver, &mut engine.implementation_sources) {
-                self.packages.retain(|id| filter.eligible.contains(id));
+                self.packages.extend(filter.eligible.iter().cloned());
                 if let Some(filter) = self.package_filter.take() {
                     engine.implementation_cache.remember_packages(filter);
                 }
@@ -703,9 +704,319 @@ fn same_location(left: &Location, right: &Location) -> bool {
 #[cfg(test)]
 mod tests {
     use lsp_types::TextDocumentContentChangeEvent;
+    use serde_json::json;
 
     use super::*;
     use crate::test_support::TestProject;
+    use crate::workspace::Workspace;
+
+    const RECEIVERS: &str = "package receivers\ntype Starter struct{}\nfunc (Starter) Start() {}\ntype Reader struct{}\nfunc (Reader) Read(int) {}\n";
+
+    fn install_packages(engine: &mut Engine, root: &Path, packages: &[(&str, &[&str], &[&str])]) {
+        let listing = packages
+            .iter()
+            .map(|(id, files, imports)| {
+                json!({"Dir": root.join(id), "ImportPath": id, "Name": id,
+                   "GoFiles": files, "Imports": imports})
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let workspace = Workspace::from_test_listing(&[root.to_owned()], &listing, true);
+        assert!(engine.install_workspace(engine.workspace_load(), workspace));
+    }
+
+    fn reverse(engine: &mut Engine, path: &Path, line: u32) -> Vec<Location> {
+        match engine
+            .implementations(path, Position::new(line, 6))
+            .unwrap()
+        {
+            QueryProgress::Ready(found) => found,
+            QueryProgress::Searching(mut search) => {
+                while !search.advance(engine).unwrap() {}
+                search.finish()
+            }
+            QueryProgress::Pending(_) => panic!("expected an installed test graph"),
+        }
+    }
+
+    fn type_at(path: &Path, line: u32, name: &str) -> Location {
+        (
+            path.to_owned(),
+            Range::new(
+                Position::new(line, 5),
+                Position::new(line, 5 + name.len() as u32),
+            ),
+        )
+    }
+
+    #[test]
+    fn disjoint_reverse_queries_reuse_every_file_of_a_probed_package() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", RECEIVERS);
+        let first = project.write(
+            "both/start.go",
+            "package both\ntype A interface { Start() }\n",
+        );
+        let second = project.write(
+            "both/read.go",
+            "package both\ntype B interface { Read(int) }\n",
+        );
+        let unrelated = project.write(
+            "unrelated/use.go",
+            "package unrelated\nimport _ \"both\"\ntype C interface { Other() }\n",
+        );
+        let mut engine = Engine::new(project.root.clone());
+        install_packages(
+            &mut engine,
+            &project.root,
+            &[
+                ("both", &["read.go", "start.go"], &[]),
+                ("receivers", &["r.go"], &[]),
+                ("unrelated", &["use.go"], &["both"]),
+            ],
+        );
+        assert_eq!(engine.implementation_sources.file_probes, 0);
+        assert_eq!(reverse(&mut engine, &origin, 1), [type_at(&first, 1, "A")]);
+        assert_eq!(engine.implementation_sources.file_probes, 4);
+        engine.implementation_cache.clear();
+        assert_eq!(reverse(&mut engine, &origin, 3), [type_at(&second, 1, "B")]);
+        assert_eq!(engine.implementation_sources.file_probes, 4);
+        assert!(!engine.state.disk_index.contains_key(&path_key(&unrelated)));
+    }
+
+    #[test]
+    fn overlay_in_a_pruned_package_bypasses_disk_candidates_until_close() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", RECEIVERS);
+        let disk = "package edited\ntype Other interface { Other() }\n";
+        let edited = project.write("edited/i.go", disk);
+        let mut engine = Engine::new(project.root.clone());
+        install_packages(
+            &mut engine,
+            &project.root,
+            &[("edited", &["i.go"], &[]), ("receivers", &["r.go"], &[])],
+        );
+        assert!(reverse(&mut engine, &origin, 3).is_empty());
+        assert!(
+            !engine
+                .implementation_cache
+                .interfaces
+                .contains_key("edited")
+        );
+        engine.open(edited.clone(), disk.into(), 1).unwrap();
+        engine
+            .edit(
+                &edited,
+                &[edit_lines(2, 2, "type Added interface { Read(int) }\n")],
+                2,
+            )
+            .unwrap();
+        assert_eq!(
+            reverse(&mut engine, &origin, 3),
+            [type_at(&edited, 2, "Added")]
+        );
+        assert_eq!(engine.implementation_sources.file_probes, 2);
+        engine.close(&edited);
+        assert!(reverse(&mut engine, &origin, 3).is_empty());
+        assert!(
+            !engine
+                .implementation_cache
+                .interfaces
+                .contains_key("edited")
+        );
+        assert_eq!(engine.implementation_sources.file_probes, 3);
+    }
+
+    #[test]
+    fn watched_changes_and_new_build_files_replace_only_affected_postings() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", RECEIVERS);
+        let name = "contracts/i.go";
+        let disk = project.write(name, "package contracts\ntype A interface { Start() }\n");
+        let mut engine = Engine::new(project.root.clone());
+        let disk_packages: &[(&str, &[&str], &[&str])] =
+            &[("contracts", &["i.go"], &[]), ("receivers", &["r.go"], &[])];
+        install_packages(&mut engine, &project.root, disk_packages);
+        assert_eq!(reverse(&mut engine, &origin, 1), [type_at(&disk, 1, "A")]);
+        project.write(name, "package contracts\ntype B interface { Read(int) }\n");
+        engine.file_changed(&disk, lsp_types::FileChangeType::CHANGED);
+        assert!(reverse(&mut engine, &origin, 1).is_empty());
+        assert!(
+            !engine
+                .implementation_cache
+                .interfaces
+                .contains_key("contracts")
+        );
+        assert_eq!(reverse(&mut engine, &origin, 3), [type_at(&disk, 1, "B")]);
+        assert_eq!(engine.implementation_sources.file_probes, 3);
+
+        let alternate = project.write(
+            "contracts/alt.go",
+            "package contracts\ntype Alt interface { Start() }\n",
+        );
+        install_packages(
+            &mut engine,
+            &project.root,
+            &[
+                ("contracts", &["alt.go"], &[]),
+                ("receivers", &["r.go"], &[]),
+            ],
+        );
+        assert_eq!(
+            reverse(&mut engine, &origin, 1),
+            [type_at(&alternate, 1, "Alt")]
+        );
+        assert!(reverse(&mut engine, &origin, 3).is_empty());
+        assert_eq!(engine.implementation_sources.file_probes, 4);
+    }
+
+    #[test]
+    fn reverse_index_follows_generic_interface_aliases_and_transitive_embedding() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", RECEIVERS);
+        let base = project.write(
+            "base/i.go",
+            "package base\ntype I[T any] interface { Read(T) }\n",
+        );
+        let alias = project.write(
+            "alias/i.go",
+            "package alias\nimport renamed \"base\"\ntype A = renamed.I[int]\n",
+        );
+        let embedded = project.write(
+            "embed/i.go",
+            "package embed\nimport . \"alias\"\ntype E interface { A }\n",
+        );
+        let mut engine = Engine::new(project.root.clone());
+        install_packages(
+            &mut engine,
+            &project.root,
+            &[
+                ("receivers", &["r.go"], &[]),
+                ("base", &["i.go"], &[]),
+                ("alias", &["i.go"], &["base"]),
+                ("embed", &["i.go"], &["alias"]),
+            ],
+        );
+        assert!(reverse(&mut engine, &origin, 1).is_empty());
+        assert_eq!(
+            reverse(&mut engine, &origin, 3),
+            [
+                type_at(&alias, 2, "A"),
+                type_at(&base, 1, "I"),
+                type_at(&embedded, 2, "E"),
+            ]
+        );
+        assert_eq!(engine.implementation_sources.file_probes, 4);
+    }
+
+    #[test]
+    fn invalidating_a_shared_file_requeues_every_test_view() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", RECEIVERS);
+        let contract = project.write(
+            "contracts/i.go",
+            "package contracts\ntype I interface { Start() }\n",
+        );
+        project.write("contracts/i_test.go", "package contracts\n");
+        let dir = project.root.join("contracts");
+        let listing = [
+            json!({"Dir": project.root.join("receivers"), "ImportPath": "receivers", "Name": "receivers", "GoFiles": ["r.go"]}),
+            json!({"Dir": dir, "ImportPath": "contracts", "Name": "contracts", "GoFiles": ["i.go"]}),
+            json!({"Dir": dir, "ImportPath": "contracts [contracts.test]", "ForTest": "contracts", "Name": "contracts", "GoFiles": ["i.go", "i_test.go"]}),
+        ].map(|package| package.to_string()).join("\n");
+        let mut engine = Engine::new(project.root.clone());
+        let workspace =
+            Workspace::from_test_listing(std::slice::from_ref(&project.root), &listing, true);
+        assert!(engine.install_workspace(engine.workspace_load(), workspace));
+        assert_eq!(
+            reverse(&mut engine, &origin, 1),
+            [type_at(&contract, 1, "I")]
+        );
+        assert_eq!(engine.implementation_sources.file_probes, 4);
+        project.write(
+            "contracts/i.go",
+            "package contracts\ntype I interface { Read(int) }\n",
+        );
+        engine.file_changed(&contract, lsp_types::FileChangeType::CHANGED);
+        assert_eq!(
+            reverse(&mut engine, &origin, 3),
+            [type_at(&contract, 1, "I")]
+        );
+        assert_eq!(engine.implementation_sources.file_probes, 7);
+    }
+
+    #[test]
+    fn error_receivers_keep_aliases_of_the_predeclared_interface() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", "package receivers\ntype Failure struct{}\nfunc (Failure) Error() string { return \"\" }\n");
+        let reporter = project.write(
+            "reports/i.go",
+            "package reports\ntype Report interface { Error() string }\n",
+        );
+        project.write("implicit/i.go", "package implicit\ntype E = error\n");
+        project.write(
+            "other/i.go",
+            "package other\ntype I interface { Other() }\n",
+        );
+        let mut engine = Engine::new(project.root.clone());
+        install_packages(
+            &mut engine,
+            &project.root,
+            &[
+                ("receivers", &["r.go"], &[]),
+                ("reports", &["i.go"], &[]),
+                ("implicit", &["i.go"], &[]),
+                ("other", &["i.go"], &[]),
+            ],
+        );
+        assert!(reverse(&mut engine, &origin, 1).contains(&type_at(&reporter, 1, "Report")));
+        let candidates = &engine.implementation_cache.interfaces;
+        assert!(candidates.contains_key("implicit"));
+        assert!(!candidates.contains_key("other"));
+    }
+
+    #[test]
+    fn cancelled_partial_probes_recover_after_file_invalidation() {
+        let project = TestProject::new();
+        let origin = project.write("receivers/r.go", RECEIVERS);
+        let files: Vec<_> = (0..40).map(|index| format!("i{index:02}.go")).collect();
+        for file in &files {
+            project.write(&format!("contracts/{file}"), "package contracts\n");
+        }
+        let contract = project.write(
+            "contracts/i00.go",
+            "package contracts\ntype I interface { Start() }\n",
+        );
+        let files: Vec<_> = files.iter().map(String::as_str).collect();
+        let mut engine = Engine::new(project.root.clone());
+        install_packages(
+            &mut engine,
+            &project.root,
+            &[("contracts", &files, &[]), ("receivers", &["r.go"], &[])],
+        );
+        let QueryProgress::Searching(mut search) = engine
+            .implementations(&origin, Position::new(1, 6))
+            .unwrap()
+        else {
+            panic!("expected a batched reverse search");
+        };
+        assert!(!search.advance(&mut engine).unwrap());
+        assert!((1..40).contains(&engine.implementation_sources.file_probes));
+        drop(search);
+        project.write(
+            "contracts/i00.go",
+            "package contracts\ntype I interface { Read(int) }\n",
+        );
+        engine
+            .implementation_sources
+            .invalidate(&path_key(&contract));
+        assert!(reverse(&mut engine, &origin, 1).is_empty());
+        assert_eq!(
+            reverse(&mut engine, &origin, 3),
+            [type_at(&contract, 1, "I")]
+        );
+    }
 
     fn edit_lines(start: u32, end: u32, text: &str) -> TextDocumentContentChangeEvent {
         TextDocumentContentChangeEvent {

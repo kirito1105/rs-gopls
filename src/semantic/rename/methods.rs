@@ -469,6 +469,42 @@ mod tests {
     }
 
     #[test]
+    fn keeps_private_contracts_in_the_package_owners_build_group_and_test_view() {
+        let project = TestProject::new();
+        let regular = "package sample\ntype B struct{}\nfunc(B) mark() {}\n";
+        let test = "package sample\ntype I interface{mark()}\nvar _ I = B{}\n";
+        let path = project.write("b/b.go", regular);
+        let test_path = project.write("b/b_test.go", test);
+        project.write(
+            "a/a.go",
+            "package sample\ntype A struct{}\nfunc(A) mark() {}\n",
+        );
+        let folders = ["a", "b"].map(|name| project.root.join(name));
+        // The regular ID collides across groups. Only b has tests, so its test
+        // view keeps the unqualified ID and points to the qualified ForTest.
+        let listing = [
+            json!({"Dir":folders[0],"ImportPath":"test/dupe","Name":"sample","GoFiles":["a.go"]}),
+            json!({"Dir":folders[1],"ImportPath":"1:test/dupe","Name":"sample","GoFiles":["b.go"]}),
+            json!({"Dir":folders[1],"ImportPath":"test/dupe [test/dupe.test]","ForTest":"1:test/dupe","Name":"sample","GoFiles":["b.go","b_test.go"]}),
+        ].map(|p| p.to_string()).join("\n");
+        let workspace = Workspace::from_test_listing(&folders, &listing, true);
+        let mut engine = Engine::with_roots(folders.to_vec());
+        assert!(engine.install_workspace(engine.workspace_load(), workspace));
+        let expected = [
+            method(regular, 2, "mark", &path),
+            method(test, 1, "mark", &test_path),
+        ];
+        for target in &expected {
+            assert_eq!(
+                method_contracts(&mut engine, target, "mark")
+                    .unwrap()
+                    .family,
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn refuses_a_method_contract_owned_by_a_dependency() {
         let project = TestProject::new();
         let dependency = TestProject::new();

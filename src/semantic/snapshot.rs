@@ -5,10 +5,13 @@ use anyhow::Result;
 use lsp_types::{Position, Range};
 use tree_sitter::{Node, Parser};
 
-use super::index::{DiskIndex, IndexReader, IndexedSource, active_package, draft_files};
+use super::completion::{InferredMemo, prefilter::FileNames};
+use super::index::{
+    CompletionRead, DiskIndex, IndexReader, IndexedSource, active_package, draft_files,
+};
 use super::query::QueryProgress;
 use super::resolver::{Resolver, TypeIdentity};
-use super::source::{Source, is_test_source, node_text, read_source};
+use super::source::{Import, Source, is_test_source, node_text, raw_imports, read_source};
 use super::{Engine, EngineState, GraphChanges};
 use crate::scope::{Binding, lexical_binding};
 use crate::symbols::{FileOutline, FileSymbols};
@@ -17,14 +20,17 @@ use crate::workspace::{Package, Workspace, WorkspaceLoad, path_key};
 /// A query's view of the open documents and the installed package graph.
 /// The parser and disk indexes are borrowed for lazy reads.
 pub(crate) struct EngineSnapshot<'a> {
-    root: &'a Path,
+    roots: &'a [PathBuf],
     workspace: Option<&'a Workspace>,
     graph_changes: &'a GraphChanges,
     documents: &'a HashMap<PathBuf, IndexedSource>,
     new_documents: &'a HashSet<PathBuf>,
     disk_index: &'a mut HashMap<PathBuf, DiskIndex>,
+    disk_names: &'a mut HashMap<PathBuf, FileNames>,
+    inferred_weights: &'a mut HashMap<InferredMemo, i32>,
     parser: &'a mut Parser,
     load: WorkspaceLoad,
+    completion_source_generation: u64,
 }
 
 pub(crate) struct DocumentSnapshot<'a> {
@@ -48,17 +54,20 @@ impl EngineState {
     // preferences or a feature cache on the engine.
     pub(super) fn snapshot(&mut self, include_tests: bool) -> EngineSnapshot<'_> {
         EngineSnapshot {
-            root: &self.root,
+            roots: &self.roots,
             workspace: self.workspace.as_deref(),
             graph_changes: &self.graph_changes,
             documents: &self.documents,
             new_documents: &self.new_documents,
             disk_index: &mut self.disk_index,
+            disk_names: &mut self.completion_names,
+            inferred_weights: &mut self.completion_weights,
             parser: &mut self.parser,
             load: WorkspaceLoad {
                 generation: self.generation,
                 include_tests,
             },
+            completion_source_generation: self.completion_source_generation,
         }
     }
 }
@@ -148,7 +157,15 @@ impl<'a> EngineSnapshot<'a> {
     }
 
     pub(super) fn root(&self) -> &'a Path {
-        self.root
+        self.roots.first().map_or(Path::new("."), PathBuf::as_path)
+    }
+
+    pub(super) fn roots(&self) -> &'a [PathBuf] {
+        self.roots
+    }
+
+    pub(super) fn completion_source_generation(&self) -> u64 {
+        self.completion_source_generation
     }
 
     pub(super) fn workspace(&self) -> Option<&'a Workspace> {
@@ -168,11 +185,23 @@ impl<'a> EngineSnapshot<'a> {
     }
 
     pub(super) fn resolver(&mut self, workspace: &'a Workspace) -> Resolver<'a, '_> {
+        self.resolver_with_completion(workspace, None)
+    }
+
+    pub(super) fn resolver_with_completion<'s>(
+        &'s mut self,
+        workspace: &'a Workspace,
+        completion: Option<&'s mut CompletionRead>,
+    ) -> Resolver<'a, 's> {
         let indexes = IndexReader {
+            workspace,
             parser: self.parser,
             documents: self.documents,
             disk_index: self.disk_index,
             drafts: draft_files(workspace, self.documents, self.new_documents),
+            disk_names: self.disk_names,
+            completion,
+            inferred_weights: self.inferred_weights,
         };
         Resolver { workspace, indexes }
     }
@@ -219,6 +248,12 @@ impl<'a> DocumentSnapshot<'a> {
         &self.indexed().declarations().symbols
     }
 
+    /// The syntactic import list in source order, including dot and blank imports.
+    #[allow(dead_code, reason = "consumed by completion in Wave 2")]
+    pub(super) fn raw_imports(&self) -> impl Iterator<Item = Import> + '_ {
+        raw_imports(self.root_node(), self.text(), &self.indexed().lines)
+    }
+
     pub(crate) fn outline(&self) -> &FileOutline {
         self.indexed().outline()
     }
@@ -236,6 +271,13 @@ impl<'a> DocumentSnapshot<'a> {
             DocumentSource::Disk(source) => source,
         }
     }
+
+    pub(super) fn into_disk(self) -> Option<IndexedSource> {
+        match self.source {
+            DocumentSource::Disk(source) => Some(source),
+            DocumentSource::Borrowed(_) => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -243,6 +285,40 @@ mod tests {
     use super::*;
     use crate::semantic::resolver::TypeKind;
     use crate::test_support::TestProject;
+
+    #[test]
+    fn reads_raw_imports_without_adding_blank_bindings_to_the_index() {
+        let project = TestProject::new();
+        let path = project.root.join("sample.go");
+        let text = concat!(
+            "package sample\n",
+            "import /* 😀 */ _ \"\\x66mt\"\n",
+            "import . \"example.test/dot\"\n",
+            "import \"io\"\n",
+        );
+        let mut engine = Engine::new(project.root.clone());
+        engine.open(path.clone(), text.into(), 1).unwrap();
+        let mut snapshot = engine.snapshot();
+        let document = snapshot.document(&path).unwrap().unwrap();
+        let imports: Vec<_> = document.raw_imports().collect();
+        assert_eq!(
+            imports
+                .iter()
+                .map(|import| (import.path.as_str(), import.alias.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("fmt", Some("_")),
+                ("example.test/dot", Some(".")),
+                ("io", None)
+            ]
+        );
+        let blank = imports[0].binding;
+        assert_eq!(
+            blank,
+            Range::new(Position::new(1, 16), Position::new(1, 17))
+        );
+        assert_eq!(document.indexed().imports.len(), 2);
+    }
 
     #[test]
     fn resolves_open_document_names_and_types_against_the_same_graph() {

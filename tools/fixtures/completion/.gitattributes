@@ -1,0 +1,2 @@
+*.go text eol=lf
+imports_edit/crlf.go -text !eol whitespace=cr-at-eol

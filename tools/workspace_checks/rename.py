@@ -6,6 +6,7 @@ import shutil
 from fixtures.rename import replay
 from lsp_harness import PausedGoList, expect_error, session, site, write
 from ._assertions import check_references
+from .diagnostics import capability_session, folder
 
 
 RENAME = "textDocument/rename"
@@ -178,6 +179,26 @@ def check_unwatched_new_importer(executable_path, root, timeout):
     replay.go_test(root, timeout)
 
 
+def check_workspace_folders(executable_path, root, timeout):
+    library, consumer = root / "library", root / "consumer"
+    write(library / "go.mod", "module example.test/library\n\ngo 1.22\n")
+    declaration = write(library / "lib.go", "package library\nconst Original = 1\n")
+    write(consumer / "go.mod", "module example.test/consumer\n\ngo 1.22\n"
+          "require example.test/library v0.0.0\nreplace example.test/library => ../library\n")
+    usage = write(consumer / "main.go", 'package consumer\nimport "example.test/library"\nconst X = library.Original\n')
+    capabilities = {"workspace": {"workspaceFolders": True, "workspaceEdit": {"documentChanges": True}}}
+    at = params(site(declaration, "const [[Original]]"))
+    with capability_session(executable_path, consumer, timeout, capabilities, folders=[consumer, library]) as (client, _):
+        edit = client.request(RENAME, **at, newName="Renamed")
+        destinations = {change["textDocument"]["uri"] for change in edit["documentChanges"]}
+        if destinations != {declaration.as_uri(), usage.as_uri()}:
+            raise RuntimeError(f"expected an edit in each workspace folder: {edit}")
+        client.notify("workspace/didChangeWorkspaceFolders", event={"added": [], "removed": [folder(library)]})
+        request_error(client, RENAME, -32803, **params(site(usage, "library.[[Original]]")), newName="Renamed")
+    apply_edit(root, {}, edit)
+    replay.go_test(consumer, timeout)
+
+
 def check_fixture(case, executable_path, root, timeout):
     project = shutil.copytree(replay.SOURCE, root)
     try:
@@ -191,6 +212,7 @@ CASES = [
     ("rename-overlays", check_overlays),
     ("rename-cancellation", check_cancellation),
     ("rename-unwatched-importer", check_unwatched_new_importer),
+    ("rename-workspace-folders", check_workspace_folders),
     ("rename-case-bindings", check_case_bindings),
     *((f"rename-{name}", partial(check_fixture, case)) for name, case in replay.CASES.items()),
 ]

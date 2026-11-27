@@ -200,7 +200,7 @@ impl RenameTask {
             active.into_values().collect()
         };
         files.sort_unstable();
-        let mut preview = Engine::new(engine.root().into());
+        let mut preview = Engine::with_roots(engine.roots().to_vec());
         preview.state.workspace = Some(graph.clone());
         preview.include_tests = true;
         preview.state.new_documents = engine.state.new_documents.clone();

@@ -38,6 +38,19 @@ LEGACY_CASES = (
     "implementation-cancel",
     "implementation-active-cancel",
 )
+COMPLETION_CASES = (
+    "completion_unsaved_edits_and_incremental_typing",
+    "completion_capability_negotiation",
+    "completion_resolve_and_stale_protection",
+    "completion_graph_refresh_auto_import",
+    "completion_cancellation_and_stale_tasks",
+)
+FEATURE_CASES = {
+    "actions": ("document-formatting", "code-actions"),
+    "completion": COMPLETION_CASES,
+    "diagnostics": ("diagnostics-push", "diagnostics-pull"),
+    "hierarchy": ("hierarchy-workspace-folders", "call-type-hierarchy"),
+}
 
 
 @contextmanager
@@ -63,6 +76,8 @@ class WorkspaceDiscoveryTests(unittest.TestCase):
         self.assertEqual(tuple(check_workspace_updates.CASES), tuple(cases))
         for name, case in cases.items():
             self.assertIs(check_workspace_updates.CASES[name], case.check)
+        for module, expected in FEATURE_CASES.items():
+            self.assertEqual(tuple(name for name, case in cases.items() if case.module == module), expected)
         for name in LEGACY_CASES:
             case = cases[name]
             self.assertIs(getattr(check_workspace_updates, case.check.__name__), case.check)
@@ -75,8 +90,8 @@ class WorkspaceDiscoveryTests(unittest.TestCase):
         ):
             cases = workspace_checks.discover_cases()
         self.assertEqual(tuple(cases)[:len(LEGACY_CASES)], LEGACY_CASES)
-        added = [name for name in cases if name not in check_workspace_updates.CASES]
-        self.assertEqual(added, ["another-case", "z-first", "a-second"])
+        extensions = [name for name, case in cases.items() if case.module in {"aa_extension", "zz_extension"}]
+        self.assertEqual(extensions, ["another-case", "z-first", "a-second"])
         self.assertEqual(cases["another-case"].module, "aa_extension")
         self.assertEqual(cases["a-second"].module, "zz_extension")
 
@@ -123,11 +138,11 @@ class WorkspaceCliTests(unittest.TestCase):
         return calls
 
     def test_default_runs_every_case_in_baseline_order(self):
-        all_cases = tuple(check_workspace_updates.CASES)
-        calls = self.assert_selection(all_cases)
+        cases = tuple(check_workspace_updates.CASES)
+        calls = self.assert_selection(cases)
         self.assertEqual({binary for _, binary, _, _ in calls}, {Path(sys.executable).resolve()})
         self.assertEqual({timeout for _, _, _, timeout in calls}, {60.0})
-        self.assertEqual(len({root for _, _, root, _ in calls}), len(all_cases))
+        self.assertEqual(len({root for _, _, root, _ in calls}), len(cases))
         self.assertTrue(all(name == root.name and not root.exists() for name, _, root, _ in calls))
 
     def test_repeated_case_keeps_the_first_occurrence_and_requested_order(self):

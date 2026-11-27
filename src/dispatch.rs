@@ -4,15 +4,26 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use lsp_server::{Connection, ErrorCode, Request, RequestId};
 use lsp_types::{
-    ClientCapabilities, DocumentSymbolParams, HoverProviderCapability, OneOf, Position,
-    ReferenceParams, RenameOptions, RenameParams, ServerCapabilities, SignatureHelpOptions,
-    TextDocumentPositionParams, WorkspaceSymbolParams,
+    CallHierarchyIncomingCallsParams, CallHierarchyOutgoingCallsParams,
+    CallHierarchyServerCapability, CodeActionKind, CodeActionOptions, CodeActionParams,
+    CodeActionProviderCapability, CompletionItem, CompletionOptions,
+    CompletionOptionsCompletionItem, CompletionParams, DiagnosticOptions,
+    DiagnosticServerCapabilities, DocumentDiagnosticParams, DocumentDiagnosticReportKind,
+    DocumentFormattingParams, DocumentSymbolParams, FullDocumentDiagnosticReport,
+    HoverProviderCapability, InitializeParams, OneOf, Position, ReferenceParams, RenameOptions,
+    RenameParams, ServerCapabilities, SignatureHelpOptions, TextDocumentPositionParams,
+    TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, UnchangedDocumentDiagnosticReport,
+    Uri, WorkspaceSymbolParams,
     request::{
-        DocumentSymbolRequest, GotoDefinition, GotoImplementation, GotoTypeDefinition,
-        HoverRequest, PrepareRenameRequest, References, Rename, Request as _, SignatureHelpRequest,
+        CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
+        CodeActionRequest, Completion, DocumentDiagnosticRequest, DocumentSymbolRequest,
+        Formatting, GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest,
+        PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
+        SignatureHelpRequest, TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
         WorkspaceSymbolRequest,
     },
 };
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::protocol::{
@@ -20,6 +31,10 @@ use crate::protocol::{
     serialize_locations, serialize_query,
 };
 use crate::scheduler::{DeferredQuery, RequestProgress, Scheduler, SearchTask};
+use crate::semantic::completion::{
+    CompletionClientCapabilities, ResolveCompletionResult, StaleCompletion, Trace,
+};
+use crate::semantic::diagnostics::DiagnosticReport;
 use crate::semantic::rename::{RenameError, RenameResult};
 use crate::semantic::{DefinitionKind, Engine, QueryProgress, SemanticTask};
 
@@ -29,6 +44,7 @@ type Handler = fn(&mut RequestContext<'_>, RequestId, Value) -> Result<()>;
 pub(super) struct ClientFeatures {
     hierarchical_document_symbols: bool,
     rename: RenameSupport,
+    completion: CompletionClientCapabilities,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -39,7 +55,8 @@ enum RenameSupport {
 }
 
 impl ClientFeatures {
-    pub(super) fn from_capabilities(caps: &ClientCapabilities) -> Self {
+    pub(super) fn from_initialize(params: &InitializeParams) -> Self {
+        let caps = &params.capabilities;
         let document = caps.text_document.as_ref();
         let versioned_edits = caps
             .workspace
@@ -52,6 +69,7 @@ impl ClientFeatures {
             .and_then(|rename| rename.prepare_support)
             == Some(true);
         Self {
+            completion: CompletionClientCapabilities::from_initialize(params),
             hierarchical_document_symbols: document
                 .and_then(|text| text.document_symbol.as_ref())
                 .and_then(|symbols| symbols.hierarchical_document_symbol_support)
@@ -73,18 +91,27 @@ impl ClientFeatures {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Capabilities {
+    #[serde(flatten)]
+    standard: ServerCapabilities,
+    // lsp-types 0.97 supplies the type hierarchy requests but omits this capability.
+    type_hierarchy_provider: bool,
+}
+
 struct Feature {
-    capabilities: fn(&mut ServerCapabilities, ClientFeatures),
+    capabilities: fn(&mut Capabilities, ClientFeatures),
     methods: &'static [(&'static str, Handler)],
 }
 
 const FEATURES: &[Feature] = &[
     Feature {
         capabilities: |caps, _| {
-            caps.definition_provider = Some(OneOf::Left(true));
-            caps.type_definition_provider = Some(true.into());
-            caps.implementation_provider = Some(true.into());
-            caps.references_provider = Some(OneOf::Left(true));
+            caps.standard.definition_provider = Some(OneOf::Left(true));
+            caps.standard.type_definition_provider = Some(true.into());
+            caps.standard.implementation_provider = Some(true.into());
+            caps.standard.references_provider = Some(OneOf::Left(true));
         },
         methods: &[
             (GotoDefinition::METHOD, definition),
@@ -95,8 +122,8 @@ const FEATURES: &[Feature] = &[
     },
     Feature {
         capabilities: |caps, _| {
-            caps.hover_provider = Some(HoverProviderCapability::Simple(true));
-            caps.signature_help_provider = Some(SignatureHelpOptions {
+            caps.standard.hover_provider = Some(HoverProviderCapability::Simple(true));
+            caps.standard.signature_help_provider = Some(SignatureHelpOptions {
                 trigger_characters: Some(vec!["(".into(), ",".into()]),
                 retrigger_characters: Some(vec![",".into()]),
                 work_done_progress_options: Default::default(),
@@ -109,8 +136,8 @@ const FEATURES: &[Feature] = &[
     },
     Feature {
         capabilities: |caps, _| {
-            caps.document_symbol_provider = Some(OneOf::Left(true));
-            caps.workspace_symbol_provider = Some(OneOf::Left(true));
+            caps.standard.document_symbol_provider = Some(OneOf::Left(true));
+            caps.standard.workspace_symbol_provider = Some(OneOf::Left(true));
         },
         methods: &[
             (DocumentSymbolRequest::METHOD, document_symbols),
@@ -118,8 +145,68 @@ const FEATURES: &[Feature] = &[
         ],
     },
     Feature {
+        capabilities: |caps, _| {
+            caps.standard.diagnostic_provider =
+                Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+                    identifier: Some("rs-gopls".into()),
+                    inter_file_dependencies: true,
+                    workspace_diagnostics: false,
+                    ..Default::default()
+                }));
+        },
+        methods: &[(DocumentDiagnosticRequest::METHOD, document_diagnostics)],
+    },
+    Feature {
+        capabilities: |caps, _| {
+            caps.standard.call_hierarchy_provider =
+                Some(CallHierarchyServerCapability::Simple(true));
+            caps.type_hierarchy_provider = true;
+        },
+        methods: &[
+            (CallHierarchyPrepare::METHOD, prepare_call_hierarchy),
+            (CallHierarchyIncomingCalls::METHOD, incoming_calls),
+            (CallHierarchyOutgoingCalls::METHOD, outgoing_calls),
+            (TypeHierarchyPrepare::METHOD, prepare_type_hierarchy),
+            (TypeHierarchySupertypes::METHOD, supertypes),
+            (TypeHierarchySubtypes::METHOD, subtypes),
+        ],
+    },
+    Feature {
+        capabilities: |caps, _| {
+            caps.standard.document_formatting_provider = Some(OneOf::Left(true));
+            caps.standard.code_action_provider =
+                Some(CodeActionProviderCapability::Options(CodeActionOptions {
+                    code_action_kinds: Some(vec![
+                        CodeActionKind::QUICKFIX,
+                        CodeActionKind::SOURCE_ORGANIZE_IMPORTS,
+                    ]),
+                    ..Default::default()
+                }));
+        },
+        methods: &[
+            (Formatting::METHOD, formatting),
+            (CodeActionRequest::METHOD, code_actions),
+        ],
+    },
+    Feature {
+        capabilities: |caps, _| {
+            caps.standard.completion_provider = Some(CompletionOptions {
+                resolve_provider: Some(true),
+                trigger_characters: Some(vec![".".into()]),
+                completion_item: Some(CompletionOptionsCompletionItem {
+                    label_details_support: Some(true),
+                }),
+                ..CompletionOptions::default()
+            });
+        },
+        methods: &[
+            (Completion::METHOD, completion),
+            (ResolveCompletionItem::METHOD, resolve_completion),
+        ],
+    },
+    Feature {
         capabilities: |caps, client| {
-            caps.rename_provider = match client.rename {
+            caps.standard.rename_provider = match client.rename {
                 RenameSupport::Unavailable => None,
                 RenameSupport::Direct => Some(OneOf::Left(true)),
                 RenameSupport::WithPrepare => Some(OneOf::Right(RenameOptions {
@@ -135,10 +222,15 @@ const FEATURES: &[Feature] = &[
     },
 ];
 
-pub(super) fn write_capabilities(capabilities: &mut ServerCapabilities, client: ClientFeatures) {
+pub(super) fn capabilities(standard: ServerCapabilities, client: ClientFeatures) -> impl Serialize {
+    let mut capabilities = Capabilities {
+        standard,
+        type_hierarchy_provider: false,
+    };
     for feature in FEATURES {
-        (feature.capabilities)(capabilities, client);
+        (feature.capabilities)(&mut capabilities, client);
     }
+    capabilities
 }
 
 pub(super) fn handle(
@@ -154,6 +246,7 @@ pub(super) fn handle(
         engine,
         scheduler,
         hierarchical_document_symbols: client.hierarchical_document_symbols,
+        completion_capabilities: client.completion,
     };
     for &(name, handler) in FEATURES.iter().flat_map(|feature| feature.methods) {
         if method == name && client.supports(name) {
@@ -174,6 +267,7 @@ struct RequestContext<'a> {
     engine: &'a mut Engine,
     scheduler: &'a mut Scheduler,
     hierarchical_document_symbols: bool,
+    completion_capabilities: CompletionClientCapabilities,
 }
 
 impl RequestContext<'_> {
@@ -247,30 +341,60 @@ fn adapt<T: 'static, Task: SemanticTask<T> + 'static>(
     match progress {
         QueryProgress::Ready(result) => QueryProgress::Ready(encode(result)),
         QueryProgress::Pending(load) => QueryProgress::Pending(load),
-        QueryProgress::Searching(task) => {
-            QueryProgress::Searching(Box::new(EncodedTask { task, encode }))
-        }
+        QueryProgress::Searching(task) => QueryProgress::Searching(Box::new(EncodedTask {
+            task,
+            encode,
+            stale: false,
+        })),
     }
 }
 
 struct EncodedTask<T, Task> {
     task: Task,
     encode: fn(T) -> RequestResult,
+    stale: bool,
 }
 
 impl<T, Task: SemanticTask<T>> SearchTask for EncodedTask<T, Task> {
+    fn ready(&self, engine: &Engine) -> bool {
+        self.task.ready(engine)
+    }
+
+    fn discard(&mut self, code: ErrorCode) {
+        self.task.discard(code);
+    }
+
     fn advance(&mut self, engine: &mut Engine) -> Result<bool> {
-        self.task.advance(engine)
+        match self.task.advance(engine) {
+            Err(error) if error.is::<StaleCompletion>() => {
+                self.task.discard(ErrorCode::ContentModified);
+                self.stale = true;
+                Ok(true)
+            }
+            progress => progress,
+        }
     }
 
     fn finish(self: Box<Self>) -> RequestResult {
-        (self.encode)(self.task.finish())
+        if self.stale {
+            Err((ErrorCode::ContentModified, StaleCompletion.to_string()))
+        } else {
+            (self.encode)(self.task.finish())
+        }
     }
 }
 
 fn document_position(params: Value) -> Result<(PathBuf, Position)> {
     let params: TextDocumentPositionParams = serde_json::from_value(params)?;
     Ok((file_path(&params.text_document.uri)?, params.position))
+}
+
+fn document_params<P: DeserializeOwned>(
+    value: Value,
+    uri: impl FnOnce(&P) -> &Uri,
+) -> Result<(PathBuf, P)> {
+    let params = serde_json::from_value(value)?;
+    Ok((file_path(uri(&params))?, params))
 }
 
 fn prepare_rename(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
@@ -475,4 +599,250 @@ fn workspace_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Va
         ),
         Err(error) => context.respond(id, Err((ErrorCode::InvalidParams, error.to_string()))),
     }
+}
+
+fn diagnostic_result(report: &DiagnosticReport, previous: Option<&str>) -> RequestResult {
+    let result = if previous == Some(&report.result_id) {
+        DocumentDiagnosticReportKind::Unchanged(UnchangedDocumentDiagnosticReport {
+            result_id: report.result_id.clone(),
+        })
+    } else {
+        DocumentDiagnosticReportKind::Full(FullDocumentDiagnosticReport {
+            result_id: Some(report.result_id.clone()),
+            items: report.to_lsp_diagnostics(),
+        })
+    };
+    serialize_query(result)
+}
+
+fn document_diagnostics(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &DocumentDiagnosticParams| &p.text_document.uri),
+        |engine, path, params| {
+            let (report, load) = engine.diagnostics_report(path)?;
+            Ok(match load {
+                Some(load) => QueryProgress::Pending(load),
+                None => QueryProgress::Ready(diagnostic_result(
+                    report,
+                    params.previous_result_id.as_deref(),
+                )),
+            })
+        },
+        Some(|engine, path, _| {
+            let (report, _) = engine.diagnostics_report(path).map_err(internal_error)?;
+            diagnostic_result(report, None)
+        }),
+    )
+}
+
+fn formatting(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &DocumentFormattingParams| &p.text_document.uri),
+        |engine, path, _| {
+            Ok(QueryProgress::Ready(serialize_query(
+                engine.format_document(path)?,
+            )))
+        },
+        None,
+    )
+}
+
+fn code_actions(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &CodeActionParams| &p.text_document.uri),
+        |engine, path, p| {
+            Ok(adapt(
+                engine.code_actions(
+                    path,
+                    &p.text_document.uri,
+                    p.range,
+                    p.context.only.as_deref(),
+                )?,
+                serialize_query,
+            ))
+        },
+        Some(|engine, path, p| {
+            engine
+                .local_code_actions(
+                    path,
+                    &p.text_document.uri,
+                    p.range,
+                    p.context.only.as_deref(),
+                )
+                .map_err(internal_error)
+                .and_then(serialize_query)
+        }),
+    )
+}
+
+fn prepare_call_hierarchy(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    context.document_query(
+        id,
+        document_position(params),
+        |engine, path, &pos| {
+            Ok(adapt(
+                engine.prepare_call_hierarchy(path, pos)?,
+                serialize_query,
+            ))
+        },
+        None,
+    )
+}
+
+fn incoming_calls(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &CallHierarchyIncomingCallsParams| &p.item.uri),
+        |engine, _, p| Ok(adapt(engine.incoming_calls(&p.item)?, serialize_query)),
+        None,
+    )
+}
+
+fn outgoing_calls(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &CallHierarchyOutgoingCallsParams| &p.item.uri),
+        |engine, _, p| Ok(adapt(engine.outgoing_calls(&p.item)?, serialize_query)),
+        None,
+    )
+}
+
+fn prepare_type_hierarchy(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    context.document_query(
+        id,
+        document_position(params),
+        |engine, path, &pos| {
+            Ok(adapt(
+                engine.prepare_type_hierarchy(path, pos)?,
+                serialize_query,
+            ))
+        },
+        None,
+    )
+}
+
+fn supertypes(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &TypeHierarchySupertypesParams| &p.item.uri),
+        |engine, _, p| Ok(adapt(engine.supertypes(&p.item)?, serialize_query)),
+        None,
+    )
+}
+
+fn subtypes(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    context.document_query(
+        id,
+        document_params(params, |p: &TypeHierarchySubtypesParams| &p.item.uri),
+        |engine, _, p| Ok(adapt(engine.subtypes(&p.item)?, serialize_query)),
+        None,
+    )
+}
+
+fn completion(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let query = (|| {
+        let params: CompletionParams = serde_json::from_value(params)?;
+        let document = params.text_document_position;
+        let path = file_path(&document.text_document.uri)?;
+        Ok(CompletionQuery {
+            trace: Trace::start(&path, document.position),
+            path,
+            position: document.position,
+            caps: context.completion_capabilities,
+        })
+    })();
+    match query {
+        Ok(query) => context
+            .scheduler
+            .submit(context.engine, context.connection, id, query),
+        Err(error) => context.respond(id, Err(invalid_params(error))),
+    }
+}
+
+struct CompletionQuery {
+    path: PathBuf,
+    position: Position,
+    caps: CompletionClientCapabilities,
+    trace: Option<Trace>,
+}
+
+impl DeferredQuery for CompletionQuery {
+    fn document_path(&self) -> Option<&Path> {
+        Some(&self.path)
+    }
+
+    fn run(&self, engine: &mut Engine) -> Result<RequestProgress> {
+        let result =
+            engine.complete_traced(&self.path, self.position, &self.caps, self.trace.as_ref());
+        if result.is_err()
+            && let Some(trace) = &self.trace
+        {
+            trace.outcome("failed");
+        }
+        Ok(adapt(result?, serialize_query))
+    }
+
+    fn load_failed(&self, engine: &mut Engine, _message: &str) -> RequestResult {
+        let result = engine.complete_after_load_failure(
+            &self.path,
+            self.position,
+            &self.caps,
+            self.trace.as_ref(),
+        );
+        if let Some(trace) = &self.trace {
+            trace.outcome(if result.is_ok() {
+                "completed with local syntax"
+            } else {
+                "failed"
+            });
+        }
+        result.map_err(internal_error).and_then(serialize_query)
+    }
+
+    fn discard(&mut self, code: ErrorCode) {
+        if let Some(trace) = &self.trace {
+            trace.error(code);
+        }
+    }
+}
+
+fn resolve_completion(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    let item = serde_json::from_value::<CompletionItem>(params)
+        .map_err(|error| invalid_params(error.into()));
+    let result = item.and_then(|item| {
+        match context
+            .engine
+            .resolve_completion_item(item, &context.completion_capabilities)
+            .map_err(internal_error)?
+        {
+            ResolveCompletionResult::Item(item) => serialize_query(item),
+            ResolveCompletionResult::ContentModified => {
+                Err((ErrorCode::ContentModified, StaleCompletion.to_string()))
+            }
+            ResolveCompletionResult::InvalidData => Err((
+                ErrorCode::InvalidParams,
+                "invalid completion item data".into(),
+            )),
+        }
+    });
+    context.respond(id, result)
 }
