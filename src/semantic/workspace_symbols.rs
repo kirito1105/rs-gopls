@@ -104,7 +104,7 @@ impl Engine {
         };
         let index = &mut self.workspace_symbol_index;
         if !index.project_current {
-            index.synchronize(workspace, snapshot.root(), snapshot.docs());
+            index.synchronize(workspace, snapshot.roots(), snapshot.docs());
         }
         index
             .paths
@@ -226,10 +226,9 @@ impl WorkspaceSymbolIndex {
     fn synchronize(
         &mut self,
         workspace: &Workspace,
-        root: &Path,
+        roots: &[PathBuf],
         documents: &HashMap<PathBuf, IndexedSource>,
     ) {
-        let root = path_key(root);
         let mut previous = std::mem::take(&mut self.files);
         for (key, path) in workspace.project_symbol_files() {
             let file = previous
@@ -240,7 +239,7 @@ impl WorkspaceSymbolIndex {
         }
         for (key, source) in documents {
             if !self.files.contains_key(key)
-                && in_draft_scope(workspace, &root, key)
+                && in_draft_scope(workspace, roots, key)
                 && !source.path.is_file()
             {
                 let file = previous
@@ -258,7 +257,7 @@ impl WorkspaceSymbolIndex {
     pub(super) fn document_opened(
         &mut self,
         workspace: Option<&Workspace>,
-        root: &Path,
+        roots: &[PathBuf],
         key: &Path,
         path: &Path,
         draft: bool,
@@ -266,7 +265,7 @@ impl WorkspaceSymbolIndex {
         if self.project_current
             && draft
             && let Some(workspace) = workspace
-            && in_draft_scope(workspace, &path_key(root), key)
+            && in_draft_scope(workspace, roots, key)
             && let Entry::Vacant(slot) = self.files.entry(key.to_owned())
         {
             slot.insert(CachedFile::new(path.to_owned(), false));
@@ -311,9 +310,10 @@ impl WorkspaceSymbolIndex {
     }
 }
 
-fn in_draft_scope(workspace: &Workspace, root: &Path, key: &Path) -> bool {
+fn in_draft_scope(workspace: &Workspace, roots: &[PathBuf], key: &Path) -> bool {
     is_symbol_source(key)
-        && (key.starts_with(root) || workspace.contains_project_path(key))
+        && (workspace.contains_project_path(key)
+            || roots.iter().any(|root| key.starts_with(path_key(root))))
         && !workspace.contains_external_symbol_path(key)
 }
 

@@ -1240,6 +1240,49 @@ fn import_catalog_filters_hidden_main_internal_vendor_and_self_and_prefers_neare
 }
 
 #[test]
+fn auto_import_uses_the_replacement_selected_by_each_workspace_folder() {
+    let project = TestProject::new();
+    let roots = ["left", "right"].map(|name| project.root.join(name));
+    for (name, symbol) in [("left", "WitnessLeft"), ("right", "WitnessRight")] {
+        project.write(&format!("{name}/go.mod"), &format!(
+            "module example.test/{name}\n\ngo 1.22\n\nrequire example.test/lib v0.0.0\nreplace example.test/lib => ./lib\n"
+        ));
+        project.write(
+            &format!("{name}/lib/go.mod"),
+            "module example.test/lib\n\ngo 1.22\n",
+        );
+        project.write(
+            &format!("{name}/lib/lib.go"),
+            &format!("package lib\nconst {symbol} = 1\n"),
+        );
+        project.write(
+            &format!("{name}/use/use.go"),
+            "package use\nimport _ \"example.test/lib\"\n",
+        );
+        project.write(&format!("{name}/sample.go"), "package sample\n");
+    }
+    let mut engine = Engine::with_roots(roots.to_vec());
+    install(
+        &mut engine,
+        Workspace::load_roots(&roots, false).unwrap(),
+        false,
+    );
+    for (root, expected, other) in [
+        (&roots[0], "WitnessLeft", "WitnessRight"),
+        (&roots[1], "WitnessRight", "WitnessLeft"),
+    ] {
+        let path = root.join("sample.go");
+        let source = "package sample\nvar _ = Witness¦";
+        let items = complete(&mut engine, &path, source);
+        assert_labels(&items, &[expected], &[other]);
+        assert_eq!(
+            apply(&marked(source).0, item(&items, expected)),
+            format!("package sample\n\nimport \"example.test/lib\"\n\nvar _ = lib.{expected}")
+        );
+    }
+}
+
+#[test]
 fn auto_imports_prioritize_existing_aliases_and_apply_nonoverlapping_crlf_edits() {
     let (project, mut engine, path) = engine();
     let old = project.write(

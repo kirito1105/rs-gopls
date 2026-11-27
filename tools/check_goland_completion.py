@@ -68,7 +68,36 @@ SINGLE_IMPORT_CASES = {"auto-marshal", "auto-single-comment", "auto-versioned", 
 
 
 def read_json(path):
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    if data.get("root") == "$WORKSPACE" or "completionType" not in data:
+        return data
+    data["root"] = "$WORKSPACE"
+    if data.get("revision"):
+        data["project"] = "external"
+    cache_roots = set()
+    for module in data["sdk"]["modules"]:
+        sdk = module["sdkHome"].replace("\\", "/")
+        cache_root, marker, _ = sdk.rpartition("/golang.org/toolchain@")
+        if marker:
+            cache_roots.add(cache_root + "/")
+        module["sdkHome"] = "$GOROOT"
+
+    def relocate(node):
+        if isinstance(node, list):
+            for child in node:
+                relocate(child)
+        elif isinstance(node, dict):
+            source = node.get("sourcePath")
+            if source:
+                for prefix in cache_roots:
+                    if source.startswith(prefix):
+                        node["sourcePath"] = "$GOMODCACHE/" + source[len(prefix):]
+                        break
+            for child in node.values():
+                relocate(child)
+
+    relocate(data["cases"])
+    return data
 
 
 def write_report(path, report):
@@ -272,7 +301,6 @@ class CompletionCorpus:
             actual = self.git("rev-parse", "HEAD").strip()
             if actual != revision or self.git("status", "--porcelain=v1", "--untracked-files=all", "--", "."):
                 raise ValueError(f"{self.root} must match the clean GoLand capture at {revision}, found {actual}")
-        self.sdk = self.data["sdk"]["modules"][0]["sdkHome"]
         self.edit_prefix = self.data["editPrefix"]
         if not self.edit_prefix.endswith("\n") or "\r" in self.edit_prefix:
             raise ValueError("expected a benchmark edit consisting of complete LF lines")
@@ -280,7 +308,6 @@ class CompletionCorpus:
         self.sources = {}
         self.origins = {}
         self.active_packages = set()
-        self.open_files = [self.path(relative) for relative in self.data["sdk"]["openFiles"]]
         self.queries = {}
         for row in self.data["cases"]:
             query = self.query(row)
@@ -294,8 +321,17 @@ class CompletionCorpus:
         return subprocess.check_output(["git", *args], cwd=self.root, encoding="utf-8")
 
     def load_active_packages(self, environment, timeout):
+        self.sdk = Path(environment["GOROOT"])
+        self.module_cache = Path(subprocess.check_output(
+            [str(self.sdk / "bin" / "go.exe"), "env", "GOMODCACHE"], cwd=self.root,
+            env=environment, encoding="utf-8", timeout=timeout,
+        ).strip())
+        self.open_files = [
+            self.origin(path) if path.startswith(("$GOROOT/", "$GOMODCACHE/")) else self.path(path)
+            for path in self.data["sdk"]["openFiles"]
+        ]
         listing = subprocess.check_output(
-            [str(Path(self.sdk) / "bin" / "go.exe"), "list", "-e", "-deps", "-test", "./..."],
+            [str(self.sdk / "bin" / "go.exe"), "list", "-e", "-deps", "-test", "./..."],
             cwd=self.root, env=environment, encoding="utf-8", timeout=timeout,
         )
         self.active_packages = {line.split(" [", 1)[0] for line in listing.splitlines()}
@@ -349,7 +385,9 @@ class CompletionCorpus:
             return None
         if path not in self.origins:
             if path.startswith("$GOROOT/"):
-                self.origins[path] = Path(self.sdk) / path.removeprefix("$GOROOT/")
+                self.origins[path] = self.sdk / path.removeprefix("$GOROOT/")
+            elif path.startswith("$GOMODCACHE/"):
+                self.origins[path] = self.module_cache / path.removeprefix("$GOMODCACHE/")
             else:
                 # Windows verbatim paths compare against regular capture paths.
                 self.origins[path] = self.root / Path(path.removeprefix("\\\\?\\"))

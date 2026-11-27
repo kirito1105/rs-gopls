@@ -409,6 +409,12 @@ def go_environment(corpus, timeout):
     module = modules[0]
     sdk = Path(module["sdkHome"])
     env = os.environ.copy()
+    if not (sdk / "bin" / "go.exe").is_file():
+        toolchain = f"go{module['sdkVersion']}"
+        sdk = Path(subprocess.check_output(
+            ["go", "env", "GOROOT"], cwd=corpus.root, encoding="utf-8", timeout=timeout,
+            env={**env, "GOTOOLCHAIN": toolchain, "GOPROXY": "off"},
+        ).strip())
     path_key = next((key for key in env if key.upper() == "PATH"), "PATH")
     env[path_key] = str(sdk / "bin") + os.pathsep + env.get(path_key, "")
     work = corpus.data["sdk"]["goWork"]

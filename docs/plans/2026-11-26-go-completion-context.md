@@ -59,7 +59,7 @@
 
 ### GoLand 对照与回归
 
-- [x] **可重放 GoLand 基线**。在运行中的 `GO-263.7307.354` 上用 `tools/capture_goland_completion.groovy` 采集 LocalChat 和 `tools/fixtures/completion/`，在 `docs/goland-completion-baseline.md` 记录来源、上下文、完整候选、排序、UTF-16 范围和实际插入结果。`tools/check_goland_completion.py` 重放并核对共同样本，记录有意差异和待运行态问题的实测结论。
+- [x] **可重放 GoLand 基线**。在运行中的 `GO-263.7307.354` 上用 `tools/capture_goland_completion.groovy` 采集真实项目和 `tools/fixtures/completion/`，在 `docs/goland-completion-baseline.md` 记录来源、上下文、完整候选、排序、UTF-16 范围和实际插入结果。`tools/check_goland_completion.py` 重放并核对共同样本，记录有意差异和待运行态问题的实测结论。
 - [x] **性能对照**。`tools/compare_completion.py` 对结果一致的样本记录索引就绪后首查、复查、编辑后查询的 P50/P95、样本数、缓存状态和计时边界。报告保留候选、排序或编辑范围有差异的样本及两侧实际结果。[导航性能对照](../PLANS.md#导航性能对照)
 - [x] **构建与历史回归**。`cargo check -p rs-gopls --locked` 和 `cargo test -p rs-gopls --locked` 零告警通过，发布版通过声明、类型定义、引用、实现、Hover、SignatureHelp、文档大纲、工作区符号和工作区更新回归。
 
@@ -67,7 +67,7 @@
 
 ### REA 产物证据
 
-GoLand 安装于 `E:\Apps\goland-2026.3.0.1.win`。`build.txt` 为 `GO-263.7307.354`，`product-info.json` 的版本、构建号与产品代码为 `2026.3.0.1`、`263.7307.354`、`GO`。用 REA `inspect-artifact` 核对 JAR 并记录证据 ID，用 Vineflower `1.11.2` 反编译，用 JBR 25 的 ClassFile API 核对字节码。只读 PSI 探针通过 `GoBackendParserDefinition`、`GoParser` 与 `GoCompletionContributor#beforeCompletion` 核对语法解析与补全占位符行为。以下路径相对于安装目录。[既有 REA 证据](2026-11-26-go-document-and-workspace-symbols.md#rea-产物证据)
+GoLand 安装于 `<GOLAND_HOME>`。`build.txt` 为 `GO-263.7307.354`，`product-info.json` 的版本、构建号与产品代码为 `2026.3.0.1`、`263.7307.354`、`GO`。用 REA `inspect-artifact` 核对 JAR 并记录证据 ID，用 Vineflower `1.11.2` 反编译，用 JBR 25 的 ClassFile API 核对字节码。只读 PSI 探针通过 `GoBackendParserDefinition`、`GoParser` 与 `GoCompletionContributor#beforeCompletion` 核对语法解析与补全占位符行为。以下路径相对于安装目录。[既有 REA 证据](2026-11-26-go-document-and-workspace-symbols.md#rea-产物证据)
 
 | 安装包文件 | 可核查内容 | REA Evidence ID |
 | --- | --- | --- |
@@ -119,11 +119,11 @@ GoLand 安装于 `E:\Apps\goland-2026.3.0.1.win`。`build.txt` 为 `GO-263.7307.
 ### 样本与运行基线
 
 - 固定同一 Windows 主机、GoLand `GO-263.7307.354`、rs-gopls 发布版提交与二进制 SHA-256、Go SDK `go1.27.4`、项目作用域、打开文件、光标位置、触发方式及编辑序列。记录 Go SDK 路径和 `go version`，核对 `GOOS`、`GOARCH`、构建标签、vendor 模式与 `GOWORK`。
-- 真实样本使用 `E:\Code\localchat\server` 的 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。合成样本使用 `tools/fixtures/completion/`，覆盖上述光标、测试视图、指针与嵌入、导入及别名、CRLF 与非 BMP 字符。记录同一 BASIC 补全调用的完整候选、种类和来源、排序、UTF-16 范围及选中后的文档。用未保存编辑重放后恢复基线文本。
+- 真实样本使用 `$env:RS_GOPLS_BENCH_WORKSPACE` 的 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。合成样本使用 `tools/fixtures/completion/`，覆盖上述光标、测试视图、指针与嵌入、导入及别名、CRLF 与非 BMP 字符。记录同一 BASIC 补全调用的完整候选、种类和来源、排序、UTF-16 范围及选中后的文档。用未保存编辑重放后恢复基线文本。
 - `tools/capture_goland_completion.groovy` 沿用 `ideScript` 入口，从 `$env:TEMP\rs-gopls-goland-baseline\completion-queries.json` 读取工作区、文件 URI、光标和编辑步骤。在基线文档记录生成查询文件、采集和重放方式，按 `RS_GOPLS_BENCHMARK=1` 采集原始计时。[既有 Groovy 采集方式](../goland-symbols-baseline.md)
 
 ```powershell
-$goland = 'E:\Apps\goland-2026.3.0.1.win\bin\goland64.exe'
+$goland = $env:GOLAND_EXE
 $capture = (Resolve-Path '.\tools\capture_goland_completion.groovy').Path
 Start-Process -FilePath $goland -ArgumentList @('ideScript', ('"{0}"' -f $capture)) -WindowStyle Hidden
 ```
@@ -143,21 +143,21 @@ cargo build -p rs-gopls --release --locked
 ```powershell
 $target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
 $server = Join-Path $target 'release\rs-gopls.exe'
-$localchat = 'E:\Code\localchat\server'
+$external = $env:RS_GOPLS_BENCH_WORKSPACE
 $completionFixture = (Resolve-Path '.\tools\fixtures\completion').Path
 $symbolFixture = (Resolve-Path '.\tools\fixtures\symbol-navigation').Path
 
-python -B .\tools\check_goland_completion.py $server --workspace $localchat --fixture (Join-Path $completionFixture 'localchat-goland-completion.json') --json (Join-Path $target 'localchat-completion-correctness.json')
+python -B .\tools\check_goland_completion.py $server --workspace $external --fixture (Join-Path $completionFixture 'external-goland-completion.json') --json (Join-Path $target 'external-completion-correctness.json')
 python -B .\tools\check_goland_completion.py $server --workspace $completionFixture --fixture (Join-Path $completionFixture 'goland-completion.json') --json (Join-Path $target 'fixture-completion-correctness.json')
 python -B .\tools\check_workspace_updates.py $server
-python -B .\tools\check_definitions.py $server --stage 6 --workspace $localchat
-python -B .\tools\check_goland_definitions.py $server --workspace $localchat --method definition
-python -B .\tools\check_goland_definitions.py $server --workspace $localchat --method typeDefinition
-python -B .\tools\check_goland_references.py $server --workspace $localchat
-python -B .\tools\check_goland_implementations.py $server --workspace $localchat
-python -B .\tools\check_goland_hover.py $server --workspace $localchat
-python -B .\tools\check_goland_signature_help.py $server --workspace $localchat
-python -B .\tools\check_goland_symbols.py $server --workspace $localchat --fixture .\tools\fixtures\localchat-goland-symbols.json
+python -B .\tools\check_definitions.py $server --stage 6 --workspace $external
+python -B .\tools\check_goland_definitions.py $server --workspace $external --method definition
+python -B .\tools\check_goland_definitions.py $server --workspace $external --method typeDefinition
+python -B .\tools\check_goland_references.py $server --workspace $external
+python -B .\tools\check_goland_implementations.py $server --workspace $external
+python -B .\tools\check_goland_hover.py $server --workspace $external
+python -B .\tools\check_goland_signature_help.py $server --workspace $external
+python -B .\tools\check_goland_symbols.py $server --workspace $external --fixture (Get-Item .\tools\fixtures\*-goland-symbols.json).FullName
 python -B .\tools\check_goland_symbols.py $server --workspace $symbolFixture --fixture (Join-Path $symbolFixture 'goland-symbols.json')
 ```
 
@@ -168,7 +168,7 @@ python -B .\tools\check_goland_symbols.py $server --workspace $symbolFixture --f
 
 ```powershell
 $baseline = Join-Path $env:TEMP 'rs-gopls-goland-baseline'
-python -B .\tools\compare_completion.py $server --workspace $localchat --fixture (Join-Path $completionFixture 'localchat-goland-completion.json') --goland-bench (Join-Path $baseline 'localchat-completion-bench.json') --json (Join-Path $target 'localchat-completion-benchmark.json')
+python -B .\tools\compare_completion.py $server --workspace $external --fixture (Join-Path $completionFixture 'external-goland-completion.json') --goland-bench (Join-Path $baseline 'external-completion-bench.json') --json (Join-Path $target 'external-completion-benchmark.json')
 python -B .\tools\compare_completion.py $server --workspace $completionFixture --fixture (Join-Path $completionFixture 'goland-completion.json') --goland-bench (Join-Path $baseline 'fixture-completion-bench.json') --json (Join-Path $target 'fixture-completion-benchmark.json')
 ```
 
@@ -185,32 +185,32 @@ python -B .\tools\compare_completion.py $server --workspace $completionFixture -
 
 - 修复 `S{` 吞入下一行赋值、未闭合导入的右引号、限定自动导入的 UTF-16 范围、导入分组的末尾空行，以及 `case` / `default` 和 `.(type)` 候选的上下文边界。扩展驼峰和限定匹配，按混合大小写的词段筛选候选，并为包名和同分名称采用稳定顺序。补全复用已取得的声明源，SDK 和模块缓存先按导出名筛选。回归覆盖不可匹配的大写词段、外部依赖缓冲区的打开和关闭，以及已有括号、冒号和点号的编辑。
 - 重新采集 GoLand `GO-263.7307.354`。采集器记录每次候选变化的结果和采样下标，核对编辑后的候选顺序。对照检查使用 Go 命令验证依赖包可达性，工作区检查验证跨会话顺序，计时脚本在出现未解释失败时返回非零退出码。[GoLand 对照基线](../goland-completion-baseline.md#rs-gopls-对照结果与性能基准)
-- 发布版 `target/release/rs-gopls.exe` 的 SHA-256 为 `dea74df1f6071c0f5ac84b8f44c6f42f7b574e4b1dfbfa60f8f131fbf4e1c388`。Cargo 沿用环境配置的产物目录。Go 验证固定 `go1.27.4 windows/amd64`，LocalChat 修订为 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。
+- 发布版 `target/release/rs-gopls.exe` 的 SHA-256 为 `dea74df1f6071c0f5ac84b8f44c6f42f7b574e4b1dfbfa60f8f131fbf4e1c388`。Cargo 沿用环境配置的产物目录。Go 验证固定 `go1.27.4 windows/amd64`，真实项目修订为 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。
 
 #### 验证命令与结果
 
-下表沿用验证计划中的 `$server`、`$target`、`$localchat`、`$completionFixture`、`$symbolFixture` 与 `$baseline`。
+下表沿用验证计划中的 `$server`、`$target`、`$external`、`$completionFixture`、`$symbolFixture` 与 `$baseline`。
 
 | 命令 | 实际结果 |
 | --- | --- |
 | `cargo check -p rs-gopls --locked` | 通过，零告警。 |
 | `cargo test -p rs-gopls --locked` | 109/109 通过，零失败、零忽略、零告警。 |
 | `cargo build -p rs-gopls --release --locked` | 通过，零告警。 |
-| `python -B .\tools\check_goland_completion.py $server --workspace $localchat --fixture (Join-Path $completionFixture 'localchat-goland-completion.json') --json (Join-Path $target 'localchat-completion-correctness.json')` | 22/22 通过。13 个完全一致，9 个有意差异，0 个失败。 |
+| `python -B .\tools\check_goland_completion.py $server --workspace $external --fixture (Join-Path $completionFixture 'external-goland-completion.json') --json (Join-Path $target 'external-completion-correctness.json')` | 22/22 通过。13 个完全一致，9 个有意差异，0 个失败。 |
 | `python -B .\tools\check_goland_completion.py $server --workspace $completionFixture --fixture (Join-Path $completionFixture 'goland-completion.json') --json (Join-Path $target 'fixture-completion-correctness.json')` | 126/126 通过。58 个完全一致，68 个有意差异，0 个失败。 |
 | `python -B .\tools\check_workspace_updates.py $server --module completion` | 5/5 通过。 |
 | `python -B .\tools\check_workspace_updates.py $server` | 28/28 通过，含历史 23 项及补全 5 项。 |
-| `python -B .\tools\check_definitions.py $server --stage 6 --workspace $localchat` | 合成 124/124、LocalChat 16/16。 |
-| `python -B .\tools\check_goland_definitions.py $server --workspace $localchat --method definition` | 20/20 通过，其中 19 个直接匹配，1 个既有包落点差异。 |
-| `python -B .\tools\check_goland_definitions.py $server --workspace $localchat --method typeDefinition` | 34/34 通过，其中 32 个直接匹配，2 个预期空结果。 |
-| `python -B .\tools\check_goland_references.py $server --workspace $localchat` | 34/34 匹配。 |
-| `python -B .\tools\check_goland_implementations.py $server --workspace $localchat` | 20/20 匹配。 |
-| `python -B .\tools\check_goland_hover.py $server --workspace $localchat` | 21/21 匹配。 |
-| `python -B .\tools\check_goland_signature_help.py $server --workspace $localchat` | 13/13 匹配，编辑、关闭恢复与取消检查通过。 |
-| `python -B .\tools\check_goland_symbols.py $server --workspace $localchat --fixture .\tools\fixtures\localchat-goland-symbols.json` | 两种大纲模式各 8/8，工作区符号 20/20。 |
+| `python -B .\tools\check_definitions.py $server --stage 6 --workspace $external` | 合成 124/124、真实项目 16/16。 |
+| `python -B .\tools\check_goland_definitions.py $server --workspace $external --method definition` | 20/20 通过，其中 19 个直接匹配，1 个既有包落点差异。 |
+| `python -B .\tools\check_goland_definitions.py $server --workspace $external --method typeDefinition` | 34/34 通过，其中 32 个直接匹配，2 个预期空结果。 |
+| `python -B .\tools\check_goland_references.py $server --workspace $external` | 34/34 匹配。 |
+| `python -B .\tools\check_goland_implementations.py $server --workspace $external` | 20/20 匹配。 |
+| `python -B .\tools\check_goland_hover.py $server --workspace $external` | 21/21 匹配。 |
+| `python -B .\tools\check_goland_signature_help.py $server --workspace $external` | 13/13 匹配，编辑、关闭恢复与取消检查通过。 |
+| `python -B .\tools\check_goland_symbols.py $server --workspace $external --fixture (Get-Item .\tools\fixtures\*-goland-symbols.json).FullName` | 两种大纲模式各 8/8，工作区符号 20/20。 |
 | `python -B .\tools\check_goland_symbols.py $server --workspace $symbolFixture --fixture (Join-Path $symbolFixture 'goland-symbols.json')` | 两种大纲模式各 5/5，工作区符号 36/36。 |
 | 设置 `PYTHONPATH=tools` 后执行 `python -B -m unittest tools/test_lsp_harness.py tools/test_workspace_checks.py` | 25/25 通过。 |
-| `python -B .\tools\compare_completion.py $server --workspace $localchat --fixture (Join-Path $completionFixture 'localchat-goland-completion.json') --goland-bench (Join-Path $baseline 'localchat-completion-bench.json') --json (Join-Path $target 'localchat-completion-benchmark.json')` | 完成全部 704 个采样，0 个校验失败。 |
+| `python -B .\tools\compare_completion.py $server --workspace $external --fixture (Join-Path $completionFixture 'external-goland-completion.json') --goland-bench (Join-Path $baseline 'external-completion-bench.json') --json (Join-Path $target 'external-completion-benchmark.json')` | 完成全部 704 个采样，0 个校验失败。 |
 | `python -B .\tools\compare_completion.py $server --workspace $completionFixture --fixture (Join-Path $completionFixture 'goland-completion.json') --goland-bench (Join-Path $baseline 'fixture-completion-bench.json') --json (Join-Path $target 'fixture-completion-benchmark.json')` | 完成全部 4,032 个采样，0 个校验失败。 |
 | 在合成夹具执行 `go list -mod=vendor -test ./...` 与 `go test -mod=vendor ./...` | 两条命令均通过。 |
 
@@ -220,13 +220,13 @@ python -B .\tools\compare_completion.py $server --workspace $completionFixture -
 
 | 工作区 | 场景 | 共同 / 总样本数 | GoLand P50 / P95（ms） | rs-gopls P50 / P95（ms） | rs-gopls resolve 数量与 P50 / P95（ms） |
 | --- | --- | ---: | ---: | ---: | ---: |
-| LocalChat | 首查 | 13 / 22 | 43.3941 / 446.7385 | 2.6595 / 29.5850 | 1 · 0.8627 / 0.8627 |
-| LocalChat | 复查 | 390 / 660 | 29.2823 / 123.5895 | 0.3580 / 11.9409 | 30 · 0.9455 / 1.0807 |
-| LocalChat | 编辑后首查 | 13 / 22 | 36.0754 / 139.9207 | 0.6280 / 13.8461 | 1 · 0.9524 / 0.9524 |
+| 真实项目 | 首查 | 13 / 22 | 43.3941 / 446.7385 | 2.6595 / 29.5850 | 1 · 0.8627 / 0.8627 |
+| 真实项目 | 复查 | 390 / 660 | 29.2823 / 123.5895 | 0.3580 / 11.9409 | 30 · 0.9455 / 1.0807 |
+| 真实项目 | 编辑后首查 | 13 / 22 | 36.0754 / 139.9207 | 0.6280 / 13.8461 | 1 · 0.9524 / 0.9524 |
 | 合成夹具 | 首查 | 58 / 126 | 78.7436 / 139.6909 | 1.4776 / 7.7571 | 26 · 0.2537 / 0.9853 |
 | 合成夹具 | 复查 | 1,740 / 3,780 | 31.3772 / 95.6739 | 0.4297 / 2.9012 | 780 · 0.2207 / 1.0156 |
 | 合成夹具 | 编辑后首查 | 58 / 126 | 32.4451 / 106.7794 | 0.5188 / 3.3743 | 26 · 0.2167 / 0.9007 |
 
 - 有意差异包括 Go 的作用域、歧义与指针规则，字面量键位置约束，导入注释和路径保留，项目别名与依赖索引范围，IDE 专有模板及稳定排序。显式 `p_test` 导入下的同包测试声明按 Go 编译视图直接对齐。合成 102 次复查与 3 次编辑后首查观察到 GoLand 候选变化，报告保留这两侧的实际结果。[差异依据与明细路径](../goland-completion-baseline.md#差异依据)
-- 首次 SDK 搜索仍有尾延迟。合成 `scope-local` 为 622.6629 ms，LocalChat 差异样本 `local-inferred` 最终为 1779.8217 ms。LocalChat 该样本在扩展模块缓存预筛选之前为 2109.1100 ms。
-- 采集和重放前后 `git -C E:\Code\localchat\server status --short -- .` 均为空。rs-gopls 的 Track A 改动留在工作区供审查，Wave 3B 未创建提交。
+- 首次 SDK 搜索仍有尾延迟。合成 `scope-local` 为 622.6629 ms，真实项目差异样本 `local-inferred` 最终为 1779.8217 ms。真实项目该样本在扩展模块缓存预筛选之前为 2109.1100 ms。
+- 采集和重放前后 `git -C $env:RS_GOPLS_BENCH_WORKSPACE status --short -- .` 均为空。rs-gopls 的 Track A 改动留在工作区供审查，Wave 3B 未创建提交。

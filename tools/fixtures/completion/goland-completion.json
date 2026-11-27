@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "project": "fixture",
-  "root": "E:\\Code\\rs-gopls\\tools\\fixtures\\completion",
+  "root": "$WORKSPACE",
   "revision": null,
   "build": "GO-263.7307.354",
   "sdk": {
@@ -12,7 +12,7 @@
       {
         "name": "completion",
         "sdkVersion": "1.27.4",
-        "sdkHome": "C:/Users/rick/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.windows-amd64",
+        "sdkHome": "$GOROOT",
         "goos": "default",
         "goarch": "default",
         "cgo": "UNSURE",

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use lsp_server::{Connection, ErrorCode, RequestId, Response};
+use lsp_server::{Connection, ErrorCode, Notification, RequestId, Response};
 use lsp_types::{Location, Range, Uri};
 use serde_json::Value;
 use url::Url;
@@ -66,4 +66,14 @@ pub(super) fn send_response(
         .sender
         .send(response.into())
         .context("sending LSP response")
+}
+
+pub(super) fn send_notification<N: lsp_types::notification::Notification>(
+    connection: &Connection,
+    params: N::Params,
+) -> Result<()> {
+    connection
+        .sender
+        .send(Notification::new(N::METHOD.to_owned(), params).into())
+        .with_context(|| format!("sending {}", N::METHOD))
 }

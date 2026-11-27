@@ -4,18 +4,18 @@
 | --- | --- |
 | 状态 | 已完成 |
 | 创建日期 | 2026-11-26 |
-| 用户确认 | 已确认（2026-11-27，确认按本计划实施 P0-1、P0-2、P1-1、P1-2 优化与验收目标）；2026-11-27 用户确认采纳选项 B，第 5 项按亚毫秒级统计容差口径（允许 ±0.15 ms 内波动，且同组 P95、LocalChat 首轮及全量 resolve P95 不退化）结项 |
+| 用户确认 | 已确认（2026-11-27，确认按本计划实施 P0-1、P0-2、P1-1、P1-2 优化与验收目标）；2026-11-27 用户确认采纳选项 B，第 5 项按亚毫秒级统计容差口径（允许 ±0.15 ms 内波动，且同组 P95、真实项目首轮及全量 resolve P95 不退化）结项 |
 | 更新日期 | 2026-11-27 |
 | 完成日期 | 2026-11-27 |
 
 ## 目标与范围
 
-以 `1c42031`（`1c42031d03018d50564880324dd7197aba391e3d`）为基线，消除包图就绪后首次触发自动导入搜索的尾延迟。合成夹具 `scope-local` 的 5 次冷态 P50 为 591.67 ms，上一轮基准为 622.66 ms，GoLand 为 113.35 ms。LocalChat `local-inferred` 分别为 1,622.86 ms、1,779.82 ms 和 551.33 ms。补全语义、完整候选集合、排序、插入与解析编辑均须与 Rust 基线零退化。[Track A 计划](2026-11-26-go-completion-context.md) · [GoLand 补全对照基线](../goland-completion-baseline.md#共同样本延迟)
+以 `1c42031`（`1c42031d03018d50564880324dd7197aba391e3d`）为基线，消除包图就绪后首次触发自动导入搜索的尾延迟。合成夹具 `scope-local` 的 5 次冷态 P50 为 591.67 ms，上一轮基准为 622.66 ms，GoLand 为 113.35 ms。真实项目 `local-inferred` 分别为 1,622.86 ms、1,779.82 ms 和 551.33 ms。补全语义、完整候选集合、排序、插入与解析编辑均须与 Rust 基线零退化。[Track A 计划](2026-11-26-go-completion-context.md) · [GoLand 补全对照基线](../goland-completion-baseline.md#共同样本延迟)
 
-1. **P0-1 · 消除 `resolved_candidate` 解析放大与重复读盘**。LocalChat 候选展开 935.04 ms，占端到端冷态诊断样本的 58.05%，期间依赖包额外全量解析 396 次，64 个已有声明索引的文件重开，其中 52 个文件有第三次磁盘读取。优先从 `FileSymbols` / `Symbol` 读取轻量展示和声明摘要，按请求有界复用仍需语法树的源。为类型种类分类（199.13 ms、101 次解析）与预期类型兼容打分（338.55 ms、218 次解析）引入快照级记忆化，优先查询包级轻量声明索引。
-2. **P0-2 · 包图就绪后台预热 SDK 清单并复用 `GOROOT`**。合成样本同步定位 SDK 根和等待清单合计 480.44 ms（81.14%），LocalChat 同步定位 SDK 根为 32.59 ms。复用工作区已有的 `GOROOT` 探测结果，在工作区初始化加载或安装包图时启动后台 `go list std`，按 SDK 路径和构建配置复用清单。首个自动导入查询须命中清单。包图发布、导航和服务退出可在清单任务运行时独立完成。
-3. **P1-1 · 工作区与 vendor 磁盘文件接入导出名预筛选**。LocalChat 的工作区路径未筛选直接建索引耗时 108.73 ms、全量解析 85 次。对活动包图内关闭的工作区与 vendor `.go` 文件使用 `sdk_names` 字节词法扫描，已打开或未保存的缓冲区直接使用内存 `IndexedSource` / `FileIndex`。按文件内容与包图变化精确失效。
-4. **P1-2 · 有界并行预筛选并复用命中文本**。合成与 LocalChat 的现有串行预筛选分别耗时 97.90 ms 和 150.65 ms。以标准库 `std::thread::scope` 分批并行读盘和扫描，按确定的路径顺序合并，保留 `-32800` 取消语义。命中文件直接将同一次读取的文本交给声明索引，消除预筛选后的第二次读盘。
+1. **P0-1 · 消除 `resolved_candidate` 解析放大与重复读盘**。真实项目候选展开 935.04 ms，占端到端冷态诊断样本的 58.05%，期间依赖包额外全量解析 396 次，64 个已有声明索引的文件重开，其中 52 个文件有第三次磁盘读取。优先从 `FileSymbols` / `Symbol` 读取轻量展示和声明摘要，按请求有界复用仍需语法树的源。为类型种类分类（199.13 ms、101 次解析）与预期类型兼容打分（338.55 ms、218 次解析）引入快照级记忆化，优先查询包级轻量声明索引。
+2. **P0-2 · 包图就绪后台预热 SDK 清单并复用 `GOROOT`**。合成样本同步定位 SDK 根和等待清单合计 480.44 ms（81.14%），真实项目同步定位 SDK 根为 32.59 ms。复用工作区已有的 `GOROOT` 探测结果，在工作区初始化加载或安装包图时启动后台 `go list std`，按 SDK 路径和构建配置复用清单。首个自动导入查询须命中清单。包图发布、导航和服务退出可在清单任务运行时独立完成。
+3. **P1-1 · 工作区与 vendor 磁盘文件接入导出名预筛选**。真实项目的工作区路径未筛选直接建索引耗时 108.73 ms、全量解析 85 次。对活动包图内关闭的工作区与 vendor `.go` 文件使用 `sdk_names` 字节词法扫描，已打开或未保存的缓冲区直接使用内存 `IndexedSource` / `FileIndex`。按文件内容与包图变化精确失效。
+4. **P1-2 · 有界并行预筛选并复用命中文本**。合成与真实项目的现有串行预筛选分别耗时 97.90 ms 和 150.65 ms。以标准库 `std::thread::scope` 分批并行读盘和扫描，按确定的路径顺序合并，保留 `-32800` 取消语义。命中文件直接将同一次读取的文本交给声明索引，消除预筛选后的第二次读盘。
 
 ### 变更边界与非目标
 
@@ -26,10 +26,10 @@
 ## 验收标准
 
 - [x] 合成夹具 `scope-local` 在同一主机完成 5 次独立冷启动，首个自动导入查询的中位数 ≤ 120 ms（基线 591.67 ms，GoLand 113.35 ms）。预热态同序重放 P50/P95 无退化。
-- [x] LocalChat `local-inferred` 在同一主机完成 5 次独立冷启动，中位数 ≤ 550 ms（基线 1,622.86 ms，GoLand 551.33 ms）。预热态同序重放 P50/P95 无退化，保留既有候选差异的对照记录。
+- [x] 真实项目 `local-inferred` 在同一主机完成 5 次独立冷启动，中位数 ≤ 550 ms（基线 1,622.86 ms，GoLand 551.33 ms）。预热态同序重放 P50/P95 无退化，保留既有候选差异的对照记录。
 - [x] 冷态诊断确认首次自动导入命中 SDK 清单，并复用 `GOROOT`。已有 `FileIndex` 的候选展示路径的二、三次读取与重解析归零，类型分类和打分复用索引与记忆化结果，工作区和 vendor 的可筛选磁盘文件先预筛选，命中文本直接建索引。请求结束、取消或失效后释放补全临时文本与 AST，记录缓存数量、峰值和释放结果。
-- [x] `check_goland_completion.py` 的 LocalChat 22/22（13 一致、9 既有有意差异、0 失败）与合成夹具 126/126（58 一致、68 既有有意差异、0 失败）逐查询保持 `1c42031` 判定。两版原始响应的候选内容、顺序、UTF-16 主编辑 / 附加编辑、解析结果和编辑后的文本一致。
-- [x] 两套 `compare_completion.py` 的首查、复查、编辑后首查及适用的 resolve 共同样本按选项 B 验收。补全 P50 与共同 resolve P50/P95 允许 ±0.15 ms 内亚毫秒级统计波动，且同组补全 P95 及全部解析样本 P95 不退化。LocalChat 首轮无退化。保留样本数与既有差异，更新 [GoLand 补全对照基线](../goland-completion-baseline.md)。
+- [x] `check_goland_completion.py` 的真实项目 22/22（13 一致、9 既有有意差异、0 失败）与合成夹具 126/126（58 一致、68 既有有意差异、0 失败）逐查询保持 `1c42031` 判定。两版原始响应的候选内容、顺序、UTF-16 主编辑 / 附加编辑、解析结果和编辑后的文本一致。
+- [x] 两套 `compare_completion.py` 的首查、复查、编辑后首查及适用的 resolve 共同样本按选项 B 验收。补全 P50 与共同 resolve P50/P95 允许 ±0.15 ms 内亚毫秒级统计波动，且同组补全 P95 及全部解析样本 P95 不退化。真实项目首轮无退化。保留样本数与既有差异，更新 [GoLand 补全对照基线](../goland-completion-baseline.md)。
 - [x] `cargo check -p rs-gopls --locked`、`cargo test -p rs-gopls --locked`、`cargo build -p rs-gopls --release --locked` 零告警通过。新增单元和集成覆盖确认 SDK 预热复用与配置切换、工作区和 vendor 未保存缓冲区优先与预筛选失效、并行合并确定性、取消单次回包和后续查询恢复。
 - [x] 全量历史回归通过。`check_workspace_updates.py` 历史 28/28、Python `unittest` 25/25、Stage 6 定义检查及全部 GoLand 定义、类型定义、引用、实现、Hover、SignatureHelp、文档大纲和工作区符号检查通过。
 
@@ -37,11 +37,11 @@
 
 ### 冷态剖析
 
-[target/track-a-cold-profile-1c42031.json](../../target/track-a-cold-profile-1c42031.json) 的 `clean.runs` 主样本每个工作区 5 次。每次新启 LSP 进程，打开采集指定文件，等待 `workspace/symbol` 图就绪，再按原首查顺序重放，保留正常系统和 Go 磁盘缓存。`scope-local` 在前 15 个查询后触发，位置为 `main.go` 的 UTF-16 零基 `18:11`，包含夹具对该行的未保存编辑。`local-inferred` 是首个补全查询，位置为 `internal/model/user.go` 的 `47:16`。两例分别返回 2 和 154 个候选，GoLand 分别为 2 和 284 个。LocalChat 记录 131 条既有差异明细。
+[target/track-a-cold-profile-1c42031.json](../../target/track-a-cold-profile-1c42031.json) 的 `clean.runs` 主样本每个工作区 5 次。每次新启 LSP 进程，打开采集指定文件，等待 `workspace/symbol` 图就绪，再按原首查顺序重放，保留正常系统和 Go 磁盘缓存。`scope-local` 在前 15 个查询后触发，位置为 `main.go` 的 UTF-16 零基 `18:11`，包含夹具对该行的未保存编辑。`local-inferred` 是首个补全查询，位置为 `internal/model/user.go` 的 `47:16`。两例分别返回 2 和 154 个候选，GoLand 分别为 2 和 284 个。真实项目记录 131 条既有差异明细。
 
 取 `instrumented.runs` 中每个工作区端到端冷时延正好居中的主样本，再取其中首个请求的 `profile[0]`。下表耗时单位为 ms。父阶段的包含耗时与子阶段重叠。后台命令的时钟独立于请求，相同 SDK 清单在两例均列出 385 个包、1,765 个 Go 文件条目，经构建文件和可导入包过滤后为 356 个包、1,629 个文件。
 
-| 实测阶段 | 合成 `scope-local` | LocalChat `local-inferred` |
+| 实测阶段 | 合成 `scope-local` | 真实项目 `local-inferred` |
 | --- | ---: | ---: |
 | 发布版端到端冷态 P50 / 上一轮首查 / GoLand 首查 | 591.6660 / 622.6629 / 113.3461 | 1,622.8624 / 1,779.8217 / 551.3285 |
 | 代表样本端到端 / 请求内 `total_ms` | 592.0962 / 590.6285 | 1,610.8698 / 1,607.7493 |
@@ -59,11 +59,11 @@
 | 展开内的依赖候选展示 / 类型种类 / 符号类型 / 预期类型打分 | 0 / 0 / 0 / 0 | 384.6497 / 199.1292 / 9.6519 / 338.5544 |
 | 排序与响应渲染（包含） | 1.1805 | 2.1863 |
 
-合成样本的 480.4418 ms 由 `sdk_root` 与清单等待相加，分母为 592.0962 ms。LocalChat 的 396 次额外全量解析来自图中 SDK 151 次及模块缓存 245 次，按触发点分别为展示源重开 64 次、类型分类 101 次、符号类型推断 13 次、预期类型打分 218 次。部分类型追链会为依赖文件首次建索引。52 个第三次读取来自图中 SDK 24 个和模块缓存 28 个。本地候选阶段另有 3 次展示源读取。
+合成样本的 480.4418 ms 由 `sdk_root` 与清单等待相加，分母为 592.0962 ms。真实项目的 396 次额外全量解析来自图中 SDK 151 次及模块缓存 245 次，按触发点分别为展示源重开 64 次、类型分类 101 次、符号类型推断 13 次、预期类型打分 218 次。部分类型追链会为依赖文件首次建索引。52 个第三次读取来自图中 SDK 24 个和模块缓存 28 个。本地候选阶段另有 3 次展示源读取。
 
 ### GoLand 安装包与索引证据
 
-`E:\Apps\goland-2026.3.0.1.win\build.txt` 为 `GO-263.7307.354`。已在该安装包的 `plugins/go-plugin/lib/modules/intellij.go.impl.jar` 复核 `intellij.go.impl.xml` 第 231 行的 `com.goide.stubs.index.GoAllPublicNamesIndex` 和第 398 行的 `com.goide.completion.GoAutoImportCompletionContributor`。JAR SHA-256 为 `2a13f1a753d5e15db70c5758e17db1dc28cc790e1d329e574d8b6a078d636784`，沿用 Track A 的 REA 证据 `ev_6c7c39a219d2e02923e7b819150326c434f3135777e22df0b1f7e49c6cdda5ee`。[Track A 产物证据](2026-11-26-go-completion-context.md#rea-产物证据)
+`<GOLAND_HOME>\build.txt` 为 `GO-263.7307.354`。已在该安装包的 `plugins/go-plugin/lib/modules/intellij.go.impl.jar` 复核 `intellij.go.impl.xml` 第 231 行的 `com.goide.stubs.index.GoAllPublicNamesIndex` 和第 398 行的 `com.goide.completion.GoAutoImportCompletionContributor`。JAR SHA-256 为 `2a13f1a753d5e15db70c5758e17db1dc28cc790e1d329e574d8b6a078d636784`，沿用 Track A 的 REA 证据 `ev_6c7c39a219d2e02923e7b819150326c434f3135777e22df0b1f7e49c6cdda5ee`。[Track A 产物证据](2026-11-26-go-completion-context.md#rea-产物证据)
 
 `GoAutoImportCompletionContributor#collectAndSortAllPublicProductionNames` 通过 `StubIndex.processAllKeys` 枚举 `GoAllPublicNamesIndex.ALL_PUBLIC_NAMES` 的键，并按限定名与导出名匹配。内部补全 provider 给查找范围加上 `ExceptTestsScope`，按匹配键调用 `StubIndex.getElements`。该索引键为 `go.all.name`，本机 GoLand 系统目录下可检查 `%LOCALAPPDATA%\JetBrains\GoLand2026.3\index\stubs\go.all.name`。Rust 采用同样的先按名字缩小查找、再以声明核实的处理顺序，复用内存索引和活动构建视图。[GoLand 差异依据](../goland-completion-baseline.md#差异依据)
 
@@ -103,18 +103,19 @@
 
 ### 固定条件与构建
 
-在同一 Windows 主机用 PowerShell 7 从仓库根目录执行。固定 GoLand `GO-263.7307.354`、两版 rs-gopls 提交与二进制 SHA-256、`go1.27.4 windows/amd64`、`CGO_ENABLED=1`、`GOWORK=off`、空 `GOFLAGS` 及构建标签，维持夹具的 vendor 视图。LocalChat 固定 `532228d3d36bd9f0fffb4bda35c180485b2eadd6` 和干净源码。两侧沿用样本的打开文件、BASIC 补全、搜索范围、光标、UTF-16 标识符范围及未保存编辑序列。GoLand 使用已有运行态采集，需要重采时按现有基线的步骤复放两套样本。[导航性能对照](../PLANS.md#导航性能对照) · [GoLand 采集与重放](../goland-completion-baseline.md#重放)
+在同一 Windows 主机用 PowerShell 7 从仓库根目录执行。固定 GoLand `GO-263.7307.354`、两版 rs-gopls 提交与二进制 SHA-256、`go1.27.4 windows/amd64`、`CGO_ENABLED=1`、`GOWORK=off`、空 `GOFLAGS` 及构建标签，维持夹具的 vendor 视图。真实项目固定 `532228d3d36bd9f0fffb4bda35c180485b2eadd6` 和干净源码。两侧沿用样本的打开文件、BASIC 补全、搜索范围、光标、UTF-16 标识符范围及未保存编辑序列。GoLand 使用已有运行态采集，需要重采时按现有基线的步骤复放两套样本。[导航性能对照](../PLANS.md#导航性能对照) · [GoLand 采集与重放](../goland-completion-baseline.md#重放)
 
 ~~~powershell
 $cargoOutput = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
 $server = Join-Path $cargoOutput 'release\rs-gopls.exe'
 $baselineServer = Join-Path $cargoOutput 'rs-gopls-1c42031-cold-baseline.exe'
 $profileReference = (Resolve-Path '.\target\track-a-cold-profile-1c42031.json').Path
-$localchat = 'E:\Code\localchat\server'
+$external = $env:RS_GOPLS_BENCH_WORKSPACE
 $fixture = (Resolve-Path '.\tools\fixtures\completion').Path
 $symbolFixture = (Resolve-Path '.\tools\fixtures\symbol-navigation').Path
 $golandBaseline = Join-Path $env:TEMP 'rs-gopls-goland-baseline'
-$goSdk = (Get-Content $profileReference -Raw | ConvertFrom-Json).clean.environment.fixture.GOROOT
+$env:GOTOOLCHAIN = 'go1.27.4'
+$goSdk = go env GOROOT
 $env:PATH = "$(Join-Path $goSdk 'bin');$env:PATH"
 $env:GOROOT = $goSdk
 $env:GOTOOLCHAIN = 'local'
@@ -126,8 +127,8 @@ $env:GOFLAGS = ''
 $env:PYTHONPATH = (Resolve-Path '.\tools').Path
 go version
 go env GOROOT GOOS GOARCH CGO_ENABLED GOWORK GOFLAGS
-git -C $localchat rev-parse HEAD
-git -C $localchat status --short --untracked-files=all -- .
+git -C $external rev-parse HEAD
+git -C $external status --short --untracked-files=all -- .
 ~~~
 
 确认后、源码变更前，哈希核对当前 `1c42031` 发布版并用 `Copy-Item -LiteralPath $server -Destination $baselineServer` 保存。当前重建版的哈希对应剖析记录的 `clean_after_rebuild.exe_sha256`。需要重建基线时，在该提交执行同一套 Cargo 命令，再保存二进制。开发后用原 toolchain、profile、features、target 与环境配置的 Cargo 产物目录执行。
@@ -141,11 +142,12 @@ Get-FileHash -Algorithm SHA256 -LiteralPath $baselineServer, $server
 
 ### 冷态重放、诊断与逐项比较
 
-冷态每例新启进程 5 次。使用 `warm_package_graph` 等到含测试视图的包图就绪，立即复放 JSON 中的先导查询和目标，每例在相同缓冲区复查 3 次。发布版计时从发送请求到完整 stdio 响应解码，包图探针、编辑、对拍与 resolve 另计。对照数据预热池化为每例 15 次，合成与 LocalChat 的 P50/P95 分别为 2.4444 / 3.9785 ms 与 16.4446 / 23.8323 ms。诊断模式由实现提供可选 `RS_GOPLS_COMPLETION_PROFILE` 文件输出，记录首查阶段耗时、SDK 任务状态与时间戳、读盘和解析计数、缓存水位及释放。诊断结果独立于发布版时延验收。对照模式通过同一 harness 比较两版每个查询的完整候选与接受编辑结果。
+冷态每例新启进程 5 次。使用 `warm_package_graph` 等到含测试视图的包图就绪，立即复放 JSON 中的先导查询和目标，每例在相同缓冲区复查 3 次。发布版计时从发送请求到完整 stdio 响应解码，包图探针、编辑、对拍与 resolve 另计。对照数据预热池化为每例 15 次，合成与真实项目的 P50/P95 分别为 2.4444 / 3.9785 ms 与 16.4446 / 23.8323 ms。诊断模式由实现提供可选 `RS_GOPLS_COMPLETION_PROFILE` 文件输出，记录首查阶段耗时、SDK 任务状态与时间戳、读盘和解析计数、缓存水位及释放。诊断结果独立于发布版时延验收。对照模式通过同一 harness 比较两版每个查询的完整候选与接受编辑结果。
 
 ~~~powershell
 $coldReplay = @'
 import hashlib
+import os
 import json
 import sys
 from pathlib import Path
@@ -185,9 +187,9 @@ def replay(program, corpus, environment, ids, repeat_last=0):
 report = {}
 for project, capture, target in (
     ("fixture", "goland-completion.json", "scope-local"),
-    ("localchat", "localchat-goland-completion.json", "local-inferred"),
+    (next(key for key in profile["clean"]["environment"] if key != "fixture"), "external-goland-completion.json", "local-inferred"),
 ):
-    root = Path(profile["clean"]["environment"][project]["root"])
+    root = Path("tools/fixtures/completion") if project == "fixture" else Path(os.environ["RS_GOPLS_BENCH_WORKSPACE"])
     corpus = CompletionCorpus(root, Path("tools/fixtures/completion") / capture)
     environment, version = go_environment(corpus, timeout)
     corpus.load_active_packages(environment, timeout)
@@ -240,20 +242,20 @@ $coldReplay | python -B - $server $baselineServer $profileReference (Join-Path $
 
 ### GoLand 对拍与全量基准
 
-对拍保留逐查询一致、既有差异和失败明细。全量基准使用两套 GoLand 原始计时和同序 stdio 重放，依次完成全部首查、5 次预热后 30 次复查、相同未保存编辑后的首查。共同样本须通过候选、顺序、范围及编辑检查。独立报告 resolve（包括 LocalChat 无共同 resolve 样本时的全部通过解析样本），以及 `local-inferred` 的既有差异。记录 GoLand 从发起 BASIC 到排序与候选采集完成的耗时，弹窗绘制、接受和编辑在计时窗外。记录两侧 P50/P95、样本数、索引与缓存状态、计时边界。若采集工作集，注明 Windows 进程树与脚本的 50 ms 采样间隔。另在 SDK 预热进行时验证导航仍可返回正确目标与标识符范围，并记录从启动到双方首次正确结果的时间及对应计时边界。[导航性能对照](../PLANS.md#导航性能对照)
+对拍保留逐查询一致、既有差异和失败明细。全量基准使用两套 GoLand 原始计时和同序 stdio 重放，依次完成全部首查、5 次预热后 30 次复查、相同未保存编辑后的首查。共同样本须通过候选、顺序、范围及编辑检查。独立报告 resolve（包括真实项目无共同 resolve 样本时的全部通过解析样本），以及 `local-inferred` 的既有差异。记录 GoLand 从发起 BASIC 到排序与候选采集完成的耗时，弹窗绘制、接受和编辑在计时窗外。记录两侧 P50/P95、样本数、索引与缓存状态、计时边界。若采集工作集，注明 Windows 进程树与脚本的 50 ms 采样间隔。另在 SDK 预热进行时验证导航仍可返回正确目标与标识符范围，并记录从启动到双方首次正确结果的时间及对应计时边界。[导航性能对照](../PLANS.md#导航性能对照)
 
 ~~~powershell
-$localchatResults = Join-Path $fixture 'localchat-goland-completion.json'
+$externalResults = Join-Path $fixture 'external-goland-completion.json'
 $fixtureResults = Join-Path $fixture 'goland-completion.json'
-$localchatBench = Join-Path $golandBaseline 'localchat-completion-bench.json'
+$externalBench = Join-Path $golandBaseline 'external-completion-bench.json'
 $fixtureBench = Join-Path $golandBaseline 'fixture-completion-bench.json'
 
-python -B .\tools\check_goland_completion.py $server --workspace $localchat --fixture $localchatResults --json (Join-Path $cargoOutput 'localchat-completion-correctness-cold-latency.json')
+python -B .\tools\check_goland_completion.py $server --workspace $external --fixture $externalResults --json (Join-Path $cargoOutput 'external-completion-correctness-cold-latency.json')
 python -B .\tools\check_goland_completion.py $server --workspace $fixture --fixture $fixtureResults --json (Join-Path $cargoOutput 'fixture-completion-correctness-cold-latency.json')
 
-python -B .\tools\compare_completion.py $baselineServer --workspace $localchat --fixture $localchatResults --goland-bench $localchatBench --json (Join-Path $cargoOutput 'localchat-completion-benchmark-1c42031.json')
+python -B .\tools\compare_completion.py $baselineServer --workspace $external --fixture $externalResults --goland-bench $externalBench --json (Join-Path $cargoOutput 'external-completion-benchmark-1c42031.json')
 python -B .\tools\compare_completion.py $baselineServer --workspace $fixture --fixture $fixtureResults --goland-bench $fixtureBench --json (Join-Path $cargoOutput 'fixture-completion-benchmark-1c42031.json')
-python -B .\tools\compare_completion.py $server --workspace $localchat --fixture $localchatResults --goland-bench $localchatBench --json (Join-Path $cargoOutput 'localchat-completion-benchmark-cold-latency.json')
+python -B .\tools\compare_completion.py $server --workspace $external --fixture $externalResults --goland-bench $externalBench --json (Join-Path $cargoOutput 'external-completion-benchmark-cold-latency.json')
 python -B .\tools\compare_completion.py $server --workspace $fixture --fixture $fixtureResults --goland-bench $fixtureBench --json (Join-Path $cargoOutput 'fixture-completion-benchmark-cold-latency.json')
 ~~~
 
@@ -262,14 +264,14 @@ python -B .\tools\compare_completion.py $server --workspace $fixture --fixture $
 ~~~powershell
 python -B .\tools\check_workspace_updates.py $server
 python -B -m unittest tools/test_lsp_harness.py tools/test_workspace_checks.py
-python -B .\tools\check_definitions.py $server --stage 6 --workspace $localchat
-python -B .\tools\check_goland_definitions.py $server --workspace $localchat --method definition
-python -B .\tools\check_goland_definitions.py $server --workspace $localchat --method typeDefinition
-python -B .\tools\check_goland_references.py $server --workspace $localchat
-python -B .\tools\check_goland_implementations.py $server --workspace $localchat
-python -B .\tools\check_goland_hover.py $server --workspace $localchat
-python -B .\tools\check_goland_signature_help.py $server --workspace $localchat
-python -B .\tools\check_goland_symbols.py $server --workspace $localchat --fixture .\tools\fixtures\localchat-goland-symbols.json
+python -B .\tools\check_definitions.py $server --stage 6 --workspace $external
+python -B .\tools\check_goland_definitions.py $server --workspace $external --method definition
+python -B .\tools\check_goland_definitions.py $server --workspace $external --method typeDefinition
+python -B .\tools\check_goland_references.py $server --workspace $external
+python -B .\tools\check_goland_implementations.py $server --workspace $external
+python -B .\tools\check_goland_hover.py $server --workspace $external
+python -B .\tools\check_goland_signature_help.py $server --workspace $external
+python -B .\tools\check_goland_symbols.py $server --workspace $external --fixture (Get-Item .\tools\fixtures\*-goland-symbols.json).FullName
 python -B .\tools\check_goland_symbols.py $server --workspace $symbolFixture --fixture (Join-Path $symbolFixture 'goland-symbols.json')
 Push-Location -LiteralPath $fixture
 try {
@@ -278,7 +280,7 @@ try {
 } finally {
     Pop-Location
 }
-git -C $localchat status --short --untracked-files=all -- .
+git -C $external status --short --untracked-files=all -- .
 ~~~
 
 ## 完成记录
@@ -293,17 +295,17 @@ git -C $localchat status --short --untracked-files=all -- .
 
 ### Wave B 验收记录
 
-2026-11-27 完成验证，按用户确认的选项 B 验收，7/7 项通过。合成夹具的共同样本首查 P50 和首查后共同 resolve P95 在三轮均高于 `1c42031`，升幅约 +0.02–0.14 ms。各轮观察到的升幅均在 ±0.15 ms 亚毫秒级统计容差内。同组补全 P95、LocalChat 首轮及全部解析样本 P95 均无退化。
+2026-11-27 完成验证，按用户确认的选项 B 验收，7/7 项通过。合成夹具的共同样本首查 P50 和首查后共同 resolve P95 在三轮均高于 `1c42031`，升幅约 +0.02–0.14 ms。各轮观察到的升幅均在 ±0.15 ms 亚毫秒级统计容差内。同组补全 P95、真实项目首轮及全部解析样本 P95 均无退化。
 
 #### 环境与构建
 
-同一 Windows 主机使用 PowerShell 7.7.0 和 Cargo 配置的 `E:\Code\rs-gopls\target`。固定 `go1.27.4 windows/amd64`、`GOTOOLCHAIN=local`、`CGO_ENABLED=1`、`GOWORK=off`、空 `GOFLAGS`、`GOAMD64=v1` 和夹具的 vendor 视图。LocalChat 为 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。启动验证前无残留 rs-gopls 或 Python 进程。首轮性能重放前的系统空闲计数为 95%–96%。反序与第三轮开跑前未发现基准或构建进程，总 CPU 忙碌计数为 0%–5%。
+同一 Windows 主机使用 PowerShell 7.7.0 和 Cargo 配置的 `<cargo-output>`。固定 `go1.27.4 windows/amd64`、`GOTOOLCHAIN=local`、`CGO_ENABLED=1`、`GOWORK=off`、空 `GOFLAGS`、`GOAMD64=v1` 和夹具的 vendor 视图。真实项目为 `532228d3d36bd9f0fffb4bda35c180485b2eadd6`。启动验证前无残留 rs-gopls 或 Python 进程。首轮性能重放前的系统空闲计数为 95%–96%。反序与第三轮开跑前未发现基准或构建进程，总 CPU 忙碌计数为 0%–5%。
 
 | 文件 | SHA-256 |
 | --- | --- |
 | `target/rs-gopls-1c42031-cold-baseline.exe` | `7effac3491b38afebdee30f4d38beeea37143d30ee4e5b6e79ca85238bfad3bf` |
 | `target/release/rs-gopls.exe` | `38752603876b8834d7a8372d6e759158bf3950a7ab21b94200f99f7f77fcbfe5` |
-| GoLand `GO-263.7307.354` LocalChat 计时 | `4ba9d4b68e437e7c43fccc3aaddc3d687b8a4ad4d9664a4185924155460b70e5` |
+| GoLand `GO-263.7307.354` 真实项目计时 | `4ba9d4b68e437e7c43fccc3aaddc3d687b8a4ad4d9664a4185924155460b70e5` |
 | GoLand `GO-263.7307.354` 合成计时 | `5b46b541a2942af755a4cd35691e24560d57cebe2774c8881584b48b950b0874` |
 
 | 命令 | 结果 |
@@ -311,12 +313,12 @@ git -C $localchat status --short --untracked-files=all -- .
 | `cargo check -p rs-gopls --locked` | 退出 0，零告警 |
 | `cargo test -p rs-gopls --locked` | 119 通过，0 失败、忽略、筛除及告警 |
 | `cargo build -p rs-gopls --release --locked` | 退出 0，零告警，发布版哈希与 Wave A 一致 |
-| `check_goland_completion.py` LocalChat | 22/22，13 一致、9 既有差异、0 失败 |
+| `check_goland_completion.py` 真实项目 | 22/22，13 一致、9 既有差异、0 失败 |
 | `check_goland_completion.py` 合成夹具 | 126/126，58 一致、68 既有差异、0 失败 |
 | 冷重放 `timing`、`diagnostic`、`parity` 与原始响应对拍 | 全部退出 0。两版 148 个补全及 27 个 resolve 响应逐字节相同，逐查询对拍判定和应用编辑后的文本相同。 |
 | `compare_completion.py` 两版各两个工作区 | 四条命令退出 0，校验失败均为 0。反序复测两套工作区，合成夹具另测第三轮，样本数与逐样本归类一致。 |
 
-原始响应按工作区合并的 SHA-256 分别为合成 `e74b4b665ca8f31fc954ab9912801f4db4f46a350e8f2d63a2447a85d4e5cd44` 和 LocalChat `de6fa6f8e6681b1c6ca47e94c43218f0b5e5326c9632fe12c5509ef0e79d1f0b`。Wave A 的三份 `wave-a-delivery-*.json` 均对应当前 P0+P1 哈希。Wave B 独立重跑全部三种冷重放及原始响应对拍。旧 `wave-a-extended.ps1` 等重放辅助文件位于 Git 忽略的 `target/`。
+原始响应按工作区合并的 SHA-256 分别为合成 `e74b4b665ca8f31fc954ab9912801f4db4f46a350e8f2d63a2447a85d4e5cd44` 和真实项目 `de6fa6f8e6681b1c6ca47e94c43218f0b5e5326c9632fe12c5509ef0e79d1f0b`。Wave A 的三份 `wave-a-delivery-*.json` 均对应当前 P0+P1 哈希。Wave B 独立重跑全部三种冷重放及原始响应对拍。旧 `wave-a-extended.ps1` 等重放辅助文件位于 Git 忽略的 `target/`。
 
 #### 冷态与诊断
 
@@ -325,11 +327,11 @@ git -C $localchat status --short --untracked-files=all -- .
 | 查询 | GoLand 首查 | GoLand 复查 P50 / P95 | 基线冷态 P50 / P95 | P0+P1 冷态 P50 / P95 | 基线复查 P50 / P95 | P0+P1 复查 P50 / P95 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 合成 `scope-local` | 113.3461 | 62.2025 / 80.4628 | 635.4500 / 646.4124 | 9.7820 / 10.8237 | 2.4528 / 3.7793 | 2.1103 / 3.0896 |
-| LocalChat `local-inferred` | 551.3285 | 155.4033 / 172.8605 | 1,696.4282 / 1,852.0193 | 432.2427 / 460.6832 | 17.5027 / 22.6334 | 11.7927 / 14.1462 |
+| 真实项目 `local-inferred` | 551.3285 | 155.4033 / 172.8605 | 1,696.4282 / 1,852.0193 | 432.2427 / 460.6832 | 17.5027 / 22.6334 | 11.7927 / 14.1462 |
 
-合成首次搜索仍返回 2 项。LocalChat Rust 两版各返回 154 项，GoLand 为 284 项，131 条既有差异明细相同。Wave A 交付计时的冷态 / 复查 P50/P95 为合成 10.4532 / 12.1247 和 1.9334 / 2.6388，LocalChat 440.4761 / 448.0049 和 12.6152 / 19.0104。其诊断冷态 / 复查 P50/P95 为合成 10.7492 / 10.9427 和 2.3477 / 3.3105，LocalChat 436.8714 / 445.5573 和 12.4412 / 14.0003。
+合成首次搜索仍返回 2 项。真实项目 Rust 两版各返回 154 项，GoLand 为 284 项，131 条既有差异明细相同。Wave A 交付计时的冷态 / 复查 P50/P95 为合成 10.4532 / 12.1247 和 1.9334 / 2.6388，真实项目 440.4761 / 448.0049 和 12.6152 / 19.0104。其诊断冷态 / 复查 P50/P95 为合成 10.7492 / 10.9427 和 2.3477 / 3.3105，真实项目 436.8714 / 445.5573 和 12.4412 / 14.0003。
 
-| Wave B 冷诊断指标 | 合成 `scope-local` | LocalChat `local-inferred` |
+| Wave B 冷诊断指标 | 合成 `scope-local` | 真实项目 `local-inferred` |
 | --- | ---: | ---: |
 | 诊断冷态 P50 / P95（ms） | 10.0031 / 11.7274 | 402.7284 / 410.5462 |
 | 诊断复查 P50 / P95（ms） | 2.3972 / 3.2574 | 12.5678 / 15.7552 |
@@ -342,7 +344,7 @@ git -C $localchat status --short --untracked-files=all -- .
 | 峰值临时源数 / 文本字节数 | 1 / 22,628 | 8 / 1,520,368 |
 | 首查结束释放 / 全部诊断请求结束释放 | 5/5 / 95/95 | 5/5 / 20/20 |
 
-SDK 后台探测保存有效 `GOROOT`，包图从标准库包目录取根，首查复用已就绪清单。LocalChat 旧诊断在候选展开中额外全量解析 396 次，重开 64 份已索引文件，52 份出现第三次读取。Wave B 五次首查的已有索引展示源读取和第三次读取均为 0。代表样本候选展开由 935.0433 ms 降到 15.8449 ms。
+SDK 后台探测保存有效 `GOROOT`，包图从标准库包目录取根，首查复用已就绪清单。真实项目旧诊断在候选展开中额外全量解析 396 次，重开 64 份已索引文件，52 份出现第三次读取。Wave B 五次首查的已有索引展示源读取和第三次读取均为 0。代表样本候选展开由 935.0433 ms 降到 15.8449 ms。
 
 活动取消及失效定向重放退出 0，两次 `cancelled` 和一次 `stale` 均报告释放。本轮 Rust 的 `a_completion_task_releases_request_sources_on_finish_cancel_or_stale` 验证三条路径都释放已经持有的源和 AST，`completion_source_cache_bounds_count_and_bytes_and_drops_the_sources` 验证缓存上限及释放。其余测试覆盖 SDK 构建键复用和切换、工作区和 vendor 缓冲区优先及失效、有序合并，以及取消单次回包和后续请求恢复。
 
@@ -352,25 +354,25 @@ SDK 后台探测保存有效 `GOROOT`，包图从标准库包目录取根，首�
 
 | 工作区 | 场景 | 共同 / 总样本数 | GoLand P50 / P95 | 基线 P50 / P95 | P0+P1 P50 / P95 |
 | --- | --- | ---: | ---: | ---: | ---: |
-| LocalChat | 首查 | 13 / 22 | 43.3941 / 446.7385 | 3.0743 / 24.4822 | 3.0224 / 13.2341 |
-| LocalChat | 复查 | 390 / 660 | 29.2823 / 123.5895 | 0.5112 / 15.4531 | 0.3289 / 10.5048 |
-| LocalChat | 编辑后首查 | 13 / 22 | 36.0754 / 139.9207 | 0.9153 / 15.1580 | 0.8157 / 12.4818 |
+| 真实项目 | 首查 | 13 / 22 | 43.3941 / 446.7385 | 3.0743 / 24.4822 | 3.0224 / 13.2341 |
+| 真实项目 | 复查 | 390 / 660 | 29.2823 / 123.5895 | 0.5112 / 15.4531 | 0.3289 / 10.5048 |
+| 真实项目 | 编辑后首查 | 13 / 22 | 36.0754 / 139.9207 | 0.9153 / 15.1580 | 0.8157 / 12.4818 |
 | 合成 | 首查 | 58 / 126 | 78.7436 / 139.6909 | 1.2631 / 7.1502 | 1.2855 / 4.6605 |
 | 合成 | 复查 | 1,740 / 3,780 | 31.3772 / 95.6739 | 0.6051 / 3.6261 | 0.5360 / 2.6349 |
 | 合成 | 编辑后首查 | 58 / 126 | 32.4451 / 106.7794 | 0.6673 / 3.6799 | 0.6852 / 2.4879 |
 
-GoLand 在 BASIC 调用内呈现候选。rs-gopls 的独立 resolve 计时如下，LocalChat 使用全部通过解析的样本。
+GoLand 在 BASIC 调用内呈现候选。rs-gopls 的独立 resolve 计时如下，真实项目使用全部通过解析的样本。
 
 | 工作区 | resolve 场景 | 共同 / 通过解析 | 基线共同 P50 / P95 | P0+P1 共同 P50 / P95 | 基线全部 P50 / P95 | P0+P1 全部 P50 / P95 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| LocalChat | 首查后 | 0 / 1 | — | — | 0.8055 / 0.8055 | 0.3972 / 0.3972 |
-| LocalChat | 复查后 | 0 / 30 | — | — | 1.0632 / 1.2074 | 0.2959 / 0.3925 |
-| LocalChat | 编辑后 | 0 / 1 | — | — | 1.0833 / 1.0833 | 0.3267 / 0.3267 |
+| 真实项目 | 首查后 | 0 / 1 | — | — | 0.8055 / 0.8055 | 0.3972 / 0.3972 |
+| 真实项目 | 复查后 | 0 / 30 | — | — | 1.0632 / 1.2074 | 0.2959 / 0.3925 |
+| 真实项目 | 编辑后 | 0 / 1 | — | — | 1.0833 / 1.0833 | 0.3267 / 0.3267 |
 | 合成 | 首查后 | 12 / 26 | 0.2192 / 0.2501 | 0.2086 / 0.2811 | 0.2297 / 0.9877 | 0.2248 / 0.3158 |
 | 合成 | 复查后 | 360 / 780 | 0.2151 / 0.3214 | 0.2025 / 0.3357 | 0.2499 / 1.0568 | 0.2460 / 0.3753 |
 | 合成 | 编辑后 | 12 / 26 | 0.2264 / 0.3439 | 0.2036 / 0.3031 | 0.2517 / 1.0421 | 0.2313 / 0.3528 |
 
-下表列出各轮观察到升幅的指标，每格按基线、P0+P1 顺序列值。第二轮先跑 P0+P1 再跑基线，第三轮合成夹具恢复首轮顺序。第一、二轮的 LocalChat 共同样本相同。
+下表列出各轮观察到升幅的指标，每格按基线、P0+P1 顺序列值。第二轮先跑 P0+P1 再跑基线，第三轮合成夹具恢复首轮顺序。第一、二轮的真实项目共同样本相同。
 
 | 工作区和指标 | 首轮（ms） | 第二轮（ms） | 第三轮（ms） |
 | --- | ---: | ---: | ---: |
@@ -380,7 +382,7 @@ GoLand 在 BASIC 调用内呈现候选。rs-gopls 的独立 resolve 计时如下
 | 合成首查后共同 resolve P95 | 0.2501 → 0.2811 | 0.2444 → 0.3863 | 0.2846 → 0.3476 |
 | 合成复查后共同 resolve P95 | 0.3214 → 0.3357 | 0.3324 → 0.3051 | 0.3069 → 0.2816 |
 | 合成编辑后共同 resolve P95 | 0.3439 → 0.3031 | 0.3699 → 0.3469 | 0.2852 → 0.3120 |
-| LocalChat 编辑后首查 P50 | 0.9153 → 0.8157 | 0.6856 → 0.7918 | — |
+| 真实项目编辑后首查 P50 | 0.9153 → 0.8157 | 0.6856 → 0.7918 | — |
 
 #### 历史回归与启动导航
 
@@ -388,21 +390,21 @@ GoLand 在 BASIC 调用内呈现候选。rs-gopls 的独立 resolve 计时如下
 | --- | --- |
 | `check_workspace_updates.py` | 28/28，其中补全 5/5 |
 | `python -B -m unittest tools/test_lsp_harness.py tools/test_workspace_checks.py` | 25/25 |
-| `check_definitions.py --stage 6 --workspace $localchat` | 合成 124/124，LocalChat 16/16 |
+| `check_definitions.py --stage 6 --workspace $external` | 合成 124/124，真实项目 16/16 |
 | `check_goland_definitions.py --method definition` | 19 个落点一致，1 个既有 IDE 包对象差异 |
 | `check_goland_definitions.py --method typeDefinition` | 32 个落点一致，2 个预期为空 |
 | `check_goland_references.py` | 34/34 |
 | `check_goland_implementations.py` | 20/20 |
 | `check_goland_hover.py` | 21/21 |
 | `check_goland_signature_help.py` | 13/13 |
-| `check_goland_symbols.py` LocalChat | 8 份文档的大纲两种模式通过，两次会话的 20 个工作区查询通过，其中 14 个物理集合相同 |
+| `check_goland_symbols.py` 真实项目 | 8 份文档的大纲两种模式通过，两次会话的 20 个工作区查询通过，其中 14 个物理集合相同 |
 | `check_goland_symbols.py` 合成 | 5 份文档的大纲两种模式通过，两次会话的 36 个工作区查询通过，其中 27 个物理集合相同 |
 | `go list -mod=vendor -test ./...` | 退出 0，列出 14 个包或测试视图条目 |
 | `go test -mod=vendor ./...` | 退出 0，根包通过 |
-| `git -C E:\Code\localchat\server status --short --untracked-files=all -- .` | 验证前后均为空 |
+| `git -C $env:RS_GOPLS_BENCH_WORKSPACE status --short --untracked-files=all -- .` | 验证前后均为空 |
 
-LocalChat 的 `internal/api/api.go` 在零基 UTF-16 `156:42` 立即查询 `execPath`。两版均 5/5 返回同文件的精确范围 `[155:1, 155:9)`。从启动前、经过初始化和 `didOpen` 到解码首个响应，基线 P50/P95 为 10.7271 / 16.7920 ms，P0+P1 为 10.9717 / 13.3050 ms。单独请求耗时分别为 2.3940 / 3.4341 ms 和 2.6109 / 2.7280 ms。优化版的 5 个正确响应均在 SDK 预热开始后返回，距离 SDK 清单就绪还有 160.095–187.990 ms。
+真实项目的 `internal/api/api.go` 在零基 UTF-16 `156:42` 立即查询 `execPath`。两版均 5/5 返回同文件的精确范围 `[155:1, 155:9)`。从启动前、经过初始化和 `didOpen` 到解码首个响应，基线 P50/P95 为 10.7271 / 16.7920 ms，P0+P1 为 10.9717 / 13.3050 ms。单独请求耗时分别为 2.3940 / 3.4341 ms 和 2.6109 / 2.7280 ms。优化版的 5 个正确响应均在 SDK 预热开始后返回，距离 SDK 清单就绪还有 160.095–187.990 ms。
 
-两侧另在同一个 `532228d3` LocalChat 源码副本上执行相同定义查询，避免 GoLand 项目初始化写入原工作区。GoLand 使用已授权的本机配置和 `dontReopenProjects` 启动新进程，等待副本进入智能模式。首次正确目标及范围相同。从发起进程启动到取得首个正确结果，GoLand 单次为 13,437 ms，其中从进程实际创建起为 13,375 ms，从打开项目起为 8,835.9406 ms，定义请求为 1,081.7750 ms。相同副本上 rs-gopls 的 5 次启动到首个正确结果 P50/P95 为基线 10.4737 / 16.6024 ms、P0+P1 10.7476 / 12.6831 ms。两侧计时均止于取得定义结果，包含各自启动和文档准备。
+两侧另在同一个 `532228d3` 真实项目源码副本上执行相同定义查询，避免 GoLand 项目初始化写入原工作区。GoLand 使用已授权的本机配置和 `dontReopenProjects` 启动新进程，等待副本进入智能模式。首次正确目标及范围相同。从发起进程启动到取得首个正确结果，GoLand 单次为 13,437 ms，其中从进程实际创建起为 13,375 ms，从打开项目起为 8,835.9406 ms，定义请求为 1,081.7750 ms。相同副本上 rs-gopls 的 5 次启动到首个正确结果 P50/P95 为基线 10.4737 / 16.6024 ms、P0+P1 10.7476 / 12.6831 ms。两侧计时均止于取得定义结果，包含各自启动和文档准备。
 
-原始报告位于 Cargo 产物目录，构建与回归见 `wave-b-rust.log` 和 `wave-b-history.log`，首轮及复测见 `wave-b-cold-and-compare.log` 和 `wave-b-repeat-compare.log`。冷态、诊断和逐字节对拍分别见 `wave-b-timing.json`、`wave-b-cold-timing-1c42031.json`、`wave-b-diagnostic.json` 和 `wave-b-wire-parity.json`。取消和导航证据见 `wave-b-cancel-and-stale.ndjson`、`wave-b-navigation-localchat.json`、`wave-b-navigation-snapshot.json` 和 `wave-b-goland-startup-definition.json`。[GoLand 补全对照基线](../goland-completion-baseline.md#共同样本延迟)
+原始报告位于 Cargo 产物目录，构建与回归见 `wave-b-rust.log` 和 `wave-b-history.log`，首轮及复测见 `wave-b-cold-and-compare.log` 和 `wave-b-repeat-compare.log`。冷态、诊断和逐字节对拍分别见 `wave-b-timing.json`、`wave-b-cold-timing-1c42031.json`、`wave-b-diagnostic.json` 和 `wave-b-wire-parity.json`。取消和导航证据见 `wave-b-cancel-and-stale.ndjson`、`wave-b-navigation-external.json`、`wave-b-navigation-snapshot.json` 和 `wave-b-goland-startup-definition.json`。[GoLand 补全对照基线](../goland-completion-baseline.md#共同样本延迟)
