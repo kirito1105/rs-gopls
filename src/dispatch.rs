@@ -9,16 +9,19 @@ use lsp_types::{
     CodeActionProviderCapability, CompletionItem, CompletionOptions,
     CompletionOptionsCompletionItem, CompletionParams, DiagnosticOptions,
     DiagnosticServerCapabilities, DocumentDiagnosticParams, DocumentDiagnosticReportKind,
-    DocumentFormattingParams, DocumentSymbolParams, FullDocumentDiagnosticReport,
-    HoverProviderCapability, InitializeParams, OneOf, Position, ReferenceParams, RenameOptions,
-    RenameParams, ServerCapabilities, SignatureHelpOptions, TextDocumentPositionParams,
+    DocumentFormattingParams, DocumentSymbolParams, FoldingRangeParams,
+    FoldingRangeProviderCapability, FullDocumentDiagnosticReport, HoverProviderCapability,
+    InitializeParams, InlayHintParams, OneOf, Position, ReferenceParams, RenameOptions,
+    RenameParams, SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams,
+    ServerCapabilities, SignatureHelpOptions, TextDocumentPositionParams,
     TypeHierarchySubtypesParams, TypeHierarchySupertypesParams, UnchangedDocumentDiagnosticReport,
     Uri, WorkspaceSymbolParams,
     request::{
         CallHierarchyIncomingCalls, CallHierarchyOutgoingCalls, CallHierarchyPrepare,
-        CodeActionRequest, Completion, DocumentDiagnosticRequest, DocumentSymbolRequest,
-        Formatting, GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest,
-        PrepareRenameRequest, References, Rename, Request as _, ResolveCompletionItem,
+        CodeActionRequest, Completion, DocumentDiagnosticRequest, DocumentHighlightRequest,
+        DocumentSymbolRequest, FoldingRangeRequest, Formatting, GotoDefinition, GotoImplementation,
+        GotoTypeDefinition, HoverRequest, InlayHintRequest, PrepareRenameRequest, References,
+        Rename, Request as _, ResolveCompletionItem, SemanticTokensFullRequest,
         SignatureHelpRequest, TypeHierarchyPrepare, TypeHierarchySubtypes, TypeHierarchySupertypes,
         WorkspaceSymbolRequest,
     },
@@ -36,7 +39,10 @@ use crate::semantic::completion::{
 };
 use crate::semantic::diagnostics::DiagnosticReport;
 use crate::semantic::rename::{RenameError, RenameResult};
-use crate::semantic::{DefinitionKind, Engine, QueryProgress, SemanticTask};
+use crate::semantic::{
+    DefinitionKind, EditorFoldingOptions, Engine, QueryProgress, SemanticTask,
+    semantic_tokens_legend,
+};
 
 type Handler = fn(&mut RequestContext<'_>, RequestId, Value) -> Result<()>;
 
@@ -44,6 +50,7 @@ type Handler = fn(&mut RequestContext<'_>, RequestId, Value) -> Result<()>;
 pub(super) struct ClientFeatures {
     hierarchical_document_symbols: bool,
     rename: RenameSupport,
+    folding_options: EditorFoldingOptions,
     completion: CompletionClientCapabilities,
 }
 
@@ -70,6 +77,12 @@ impl ClientFeatures {
             == Some(true);
         Self {
             completion: CompletionClientCapabilities::from_initialize(params),
+            folding_options: EditorFoldingOptions {
+                line_folding_only: document
+                    .and_then(|text| text.folding_range.as_ref())
+                    .and_then(|folding| folding.line_folding_only)
+                    .unwrap_or_default(),
+            },
             hierarchical_document_symbols: document
                 .and_then(|text| text.document_symbol.as_ref())
                 .and_then(|symbols| symbols.hierarchical_document_symbol_support)
@@ -142,6 +155,28 @@ const FEATURES: &[Feature] = &[
         methods: &[
             (DocumentSymbolRequest::METHOD, document_symbols),
             (WorkspaceSymbolRequest::METHOD, workspace_symbols),
+        ],
+    },
+    Feature {
+        capabilities: |caps, _| {
+            caps.standard.semantic_tokens_provider = Some(
+                SemanticTokensOptions {
+                    legend: semantic_tokens_legend(),
+                    full: Some(SemanticTokensFullOptions::Bool(true)),
+                    ..SemanticTokensOptions::default()
+                }
+                .into(),
+            );
+            caps.standard.document_highlight_provider = Some(OneOf::Left(true));
+            caps.standard.inlay_hint_provider = Some(OneOf::Left(true));
+            caps.standard.folding_range_provider =
+                Some(FoldingRangeProviderCapability::Simple(true));
+        },
+        methods: &[
+            (SemanticTokensFullRequest::METHOD, semantic_tokens_full),
+            (DocumentHighlightRequest::METHOD, document_highlight),
+            (InlayHintRequest::METHOD, inlay_hints),
+            (FoldingRangeRequest::METHOD, folding_ranges),
         ],
     },
     Feature {
@@ -247,6 +282,7 @@ pub(super) fn handle(
         scheduler,
         hierarchical_document_symbols: client.hierarchical_document_symbols,
         completion_capabilities: client.completion,
+        folding_options: client.folding_options,
     };
     for &(name, handler) in FEATURES.iter().flat_map(|feature| feature.methods) {
         if method == name && client.supports(name) {
@@ -268,6 +304,7 @@ struct RequestContext<'a> {
     scheduler: &'a mut Scheduler,
     hierarchical_document_symbols: bool,
     completion_capabilities: CompletionClientCapabilities,
+    folding_options: EditorFoldingOptions,
 }
 
 impl RequestContext<'_> {
@@ -296,6 +333,19 @@ impl RequestContext<'_> {
             ),
             Err(error) => self.respond(id, Err(invalid_params(error))),
         }
+    }
+
+    fn immediate_document_query<P, T: serde::Serialize>(
+        &mut self,
+        id: RequestId,
+        params: Result<(PathBuf, P)>,
+        run: impl FnOnce(&mut Engine, &Path, P) -> Result<T>,
+    ) -> Result<()> {
+        let result = params
+            .map_err(invalid_params)
+            .and_then(|(path, params)| run(self.engine, &path, params).map_err(internal_error))
+            .and_then(serialize_query);
+        self.respond(id, result)
     }
 }
 
@@ -587,6 +637,45 @@ fn document_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Val
         Err(error) => Err(invalid_params(error)),
     };
     context.respond(id, result)
+}
+
+fn semantic_tokens_full(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    let params = (|| {
+        let params: SemanticTokensParams = serde_json::from_value(params)?;
+        Ok((file_path(&params.text_document.uri)?, ()))
+    })();
+    context.immediate_document_query(id, params, |engine, path, ()| {
+        engine.semantic_tokens_full(path)
+    })
+}
+
+fn document_highlight(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    context.immediate_document_query(id, document_position(params), Engine::document_highlight)
+}
+
+fn inlay_hints(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let params = (|| {
+        let params: InlayHintParams = serde_json::from_value(params)?;
+        Ok((file_path(&params.text_document.uri)?, params.range))
+    })();
+    context.immediate_document_query(id, params, Engine::inlay_hints)
+}
+
+fn folding_ranges(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let options = context.folding_options;
+    let params = (|| {
+        let params: FoldingRangeParams = serde_json::from_value(params)?;
+        Ok((file_path(&params.text_document.uri)?, options))
+    })();
+    context.immediate_document_query(id, params, Engine::folding_ranges)
 }
 
 fn workspace_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {

@@ -63,6 +63,10 @@ The server provides `textDocument/hover` and `textDocument/signatureHelp` (trigg
 
 `textDocument/documentSymbol` lists the current file's declarations in source order as a nested or flat outline, according to client capabilities. `workspace/symbol` searches active project and test packages by simple or qualified name and returns exact declaration locations. Both use unsaved editor buffers. [GoLand symbol baseline and benchmarks](docs/goland-symbols-baseline.md)
 
+## Single-file editor features
+
+The server provides semantic highlighting (`textDocument/semanticTokens/full`), document highlights for symbols and control flow (`textDocument/documentHighlight`), inlay hints (`textDocument/inlayHint`), and folding ranges (`textDocument/foldingRange`). All four use the current file, including unsaved edits. [GoLand single-file editor baseline](docs/goland-editor-baseline.md)
+
 ## Context completion
 
 Completion offers names in scope, struct fields, methods, and importable packages and symbols. Clients can resolve documentation and auto-import edits on demand. The server checks that the document and package graph still match before returning an edit. [GoLand completion baseline](docs/goland-completion-baseline.md)
