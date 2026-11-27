@@ -4,12 +4,15 @@ use anyhow::Result;
 use lsp_server::{Connection, ErrorCode, Request, RequestId};
 use lsp_types::{
     CompletionItem, CompletionOptions, CompletionOptionsCompletionItem, CompletionParams,
-    DocumentSymbolParams, HoverProviderCapability, OneOf, Position, ReferenceParams,
-    ServerCapabilities, SignatureHelpOptions, TextDocumentPositionParams, WorkspaceSymbolParams,
+    DocumentSymbolParams, FoldingRangeParams, FoldingRangeProviderCapability,
+    HoverProviderCapability, InlayHintParams, OneOf, Position, ReferenceParams,
+    SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams, ServerCapabilities,
+    SignatureHelpOptions, TextDocumentPositionParams, WorkspaceSymbolParams,
     request::{
-        Completion, DocumentSymbolRequest, GotoDefinition, GotoImplementation, GotoTypeDefinition,
-        HoverRequest, References, Request as _, ResolveCompletionItem, SignatureHelpRequest,
-        WorkspaceSymbolRequest,
+        Completion, DocumentHighlightRequest, DocumentSymbolRequest, FoldingRangeRequest,
+        GotoDefinition, GotoImplementation, GotoTypeDefinition, HoverRequest, InlayHintRequest,
+        References, Request as _, ResolveCompletionItem, SemanticTokensFullRequest,
+        SignatureHelpRequest, WorkspaceSymbolRequest,
     },
 };
 use serde_json::Value;
@@ -22,7 +25,10 @@ use crate::scheduler::{DeferredQuery, RequestProgress, Scheduler, SearchTask};
 use crate::semantic::completion::{
     CompletionClientCapabilities, ResolveCompletionResult, StaleCompletion, Trace,
 };
-use crate::semantic::{DefinitionKind, Engine, QueryProgress, SemanticTask};
+use crate::semantic::{
+    DefinitionKind, EditorFoldingOptions, Engine, QueryProgress, SemanticTask,
+    semantic_tokens_legend,
+};
 
 type Handler = fn(&mut RequestContext<'_>, RequestId, Value) -> Result<()>;
 
@@ -72,6 +78,27 @@ const FEATURES: &[Feature] = &[
     },
     Feature {
         capabilities: |caps| {
+            caps.semantic_tokens_provider = Some(
+                SemanticTokensOptions {
+                    legend: semantic_tokens_legend(),
+                    full: Some(SemanticTokensFullOptions::Bool(true)),
+                    ..SemanticTokensOptions::default()
+                }
+                .into(),
+            );
+            caps.document_highlight_provider = Some(OneOf::Left(true));
+            caps.inlay_hint_provider = Some(OneOf::Left(true));
+            caps.folding_range_provider = Some(FoldingRangeProviderCapability::Simple(true));
+        },
+        methods: &[
+            (SemanticTokensFullRequest::METHOD, semantic_tokens_full),
+            (DocumentHighlightRequest::METHOD, document_highlight),
+            (InlayHintRequest::METHOD, inlay_hints),
+            (FoldingRangeRequest::METHOD, folding_ranges),
+        ],
+    },
+    Feature {
+        capabilities: |caps| {
             caps.completion_provider = Some(CompletionOptions {
                 resolve_provider: Some(true),
                 trigger_characters: Some(vec![".".into()]),
@@ -100,6 +127,7 @@ pub(super) fn handle(
     scheduler: &mut Scheduler,
     hierarchical_document_symbols: bool,
     completion_capabilities: CompletionClientCapabilities,
+    folding_options: EditorFoldingOptions,
     request: Request,
 ) -> Result<()> {
     let Request { id, method, params } = request;
@@ -109,6 +137,7 @@ pub(super) fn handle(
         scheduler,
         hierarchical_document_symbols,
         completion_capabilities,
+        folding_options,
     };
     for &(name, handler) in FEATURES.iter().flat_map(|feature| feature.methods) {
         if method == name {
@@ -130,6 +159,7 @@ struct RequestContext<'a> {
     scheduler: &'a mut Scheduler,
     hierarchical_document_symbols: bool,
     completion_capabilities: CompletionClientCapabilities,
+    folding_options: EditorFoldingOptions,
 }
 
 impl RequestContext<'_> {
@@ -158,6 +188,19 @@ impl RequestContext<'_> {
             ),
             Err(error) => self.respond(id, Err(invalid_params(error))),
         }
+    }
+
+    fn immediate_document_query<P, T: serde::Serialize>(
+        &mut self,
+        id: RequestId,
+        params: Result<(PathBuf, P)>,
+        run: impl FnOnce(&mut Engine, &Path, P) -> Result<T>,
+    ) -> Result<()> {
+        let result = params
+            .map_err(invalid_params)
+            .and_then(|(path, params)| run(self.engine, &path, params).map_err(internal_error))
+            .and_then(serialize_query);
+        self.respond(id, result)
     }
 }
 
@@ -363,6 +406,45 @@ fn document_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Val
         Err(error) => Err(invalid_params(error)),
     };
     context.respond(id, result)
+}
+
+fn semantic_tokens_full(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    let params = (|| {
+        let params: SemanticTokensParams = serde_json::from_value(params)?;
+        Ok((file_path(&params.text_document.uri)?, ()))
+    })();
+    context.immediate_document_query(id, params, |engine, path, ()| {
+        engine.semantic_tokens_full(path)
+    })
+}
+
+fn document_highlight(
+    context: &mut RequestContext<'_>,
+    id: RequestId,
+    params: Value,
+) -> Result<()> {
+    context.immediate_document_query(id, document_position(params), Engine::document_highlight)
+}
+
+fn inlay_hints(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let params = (|| {
+        let params: InlayHintParams = serde_json::from_value(params)?;
+        Ok((file_path(&params.text_document.uri)?, params.range))
+    })();
+    context.immediate_document_query(id, params, Engine::inlay_hints)
+}
+
+fn folding_ranges(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {
+    let options = context.folding_options;
+    let params = (|| {
+        let params: FoldingRangeParams = serde_json::from_value(params)?;
+        Ok((file_path(&params.text_document.uri)?, options))
+    })();
+    context.immediate_document_query(id, params, Engine::folding_ranges)
 }
 
 fn workspace_symbols(context: &mut RequestContext<'_>, id: RequestId, params: Value) -> Result<()> {

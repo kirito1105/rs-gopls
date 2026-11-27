@@ -17,5 +17,6 @@
 - 接口与实现之间的双向导航。[实现跳转基线](goland-implementation-baseline.md)
 - 悬停提示（Hover）与函数签名提示（SignatureHelp）。[Hover 与 SignatureHelp 基线](goland-hover-signature-baseline.md)
 - 单文件嵌套与扁平大纲（DocumentSymbol），以及项目符号搜索（WorkspaceSymbol）。[文档与工作区符号基线](goland-symbols-baseline.md)
+- 单文件语义高亮（SemanticTokens）、文档高亮（DocumentHighlight）、内联提示（InlayHint）与折叠范围（FoldingRange）。[单文件编辑器基线](goland-editor-baseline.md)
 
 后续扩大真实项目的回归覆盖。实现跳转的 Zed 界面验收仍由第四阶段计划跟踪。[第四阶段计划](plans/2026-11-25-go-implementation.md)

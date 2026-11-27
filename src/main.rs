@@ -32,8 +32,8 @@ use serde_json::Value;
 
 use protocol::{RequestResult, file_path, invalid_params, send_response};
 use scheduler::{Scheduler, WorkspaceResult};
-use semantic::Engine;
 use semantic::completion::CompletionClientCapabilities;
+use semantic::{EditorFoldingOptions, Engine};
 
 #[cfg(test)]
 use lsp_server::{RequestId, Response};
@@ -56,6 +56,7 @@ struct Running {
     watch_files: bool,
     hierarchical_document_symbols: bool,
     completion_capabilities: CompletionClientCapabilities,
+    folding_options: EditorFoldingOptions,
     scheduler: Scheduler,
 }
 
@@ -206,6 +207,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 &mut running.scheduler,
                 running.hierarchical_document_symbols,
                 running.completion_capabilities,
+                running.folding_options,
                 Request { id, method, params },
             );
         }
@@ -229,6 +231,15 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .and_then(|document| document.document_symbol.as_ref())
         .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
     let completion_capabilities = CompletionClientCapabilities::from_initialize(&params);
+    let folding_options = EditorFoldingOptions {
+        line_folding_only: params
+            .capabilities
+            .text_document
+            .as_ref()
+            .and_then(|document| document.folding_range.as_ref())
+            .and_then(|folding| folding.line_folding_only)
+            .unwrap_or_default(),
+    };
     let root = workspace_root(params)?;
     ensure!(
         root.is_dir(),
@@ -261,6 +272,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
             watch_files,
             hierarchical_document_symbols,
             completion_capabilities,
+            folding_options,
             engine: Engine::new(root),
             scheduler: Scheduler::default(),
         },

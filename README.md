@@ -62,6 +62,10 @@ The server provides `textDocument/hover` and `textDocument/signatureHelp` (trigg
 
 `textDocument/documentSymbol` lists the current file's declarations in source order as a nested or flat outline, according to client capabilities. `workspace/symbol` searches active project and test packages by simple or qualified name and returns exact declaration locations. Both use unsaved editor buffers. [GoLand symbol baseline and benchmarks](docs/goland-symbols-baseline.md)
 
+## Single-file editor features
+
+The server provides semantic highlighting (`textDocument/semanticTokens/full`), document highlights for symbols and control flow (`textDocument/documentHighlight`), inlay hints (`textDocument/inlayHint`), and folding ranges (`textDocument/foldingRange`). All four use the current file, including unsaved edits. [GoLand single-file editor baseline](docs/goland-editor-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.
