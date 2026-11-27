@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use lsp_types::{
     CallHierarchyIncomingCall, CallHierarchyItem, CallHierarchyOutgoingCall, CodeActionKind,
-    CodeActionOrCommand, FileChangeType, Position, Range, TextDocumentContentChangeEvent, TextEdit,
-    TypeHierarchyItem, Uri,
+    CodeActionOrCommand, DocumentHighlight, FileChangeType, FoldingRange, InlayHint, Position,
+    Range, SemanticTokens, TextDocumentContentChangeEvent, TextEdit, TypeHierarchyItem, Uri,
 };
 use tree_sitter::{Node, Parser};
 
@@ -23,6 +23,7 @@ pub(crate) mod completion;
 mod definition;
 pub(crate) mod diagnostics;
 mod document_symbols;
+mod editor;
 pub(crate) mod hierarchy;
 mod hover;
 mod implementation;
@@ -37,6 +38,7 @@ mod source;
 mod workspace_symbols;
 
 pub(crate) use definition::DefinitionKind;
+pub(crate) use editor::{EditorFoldingOptions, legend as semantic_tokens_legend};
 use index::{DiskIndex, IndexReader, IndexedSource, text_fingerprint};
 pub(crate) use query::{QueryProgress, SemanticTask};
 pub(crate) use resolver::TypeIdentity;
@@ -119,6 +121,50 @@ struct EngineState {
 }
 
 impl Engine {
+    pub(crate) fn semantic_tokens_full(&mut self, path: &Path) -> Result<SemanticTokens> {
+        Ok(self
+            .snapshot()
+            .document(path)?
+            .as_ref()
+            .map_or_else(SemanticTokens::default, editor::semantic_tokens_full))
+    }
+
+    pub(crate) fn document_highlight(
+        &mut self,
+        path: &Path,
+        position: Position,
+    ) -> Result<Vec<DocumentHighlight>> {
+        Ok(self
+            .snapshot()
+            .document(path)?
+            .as_ref()
+            .map_or_else(Vec::new, |document| {
+                editor::document_highlight(document, position)
+            }))
+    }
+
+    pub(crate) fn inlay_hints(&mut self, path: &Path, range: Range) -> Result<Vec<InlayHint>> {
+        Ok(self
+            .snapshot()
+            .document(path)?
+            .as_ref()
+            .map_or_else(Vec::new, |document| editor::inlay_hints(document, range)))
+    }
+
+    pub(crate) fn folding_ranges(
+        &mut self,
+        path: &Path,
+        options: EditorFoldingOptions,
+    ) -> Result<Vec<FoldingRange>> {
+        Ok(self
+            .snapshot()
+            .document(path)?
+            .as_ref()
+            .map_or_else(Vec::new, |document| {
+                editor::folding_ranges(document, options)
+            }))
+    }
+
     #[cfg_attr(not(test), allow(dead_code, reason = "single-folder constructor"))]
     pub fn new(root: PathBuf) -> Self {
         Self::with_roots(vec![root])

@@ -17,6 +17,7 @@
 - 接口与实现之间的双向导航。[实现跳转基线](goland-implementation-baseline.md)
 - 悬停提示（Hover）与函数签名提示（SignatureHelp）。[Hover 与 SignatureHelp 基线](goland-hover-signature-baseline.md)
 - 单文件嵌套与扁平大纲（DocumentSymbol），以及项目符号搜索（WorkspaceSymbol）。[文档与工作区符号基线](goland-symbols-baseline.md)
+- 单文件语义高亮（SemanticTokens）、文档高亮（DocumentHighlight）、内联提示（InlayHint）与折叠范围（FoldingRange）。[单文件编辑器基线](goland-editor-baseline.md)
 - 上下文补全覆盖作用域、成员和可导入符号，支持补全项解析及自动导入。[补全基线](goland-completion-baseline.md)
 - 实时诊断覆盖语法、包加载、名称和类型错误，支持诊断推送与拉取。[诊断基线](goland-diagnostics-baseline.md)
 - 调用层级支持查询调用者和被调用者，类型层级支持接口和结构体嵌入。客户端可在会话中增减工作区文件夹。[层级与多工作区基线](goland-hierarchy-baseline.md)

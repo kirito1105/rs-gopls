@@ -1,0 +1,4 @@
+*.go text eol=lf
+folding_crlf.go -text !eol whitespace=cr-at-eol
+go.mod text eol=lf
+editor-queries.json text eol=lf

@@ -1,0 +1,862 @@
+{
+  "schemaVersion": 1,
+  "positionEncoding": "utf-16",
+  "queries": [
+    {
+      "id": "semantic-editor",
+      "method": "textDocument/semanticTokens/full",
+      "path": "editor.go",
+      "description": "Package and import names, definitions and aliases, receiver and fields, generics, builtins and shadowing, short declarations and labels."
+    },
+    {
+      "id": "semantic-boundary",
+      "method": "textDocument/semanticTokens/full",
+      "path": "boundary.go",
+      "description": "Same-package declaration and a reference whose declaration belongs to another file."
+    },
+    {
+      "id": "semantic-inlay",
+      "method": "textDocument/semanticTokens/full",
+      "path": "inlay.go",
+      "description": "Method values and expressions, local function values, struct keys and cross-file calls."
+    },
+    {
+      "id": "semantic-crlf",
+      "method": "textDocument/semanticTokens/full",
+      "path": "folding_crlf.go",
+      "description": "CRLF with selectors and a call after a non-BMP string on the same line."
+    },
+    {
+      "id": "semantic-recovery",
+      "method": "textDocument/semanticTokens/full",
+      "path": "recovery.go",
+      "description": "Build-tagged invalid source with iota outside a const spec, a constant cycle, separate unresolved references and a missing brace."
+    },
+    {
+      "id": "comment-suppression",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A caret on x inside a line comment.",
+      "position": {
+        "line": 90,
+        "character": 14
+      }
+    },
+    {
+      "id": "assignment-right-edge",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The caret immediately after an identifier on the left of +=.",
+      "position": {
+        "line": 96,
+        "character": 2
+      }
+    },
+    {
+      "id": "write-variable",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A var definition, assignments, increment/decrement, parenthesized target, address use and short-declaration reuse.",
+      "position": {
+        "line": 91,
+        "character": 5
+      }
+    },
+    {
+      "id": "write-constant-declaration",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A const definition and reads on several assignment right-hand sides.",
+      "position": {
+        "line": 92,
+        "character": 7
+      }
+    },
+    {
+      "id": "write-short-reuse",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The existing x binding at a short declaration that also introduces next.",
+      "position": {
+        "line": 111,
+        "character": 1
+      }
+    },
+    {
+      "id": "read-short-rhs",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The old x binding used on the short declaration right-hand side.",
+      "position": {
+        "line": 111,
+        "character": 12
+      }
+    },
+    {
+      "id": "write-short-new",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The new binding in a mixed short declaration, followed by a read.",
+      "position": {
+        "line": 111,
+        "character": 4
+      }
+    },
+    {
+      "id": "write-shadowed",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The inner x binding and its reference only.",
+      "position": {
+        "line": 113,
+        "character": 2
+      }
+    },
+    {
+      "id": "dereference-target",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Pointer variable in a dereference assignment target.",
+      "position": {
+        "line": 102,
+        "character": 2
+      }
+    },
+    {
+      "id": "address-argument",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Address-of operand used as a function argument.",
+      "position": {
+        "line": 103,
+        "character": 15
+      }
+    },
+    {
+      "id": "parenthesized-target",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Assignment target inside parentheses.",
+      "position": {
+        "line": 101,
+        "character": 2
+      }
+    },
+    {
+      "id": "read-parameter",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A parameter declaration and its use in the method body.",
+      "position": {
+        "line": 41,
+        "character": 28
+      }
+    },
+    {
+      "id": "read-receiver",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A receiver declaration and its use as a selector base.",
+      "position": {
+        "line": 41,
+        "character": 6
+      }
+    },
+    {
+      "id": "read-field-declaration",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Field declaration, selector reads/writes and keyed literal entries.",
+      "position": {
+        "line": 23,
+        "character": 1
+      }
+    },
+    {
+      "id": "write-selector-field",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The field portion of an assignment selector.",
+      "position": {
+        "line": 104,
+        "character": 5
+      }
+    },
+    {
+      "id": "read-selector-base",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The object portion of an assignment selector.",
+      "position": {
+        "line": 104,
+        "character": 1
+      }
+    },
+    {
+      "id": "read-index-base",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Slice base on the left of an index assignment.",
+      "position": {
+        "line": 105,
+        "character": 1
+      }
+    },
+    {
+      "id": "read-index-index",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Index expression on the left of an index assignment.",
+      "position": {
+        "line": 105,
+        "character": 3
+      }
+    },
+    {
+      "id": "write-struct-key",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A field key is associated with the struct field definition.",
+      "position": {
+        "line": 106,
+        "character": 12
+      }
+    },
+    {
+      "id": "read-map-key",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A map literal key is a local variable read.",
+      "position": {
+        "line": 107,
+        "character": 17
+      }
+    },
+    {
+      "id": "channel-send",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Channel definition, send target and receive operand.",
+      "position": {
+        "line": 99,
+        "character": 1
+      }
+    },
+    {
+      "id": "channel-receive",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The channel expression of a receive.",
+      "position": {
+        "line": 100,
+        "character": 7
+      }
+    },
+    {
+      "id": "channel-value",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The value read by a send and reused by assignments and range.",
+      "position": {
+        "line": 99,
+        "character": 7
+      }
+    },
+    {
+      "id": "range-key",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Existing key binding assigned by a range statement.",
+      "position": {
+        "line": 108,
+        "character": 5
+      }
+    },
+    {
+      "id": "range-value",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Existing value binding assigned by a range statement.",
+      "position": {
+        "line": 108,
+        "character": 8
+      }
+    },
+    {
+      "id": "import-alias",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Explicit alias reference with a same-spelled local variable in a nested block.",
+      "position": {
+        "line": 47,
+        "character": 5
+      }
+    },
+    {
+      "id": "import-implicit",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Implicit import qualifier.",
+      "position": {
+        "line": 48,
+        "character": 5
+      }
+    },
+    {
+      "id": "import-dot",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Dot import declaration.",
+      "position": {
+        "line": 3,
+        "character": 1
+      }
+    },
+    {
+      "id": "import-dot-use",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Name resolved through the dot import by the IDE.",
+      "position": {
+        "line": 49,
+        "character": 5
+      }
+    },
+    {
+      "id": "external-selector",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Standard library member reference.",
+      "position": {
+        "line": 47,
+        "character": 11
+      }
+    },
+    {
+      "id": "cross-file-constant",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The used constant has its declaration in boundary.go.",
+      "position": {
+        "line": 57,
+        "character": 5
+      }
+    },
+    {
+      "id": "cross-file-function",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The function is declared in boundary.go and called in two files.",
+      "position": {
+        "line": 58,
+        "character": 5
+      }
+    },
+    {
+      "id": "interface-method",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Method call through a same-file interface.",
+      "position": {
+        "line": 55,
+        "character": 10
+      }
+    },
+    {
+      "id": "non-bmp-prefix",
+      "method": "textDocument/documentHighlight",
+      "path": "folding_crlf.go",
+      "description": "The qualifier follows an emoji on the same CRLF source line.",
+      "position": {
+        "line": 124,
+        "character": 21
+      }
+    },
+    {
+      "id": "function-exit-keyword",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Outer function keyword, returns, builtin panic, defer/go and nested boundaries.",
+      "position": {
+        "line": 119,
+        "character": 0
+      }
+    },
+    {
+      "id": "function-exit-return",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Outer return statement used to trigger the exit-point group.",
+      "position": {
+        "line": 121,
+        "character": 2
+      }
+    },
+    {
+      "id": "function-exit-panic",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Builtin panic used to trigger the exit-point group.",
+      "position": {
+        "line": 124,
+        "character": 2
+      }
+    },
+    {
+      "id": "function-exit-deferred-panic",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Builtin panic directly inside defer.",
+      "position": {
+        "line": 127,
+        "character": 8
+      }
+    },
+    {
+      "id": "function-exit-go-panic",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Builtin panic directly inside a go statement.",
+      "position": {
+        "line": 130,
+        "character": 5
+      }
+    },
+    {
+      "id": "function-exit-nested",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Closure keyword inside an outer function with its own exits.",
+      "position": {
+        "line": 132,
+        "character": 10
+      }
+    },
+    {
+      "id": "function-exit-nested-panic",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Panic targeting only the closure.",
+      "position": {
+        "line": 134,
+        "character": 3
+      }
+    },
+    {
+      "id": "function-shadowed-panic",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Local callable shadowing the builtin panic.",
+      "position": {
+        "line": 140,
+        "character": 2
+      }
+    },
+    {
+      "id": "loop-bare-keyword",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The outer loop keyword with both labelled and bare jumps.",
+      "position": {
+        "line": 147,
+        "character": 1
+      }
+    },
+    {
+      "id": "loop-label-declaration",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The labelled loop declaration.",
+      "position": {
+        "line": 146,
+        "character": 0
+      }
+    },
+    {
+      "id": "loop-labelled-break",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A break with its own explicit label.",
+      "position": {
+        "line": 149,
+        "character": 3
+      }
+    },
+    {
+      "id": "loop-labelled-break-target",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "The identifier of a labelled break.",
+      "position": {
+        "line": 149,
+        "character": 9
+      }
+    },
+    {
+      "id": "loop-labelled-continue",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A continue targeting the outer loop from an inner loop.",
+      "position": {
+        "line": 153,
+        "character": 4
+      }
+    },
+    {
+      "id": "loop-inner-bare-break",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare break targeting the inner loop.",
+      "position": {
+        "line": 158,
+        "character": 3
+      }
+    },
+    {
+      "id": "loop-outer-bare-break",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare break targeting the same loop as break Outer.",
+      "position": {
+        "line": 164,
+        "character": 3
+      }
+    },
+    {
+      "id": "loop-inner-continue",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare continue targeting the nearest loop.",
+      "position": {
+        "line": 156,
+        "character": 4
+      }
+    },
+    {
+      "id": "loop-outer-continue",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare continue outside the inner loop.",
+      "position": {
+        "line": 161,
+        "character": 3
+      }
+    },
+    {
+      "id": "switch-expression",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Expression switch keyword and its bare break.",
+      "position": {
+        "line": 166,
+        "character": 2
+      }
+    },
+    {
+      "id": "switch-expression-break",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare break targeting the expression switch.",
+      "position": {
+        "line": 168,
+        "character": 3
+      }
+    },
+    {
+      "id": "switch-type",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Type switch keyword and its bare break.",
+      "position": {
+        "line": 172,
+        "character": 2
+      }
+    },
+    {
+      "id": "switch-type-break",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare break targeting the type switch.",
+      "position": {
+        "line": 174,
+        "character": 3
+      }
+    },
+    {
+      "id": "select-keyword",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Select keyword and its bare break.",
+      "position": {
+        "line": 178,
+        "character": 2
+      }
+    },
+    {
+      "id": "select-break",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Bare break targeting the select.",
+      "position": {
+        "line": 180,
+        "character": 3
+      }
+    },
+    {
+      "id": "return-named-declaration",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Named slot declaration with normal symbol references and positional returns.",
+      "position": {
+        "line": 187,
+        "character": 24
+      }
+    },
+    {
+      "id": "return-named-assignment",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "An assignment to the same named return variable.",
+      "position": {
+        "line": 188,
+        "character": 1
+      }
+    },
+    {
+      "id": "return-first-expression",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "An explicit expression in return slot zero.",
+      "position": {
+        "line": 193,
+        "character": 9
+      }
+    },
+    {
+      "id": "return-second-expression",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A caret inside the string expression in return slot one.",
+      "position": {
+        "line": 193,
+        "character": 17
+      }
+    },
+    {
+      "id": "return-bare",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A naked return has no explicit expressions.",
+      "position": {
+        "line": 190,
+        "character": 8
+      }
+    },
+    {
+      "id": "return-forwarded-call",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A single call expression forwards two named results.",
+      "position": {
+        "line": 196,
+        "character": 9
+      }
+    },
+    {
+      "id": "return-anonymous-first-type",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Anonymous return slot in the signature.",
+      "position": {
+        "line": 203,
+        "character": 32
+      }
+    },
+    {
+      "id": "return-anonymous-second-type",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "Second anonymous return slot in the signature.",
+      "position": {
+        "line": 203,
+        "character": 37
+      }
+    },
+    {
+      "id": "return-anonymous-first-expression",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "First expression in a return with anonymous result types.",
+      "position": {
+        "line": 207,
+        "character": 8
+      }
+    },
+    {
+      "id": "return-anonymous-forwarded-call",
+      "method": "textDocument/documentHighlight",
+      "path": "editor.go",
+      "description": "A single call forwards two anonymous results.",
+      "position": {
+        "line": 205,
+        "character": 9
+      }
+    },
+    {
+      "id": "unresolved-identity",
+      "method": "textDocument/documentHighlight",
+      "path": "recovery.go",
+      "description": "The first of two syntactically separate unresolved references.",
+      "position": {
+        "line": 16,
+        "character": 26
+      }
+    },
+    {
+      "id": "unresolved-eof",
+      "method": "textDocument/documentHighlight",
+      "path": "recovery.go",
+      "description": "Caret after the final identifier at physical EOF without a closing brace or newline.",
+      "position": {
+        "line": 19,
+        "character": 15
+      }
+    },
+    {
+      "id": "inlay-calls",
+      "method": "textDocument/inlayHint",
+      "path": "inlay.go",
+      "description": "Arguments of calls, expressions, variadics, unnamed slots, function values, methods, builtin candidates and shadowing.",
+      "range": {
+        "start": {
+          "line": 25,
+          "character": 0
+        },
+        "end": {
+          "line": 52,
+          "character": 0
+        }
+      }
+    },
+    {
+      "id": "inlay-fields",
+      "method": "textDocument/inlayHint",
+      "path": "inlay.go",
+      "description": "Unkeyed embedded and grouped field slots, same-named explicit literals, ordinary identifiers and keyed literals.",
+      "range": {
+        "start": {
+          "line": 52,
+          "character": 0
+        },
+        "end": {
+          "line": 60,
+          "character": 0
+        }
+      }
+    },
+    {
+      "id": "inlay-named-returns",
+      "method": "textDocument/inlayHint",
+      "path": "inlay.go",
+      "description": "Named returns with a blank slot, literal expressions, a variable expression and a bare return.",
+      "range": {
+        "start": {
+          "line": 60,
+          "character": 0
+        },
+        "end": {
+          "line": 70,
+          "character": 0
+        }
+      }
+    },
+    {
+      "id": "inlay-forwarded-returns",
+      "method": "textDocument/inlayHint",
+      "path": "editor.go",
+      "description": "Named return slots with bare return, explicit expressions and a multi-result call.",
+      "range": {
+        "start": {
+          "line": 187,
+          "character": 0
+        },
+        "end": {
+          "line": 201,
+          "character": 0
+        }
+      }
+    },
+    {
+      "id": "inlay-constants",
+      "method": "textDocument/inlayHint",
+      "path": "inlay.go",
+      "description": "iota and inherited expressions, literal suppression, hexadecimal and arithmetic spellings, string len, constant references and control-character rejection.",
+      "range": {
+        "start": {
+          "line": 70,
+          "character": 0
+        },
+        "end": {
+          "line": 84,
+          "character": 0
+        }
+      }
+    },
+    {
+      "id": "inlay-recovery",
+      "method": "textDocument/inlayHint",
+      "path": "recovery.go",
+      "description": "Constant cycle and too many elements for an unkeyed struct literal.",
+      "range": {
+        "start": {
+          "line": 5,
+          "character": 0
+        },
+        "end": {
+          "line": 19,
+          "character": 15
+        }
+      }
+    },
+    {
+      "id": "inlay-utf16-range",
+      "method": "textDocument/inlayHint",
+      "path": "inlay.go",
+      "description": "A half-open range containing only the second argument after a non-BMP character.",
+      "range": {
+        "start": {
+          "line": 49,
+          "character": 21
+        },
+        "end": {
+          "line": 49,
+          "character": 22
+        }
+      }
+    },
+    {
+      "id": "folding-crlf",
+      "method": "textDocument/foldingRange",
+      "path": "folding_crlf.go",
+      "description": "Imports, blocks, switches and clauses, grouped specs, types, composites, comments, raw string and nested custom regions in CRLF."
+    },
+    {
+      "id": "folding-editor",
+      "method": "textDocument/foldingRange",
+      "path": "editor.go",
+      "description": "Functions, single-statement blocks, control flow, declarations, grouped comments and import list with LF."
+    },
+    {
+      "id": "folding-recovery",
+      "method": "textDocument/foldingRange",
+      "path": "recovery.go",
+      "description": "Fold construction with intact structures alongside an unclosed function at EOF."
+    },
+    {
+      "id": "folding-netbeans",
+      "method": "textDocument/foldingRange",
+      "path": "folding_netbeans.go",
+      "description": "NetBeans-only regions with nested markers and a contiguous comment group sharing a region range."
+    }
+  ]
+}

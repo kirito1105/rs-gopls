@@ -40,8 +40,8 @@ use protocol::{
     RequestResult, file_path, invalid_params, path_uri, send_notification, send_response,
 };
 use scheduler::{Scheduler, WorkspaceResult};
-use semantic::Engine;
 use semantic::completion::CompletionClientCapabilities;
+use semantic::{EditorFoldingOptions, Engine};
 use workspace::path_key;
 
 #[cfg(test)]
@@ -61,6 +61,7 @@ struct Running {
     hierarchical_document_symbols: bool,
     diagnostic_updates: DiagnosticUpdates,
     completion_capabilities: CompletionClientCapabilities,
+    folding_options: EditorFoldingOptions,
     scheduler: Scheduler,
 }
 
@@ -269,6 +270,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 &mut running.scheduler,
                 running.hierarchical_document_symbols,
                 running.completion_capabilities,
+                running.folding_options,
                 Request { id, method, params },
             );
         }
@@ -297,6 +299,12 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
     let completion_capabilities = CompletionClientCapabilities::from_initialize(&params);
     let document = params.capabilities.text_document.as_ref();
+    let folding_options = EditorFoldingOptions {
+        line_folding_only: document
+            .and_then(|document| document.folding_range.as_ref())
+            .and_then(|folding| folding.line_folding_only)
+            .unwrap_or_default(),
+    };
     let pull = document.and_then(|d| d.diagnostic.as_ref()).is_some();
     let publish = document
         .and_then(|d| d.publish_diagnostics.as_ref())
@@ -349,6 +357,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
             diagnostic_updates,
             engine: Engine::with_roots(roots),
             completion_capabilities,
+            folding_options,
             scheduler: Scheduler::default(),
         },
         result,

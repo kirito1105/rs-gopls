@@ -339,21 +339,22 @@ mod tests {
     use anyhow::anyhow;
     use lsp_server::{Message, Notification, Request, Response, ResponseError};
     use lsp_types::{
-        FileChangeType,
+        FileChangeType, Uri,
         notification::{
             Cancel, DidChangeTextDocument, DidChangeWatchedFiles, DidChangeWorkspaceFolders,
-            DidOpenTextDocument, Exit, Initialized, Notification as _,
+            DidCloseTextDocument, DidOpenTextDocument, Exit, Initialized, Notification as _,
         },
         request::{
-            GotoImplementation, HoverRequest, Initialize, References, Request as _, Shutdown,
-            SignatureHelpRequest, WorkspaceSymbolRequest,
+            DocumentHighlightRequest, FoldingRangeRequest, GotoImplementation, HoverRequest,
+            Initialize, InlayHintRequest, References, Request as _, SemanticTokensFullRequest,
+            Shutdown, SignatureHelpRequest, WorkspaceSymbolRequest,
         },
     };
     use serde_json::{Value, json};
 
     use super::*;
     use crate::protocol::path_uri;
-    use crate::test_support::TestProject;
+    use crate::test_support::{TestProject, TestSession};
     use crate::{State, handle_notification, handle_request, serve};
 
     struct Session {
@@ -1136,6 +1137,16 @@ mod tests {
                 },
                 "documentSymbolProvider": true,
                 "workspaceSymbolProvider": true,
+                "semanticTokensProvider": {
+                    "legend": {
+                        "tokenTypes": ["namespace", "type", "struct", "interface", "typeParameter", "parameter", "variable", "property", "function", "method", "label"],
+                        "tokenModifiers": ["declaration", "readonly", "defaultLibrary", "modification"]
+                    },
+                    "full": true
+                },
+                "documentHighlightProvider": true,
+                "inlayHintProvider": true,
+                "foldingRangeProvider": true,
                 "diagnosticProvider": { "identifier": "rs-gopls", "interFileDependencies": true, "workspaceDiagnostics": false },
                 "callHierarchyProvider": true,
                 "typeHierarchyProvider": true,
@@ -1191,5 +1202,245 @@ mod tests {
             serve(&server).unwrap_err().to_string(),
             "exit arrived before shutdown"
         );
+    }
+
+    const EDITOR_SOURCE: &str = concat!(
+        "package sample\r\n",
+        "func plus(value int) int {\r\n",
+        "\treturn value\r\n",
+        "}\r\n",
+        "func use() {\r\n",
+        "\t_ = \"\u{1f600}\"; _ = plus(1)\r\n",
+        "}\r\n",
+    );
+
+    fn editor_session(project: &TestProject, lines_only: Option<bool>) -> (TestSession, State) {
+        let session = TestSession::new();
+        let mut state = State::Starting;
+        let capabilities = lines_only.map_or_else(
+            || json!({}),
+            |lines_only| json!({ "textDocument": { "foldingRange": { "lineFoldingOnly": lines_only } } }),
+        );
+        session.request(
+            0,
+            Initialize::METHOD,
+            json!({ "rootUri": path_uri(&project.root).unwrap(), "capabilities": capabilities }),
+            |connection, request| handle_request(connection, &mut state, request),
+        );
+        assert!(session.response(0).error.is_none());
+        (session, state)
+    }
+
+    fn editor_features(
+        session: &TestSession,
+        state: &mut State,
+        uri: &Uri,
+        first_id: i32,
+    ) -> [Value; 4] {
+        let document = json!({ "uri": uri });
+        let requests = [
+            (
+                SemanticTokensFullRequest::METHOD,
+                json!({ "textDocument": document }),
+            ),
+            (
+                DocumentHighlightRequest::METHOD,
+                json!({ "textDocument": document, "position": { "line": 1, "character": 10 } }),
+            ),
+            (
+                InlayHintRequest::METHOD,
+                json!({ "textDocument": document, "range": {
+                    "start": { "line": 0, "character": 0 }, "end": { "line": 6, "character": 1 }
+                } }),
+            ),
+            (
+                FoldingRangeRequest::METHOD,
+                json!({ "textDocument": document }),
+            ),
+        ];
+        for (index, (method, params)) in requests.into_iter().enumerate() {
+            session.request(
+                first_id + index as i32,
+                method,
+                params,
+                |connection, request| handle_request(connection, state, request),
+            );
+        }
+        let results = std::array::from_fn(|index| {
+            let response = session.response(first_id + index as i32);
+            assert!(response.error.is_none(), "{response:?}");
+            response.result.unwrap()
+        });
+        session.assert_no_messages();
+        results
+    }
+
+    #[test]
+    fn editor_requests_use_utf16_and_negotiate_line_folding() {
+        let project = TestProject::new();
+        let path = project.write("editor.go", EDITOR_SOURCE);
+        let uri = path_uri(&path).unwrap();
+        for lines_only in [None, Some(false), Some(true)] {
+            let (session, mut state) = editor_session(&project, lines_only);
+            let [tokens, highlights, hints, folds] = editor_features(&session, &mut state, &uri, 1);
+            let mut line = 0;
+            let mut character = 0;
+            let mut found_call = false;
+            let data = tokens["data"].as_array().unwrap();
+            assert_eq!(data.len() % 5, 0);
+            for token in data.chunks_exact(5) {
+                let delta_line = token[0].as_u64().unwrap();
+                line += delta_line;
+                if delta_line != 0 {
+                    character = 0;
+                }
+                character += token[1].as_u64().unwrap();
+                if line == 5 && character == 15 {
+                    assert_eq!(&token[2..], &[json!(4), json!(8), json!(0)]);
+                    found_call = true;
+                }
+            }
+            assert!(found_call, "{tokens}");
+            assert_eq!(
+                highlights,
+                json!([
+                    { "range": { "start": { "line": 1, "character": 10 }, "end": { "line": 1, "character": 15 } }, "kind": 2 },
+                    { "range": { "start": { "line": 2, "character": 8 }, "end": { "line": 2, "character": 13 } }, "kind": 2 }
+                ])
+            );
+            assert_eq!(
+                hints,
+                json!([
+                    { "position": { "line": 5, "character": 20 }, "label": "value:", "kind": 2, "paddingRight": true }
+                ])
+            );
+            let expected = if lines_only == Some(true) {
+                json!([{ "startLine": 1, "endLine": 2 }, { "startLine": 4, "endLine": 5 }])
+            } else {
+                json!([
+                    { "startLine": 1, "startCharacter": 25, "endLine": 3, "endCharacter": 1 },
+                    { "startLine": 4, "startCharacter": 11, "endLine": 6, "endCharacter": 1 }
+                ])
+            };
+            assert_eq!(folds, expected);
+        }
+    }
+
+    #[test]
+    fn editor_requests_use_unsaved_snapshots_and_restore_disk_after_close() {
+        let project = TestProject::new();
+        let path = project.write("editor.go", EDITOR_SOURCE);
+        let uri = path_uri(&path).unwrap();
+        let (session, mut state) = editor_session(&project, None);
+        let disk = editor_features(&session, &mut state, &uri, 1);
+
+        let State::Running(running) = &mut state else {
+            unreachable!()
+        };
+        session.open_go_document(&uri, EDITOR_SOURCE, |connection, notification| {
+            handle_notification(
+                connection,
+                running,
+                &notification.method,
+                notification.params,
+            )
+        });
+        assert_eq!(editor_features(&session, &mut state, &uri, 5), disk);
+
+        let edited = EDITOR_SOURCE
+            .replace("value", "edited")
+            .replace("\treturn edited\r\n}", "\treturn edited }\r\n")
+            + "var unfinished =\r\n";
+        let State::Running(running) = &mut state else {
+            unreachable!()
+        };
+        session.replace_document(&uri, 2, &edited, |connection, notification| {
+            handle_notification(
+                connection,
+                running,
+                &notification.method,
+                notification.params,
+            )
+        });
+        let unsaved = editor_features(&session, &mut state, &uri, 9);
+        assert!(
+            unsaved
+                .iter()
+                .zip(disk.iter())
+                .all(|(draft, original)| draft != original)
+        );
+        assert_eq!(unsaved[2][0]["label"], "edited:");
+        assert_eq!(unsaved[3][0]["endLine"], 2);
+
+        let saved = EDITOR_SOURCE.replace("value", "savedArg");
+        std::fs::write(&path, &saved).unwrap();
+        let State::Running(running) = &mut state else {
+            unreachable!()
+        };
+        session.notify(
+            DidCloseTextDocument::METHOD,
+            json!({ "textDocument": { "uri": uri } }),
+            |connection, notification| {
+                handle_notification(
+                    connection,
+                    running,
+                    &notification.method,
+                    notification.params,
+                )
+            },
+        );
+        let closed = editor_features(&session, &mut state, &uri, 13);
+        assert_eq!(closed[2][0]["label"], "savedArg:");
+        assert_eq!(closed[3][0]["endLine"], 3);
+        let (fresh, mut fresh_state) = editor_session(&project, None);
+        assert_eq!(closed, editor_features(&fresh, &mut fresh_state, &uri, 1));
+    }
+
+    #[test]
+    fn editor_requests_finish_while_the_package_graph_is_loading() {
+        let project = TestProject::new();
+        let path = project.write("editor.go", EDITOR_SOURCE);
+        let uri = path_uri(&path).unwrap();
+        let (session, mut state) = editor_session(&project, None);
+        let State::Running(running) = &mut state else {
+            unreachable!()
+        };
+        let load = running.engine.workspace_load();
+        running.scheduler.loading = Some(load);
+        let paused = editor_features(&session, &mut state, &uri, 1);
+        assert!(
+            paused
+                .iter()
+                .enumerate()
+                .all(|(index, value)| if index == 0 {
+                    value["data"]
+                        .as_array()
+                        .is_some_and(|data| !data.is_empty())
+                } else {
+                    value.as_array().is_some_and(|data| !data.is_empty())
+                })
+        );
+
+        let State::Running(running) = &mut state else {
+            unreachable!()
+        };
+        assert!(running.scheduler.pending.is_empty());
+        assert!(running.scheduler.requested.is_none());
+        assert_eq!(running.scheduler.loading, Some(load));
+        running
+            .workspace_loaded(
+                session.server(),
+                WorkspaceResult {
+                    load,
+                    result: Ok(project.workspace(&["editor.go"], load.include_tests)),
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            running.engine.snapshot().active_graph(false),
+            QueryProgress::Ready(_)
+        ));
+
+        assert_eq!(paused, editor_features(&session, &mut state, &uri, 5));
     }
 }
