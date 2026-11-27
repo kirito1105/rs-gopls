@@ -1,0 +1,420 @@
+{
+  "build": "GO-263.7307.354",
+  "cases": [
+    {
+      "case": "local",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenamePsiElementProcessor"
+      ],
+      "selected": [
+        "api/api.go@179"
+      ],
+      "declaration": [
+        "api/api.go@179"
+      ],
+      "changes": [
+        {
+          "path": "api/api.go",
+          "beforeSha256": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+          "afterSha256": "b47aca5709d904a178bf2611c7251dc4c251219ab3d884af3163ea786087b1c6",
+          "diff": "--- a/api/api.go\n+++ b/api/api.go\n@@ -8,10 +8,10 @@\n \n // Count sums the local value and the map entry addressed by that value.\n func Count(seed int) int {\n-\tvalue := seed\n-\tvalue, extra := value+1, 1\n-\tbyKey := map[int]int{value: 8}\n-\tadd := func() int { return value + byKey[value] }\n+\tamount := seed\n+\tamount, extra := amount+1, 1\n+\tbyKey := map[int]int{amount: 8}\n+\tadd := func() int { return amount + byKey[amount] }\n \treturn add() + extra\n }\n \n"
+        }
+      ],
+      "matchesPlannedFiles": true,
+      "goTest": {
+        "exitCode": 0,
+        "output": "ok  \texample.test/renames/api\t0.838s\nok  \texample.test/renames/client\t0.828s\n"
+      }
+    },
+    {
+      "case": "field",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenameFieldDefinitionProcessor"
+      ],
+      "selected": [
+        "api/api.go@33"
+      ],
+      "tag": [
+        "keep existing tag; optional tag contribution omitted"
+      ],
+      "declaration": [
+        "api/api.go@33"
+      ],
+      "changes": [
+        {
+          "path": "api/api.go",
+          "beforeSha256": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+          "afterSha256": "b58a10df5a5451ce06b8ba864a4b55aceb2dc50399a89644758d35524f06af19",
+          "diff": "--- a/api/api.go\n+++ b/api/api.go\n@@ -1,7 +1,7 @@\n package api\n \n type Item struct {\n-\tLabel int `json:\"Label\"`\n+\tScore int `json:\"Label\"`\n }\n \n const Bonus = 5\n"
+        },
+        {
+          "path": "client/alias.go",
+          "beforeSha256": "9b36c30e0d362384870c9c46b4b643828fb34c46196e82fe2a150cabaae94afa",
+          "afterSha256": "af2e9aaae4fb78e1383c890cd9c1c598a64da869dda15cdac021ab57a9e83c4f",
+          "diff": "--- a/client/alias.go\n+++ b/client/alias.go\n@@ -3,5 +3,5 @@\n import helper \"example.test/renames/api\"\n \n func Alias() int {\n-\treturn helper.Item{Label: helper.Bonus}.Label\n+\treturn helper.Item{Score: helper.Bonus}.Score\n }\n"
+        },
+        {
+          "path": "client/client.go",
+          "beforeSha256": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+          "afterSha256": "1314c19cef5a4e3b7e520d5719f67c59715d29920ccc5c4c91b3be68fd201a3a",
+          "diff": "--- a/client/client.go\n+++ b/client/client.go\n@@ -6,7 +6,7 @@\n const description = \"Label Bonus\"\n \n func Summary(item api.Item) int {\n-\treturn item.Label + api.Bonus\n+\treturn item.Score + api.Bonus\n }\n \n func Clicks(first api.First, second api.Second, both *api.Both) int {\n"
+        },
+        {
+          "path": "client/client_test.go",
+          "beforeSha256": "5537d69fd6b6966246890beef411b02612cb6b3fb9c3b2145bc2ce559c771ff6",
+          "afterSha256": "ec4bb6f9bb208106b6baf7db63a9f47deeb66d6b9345477a1385aecc4f12b6f5",
+          "diff": "--- a/client/client_test.go\n+++ b/client/client_test.go\n@@ -8,7 +8,7 @@\n )\n \n func TestExports(t *testing.T) {\n-\tif got := client.Summary(api.Item{Label: 2}); got != 7 {\n+\tif got := client.Summary(api.Item{Score: 2}); got != 7 {\n \t\tt.Fatalf(\"Summary = %d\", got)\n \t}\n \tif got := client.Clicks(api.Both{}, api.Both{}, &api.Both{}); got != 3 {\n"
+        }
+      ],
+      "matchesPlannedFiles": true,
+      "goTest": {
+        "exitCode": 0,
+        "output": "ok  \texample.test/renames/api\t0.750s\nok  \texample.test/renames/client\t0.556s\n"
+      }
+    },
+    {
+      "case": "exported",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenamePsiElementProcessor"
+      ],
+      "selected": [
+        "api/api.go@67"
+      ],
+      "declaration": [
+        "api/api.go@67"
+      ],
+      "changes": [
+        {
+          "path": "api/api.go",
+          "beforeSha256": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+          "afterSha256": "a1300fb6d64cc284f2363fb444006af9eee1433442d11c1510de113d73ebaaf5",
+          "diff": "--- a/api/api.go\n+++ b/api/api.go\n@@ -4,7 +4,7 @@\n \tLabel int `json:\"Label\"`\n }\n \n-const Bonus = 5\n+const Award = 5\n \n // Count sums the local value and the map entry addressed by that value.\n func Count(seed int) int {\n"
+        },
+        {
+          "path": "client/alias.go",
+          "beforeSha256": "9b36c30e0d362384870c9c46b4b643828fb34c46196e82fe2a150cabaae94afa",
+          "afterSha256": "dc85746363337055df359f10719f952889baafa1370e56098513053fe10668ed",
+          "diff": "--- a/client/alias.go\n+++ b/client/alias.go\n@@ -3,5 +3,5 @@\n import helper \"example.test/renames/api\"\n \n func Alias() int {\n-\treturn helper.Item{Label: helper.Bonus}.Label\n+\treturn helper.Item{Label: helper.Award}.Label\n }\n"
+        },
+        {
+          "path": "client/client.go",
+          "beforeSha256": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+          "afterSha256": "0b73382ae354b33b9ceeb0e104df1fd4ed5bdc0d563be40f2af6635d85fa0856",
+          "diff": "--- a/client/client.go\n+++ b/client/client.go\n@@ -6,7 +6,7 @@\n const description = \"Label Bonus\"\n \n func Summary(item api.Item) int {\n-\treturn item.Label + api.Bonus\n+\treturn item.Label + api.Award\n }\n \n func Clicks(first api.First, second api.Second, both *api.Both) int {\n"
+        }
+      ],
+      "matchesPlannedFiles": true,
+      "goTest": {
+        "exitCode": 0,
+        "output": "ok  \texample.test/renames/api\t0.652s\nok  \texample.test/renames/client\t0.641s\n"
+      }
+    },
+    {
+      "case": "explicit-import",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenameImportSpecProcessor"
+      ],
+      "selected": [
+        "client/alias.go@23"
+      ],
+      "declaration": [
+        "client/alias.go@23"
+      ],
+      "changes": [
+        {
+          "path": "client/alias.go",
+          "beforeSha256": "9b36c30e0d362384870c9c46b4b643828fb34c46196e82fe2a150cabaae94afa",
+          "afterSha256": "d59a35cffe9cb70ca11d7e43c44c345494711dc284183ee4ed1d6a3de1d56402",
+          "diff": "--- a/client/alias.go\n+++ b/client/alias.go\n@@ -1,7 +1,7 @@\n package client\n \n-import helper \"example.test/renames/api\"\n+import model \"example.test/renames/api\"\n \n func Alias() int {\n-\treturn helper.Item{Label: helper.Bonus}.Label\n+\treturn model.Item{Label: model.Bonus}.Label\n }\n"
+        }
+      ],
+      "matchesPlannedFiles": true,
+      "goTest": {
+        "exitCode": 0,
+        "output": "ok  \texample.test/renames/api\t0.598s\nok  \texample.test/renames/client\t0.625s\n"
+      }
+    },
+    {
+      "case": "implicit-import",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenamePackageProcessor"
+      ],
+      "selected": [
+        "package api [api]"
+      ],
+      "scope": [
+        "package name only; keep directory and import paths"
+      ],
+      "scopeSource": [
+        "programmatic omission of optional directory contribution"
+      ],
+      "declaration": [
+        "package api [api]"
+      ],
+      "changes": [
+        {
+          "path": "api/api.go",
+          "beforeSha256": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+          "afterSha256": "dab283349361f0a3d3859dd8872262df79578c9173ed1ac18649f042d04b04bc",
+          "diff": "--- a/api/api.go\n+++ b/api/api.go\n@@ -1,4 +1,4 @@\n-package api\n+package model\n \n type Item struct {\n \tLabel int `json:\"Label\"`\n"
+        },
+        {
+          "path": "api/api_test.go",
+          "beforeSha256": "0d5a8b7df4a659fa536d768297a53c995f16a0f7d46a8d79586a42c44732cbaf",
+          "afterSha256": "3db31419004c2d337a3c2945e445b27106e990177cb664c541636b6d830d26b7",
+          "diff": "--- a/api/api_test.go\n+++ b/api/api_test.go\n@@ -1,4 +1,4 @@\n-package api\n+package model\n \n import \"testing\"\n \n"
+        },
+        {
+          "path": "api/contracts.go",
+          "beforeSha256": "9e986f3598666479ab8484c6d726d8811f6b9ae699c29142aeef9962ad6a0ce5",
+          "afterSha256": "2a54fffdb3b40cf6a3eb93844d1916d4627652c28965c75267558da1df328c93",
+          "diff": "--- a/api/contracts.go\n+++ b/api/contracts.go\n@@ -1,4 +1,4 @@\n-package api\n+package model\n \n type First interface {\n \tClick() int\n"
+        },
+        {
+          "path": "client/client.go",
+          "beforeSha256": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+          "afterSha256": "d2f3c57308f3e11f4e2961a8a5094a92d24ffd627a86415df2510705ac66f105",
+          "diff": "--- a/client/client.go\n+++ b/client/client.go\n@@ -5,14 +5,14 @@\n // Label and Bonus are literal text in this example.\n const description = \"Label Bonus\"\n \n-func Summary(item api.Item) int {\n-\treturn item.Label + api.Bonus\n+func Summary(item model.Item) int {\n+\treturn item.Label + model.Bonus\n }\n \n-func Clicks(first api.First, second api.Second, both *api.Both) int {\n+func Clicks(first model.First, second model.Second, both *model.Both) int {\n \treturn first.Click() + second.Click() + both.Click()\n }\n \n-func Promoted(value api.Extended, wrapped api.Wrapped) int {\n+func Promoted(value model.Extended, wrapped model.Wrapped) int {\n \treturn value.Click() + wrapped.Click()\n }\n"
+        },
+        {
+          "path": "client/client_test.go",
+          "beforeSha256": "5537d69fd6b6966246890beef411b02612cb6b3fb9c3b2145bc2ce559c771ff6",
+          "afterSha256": "dccc4a91834979fc3e199702232acfe6396cc1bc9dcc3def5d003b208417e3ed",
+          "diff": "--- a/client/client_test.go\n+++ b/client/client_test.go\n@@ -8,10 +8,10 @@\n )\n \n func TestExports(t *testing.T) {\n-\tif got := client.Summary(api.Item{Label: 2}); got != 7 {\n+\tif got := client.Summary(model.Item{Label: 2}); got != 7 {\n \t\tt.Fatalf(\"Summary = %d\", got)\n \t}\n-\tif got := client.Clicks(api.Both{}, api.Both{}, &api.Both{}); got != 3 {\n+\tif got := client.Clicks(model.Both{}, model.Both{}, &model.Both{}); got != 3 {\n \t\tt.Fatalf(\"Clicks = %d\", got)\n \t}\n }\n"
+        }
+      ],
+      "matchesPlannedFiles": false,
+      "goTest": {
+        "exitCode": 0,
+        "output": "ok  \texample.test/renames/api\t0.650s\nok  \texample.test/renames/client\t0.735s\n"
+      }
+    },
+    {
+      "case": "capture-existing",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenamePsiElementProcessor"
+      ],
+      "selected": [
+        "api/api.go@375"
+      ],
+      "declaration": [
+        "api/api.go@375"
+      ],
+      "changes": [
+        {
+          "path": "api/api.go",
+          "beforeSha256": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+          "afterSha256": "5dac1d184adcc2c11aa80ff618221d2c60a17c20e13a6afde211728e24f48a62",
+          "diff": "--- a/api/api.go\n+++ b/api/api.go\n@@ -18,8 +18,8 @@\n var total = 7\n \n func Capture(input int) int {\n-\tresult := input\n-\treturn result + total\n+\ttotal := input\n+\treturn total + total\n }\n \n func Inner(seed int) int {\n"
+        }
+      ],
+      "matchesPlannedFiles": false,
+      "goTest": {
+        "exitCode": 1,
+        "output": "--- FAIL: TestCounts (0.00s)\n    api_test.go:10: Capture(2) = 4\nFAIL\nFAIL\texample.test/renames/api\t0.822s\nok  \texample.test/renames/client\t0.822s\nFAIL\n"
+      }
+    },
+    {
+      "case": "capture-target",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenamePsiElementProcessor"
+      ],
+      "selected": [
+        "api/api.go@428"
+      ],
+      "declaration": [
+        "api/api.go@428"
+      ],
+      "changes": [
+        {
+          "path": "api/api.go",
+          "beforeSha256": "7ee1928ecdf5ffd3a27337aa33ab4ae9093e3f05b00fb6aa896f5cda9aa4db57",
+          "afterSha256": "1fb9cf702e23567163858b32ec43771e259b668e2d51e03c11145e2207405623",
+          "diff": "--- a/api/api.go\n+++ b/api/api.go\n@@ -22,9 +22,9 @@\n \treturn result + total\n }\n \n-func Inner(seed int) int {\n-\tif active := seed + 1; active > 0 {\n-\t\treturn seed + active\n+func Inner(active int) int {\n+\tif active := active + 1; active > 0 {\n+\t\treturn active + active\n \t}\n-\treturn seed\n+\treturn active\n }\n"
+        }
+      ],
+      "matchesPlannedFiles": false,
+      "goTest": {
+        "exitCode": 1,
+        "output": "--- FAIL: TestCounts (0.00s)\n    api_test.go:13: Inner(3) = 8\nFAIL\nFAIL\texample.test/renames/api\t0.663s\nok  \texample.test/renames/client\t0.795s\nFAIL\n"
+      }
+    },
+    {
+      "case": "visibility",
+      "outcome": "conflict",
+      "processor": [
+        "com.goide.refactor.rename.GoRenamePsiElementProcessor"
+      ],
+      "selected": [
+        "api/api.go@67"
+      ],
+      "declaration": [
+        "api/api.go@67"
+      ],
+      "conflict": [
+        "未导出的常量 <b><code>Bonus</code></b>将不再可以从函数 <b><code>Summary</code></b>访问",
+        "未导出的常量 <b><code>Bonus</code></b>将不再可以从函数 <b><code>Alias</code></b>访问"
+      ],
+      "changes": [],
+      "matchesPlannedFiles": true
+    },
+    {
+      "case": "method-first",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenameMethodProcessor"
+      ],
+      "scope": [
+        "interface specification and implementations"
+      ],
+      "scopeSource": [
+        "programmatic method chooser callback"
+      ],
+      "selected": [
+        "api/contracts.go@37"
+      ],
+      "declaration": [
+        "api/contracts.go@37",
+        "api/contracts.go@183",
+        "api/contracts.go@302"
+      ],
+      "changes": [
+        {
+          "path": "api/contracts.go",
+          "beforeSha256": "9e986f3598666479ab8484c6d726d8811f6b9ae699c29142aeef9962ad6a0ce5",
+          "afterSha256": "25d4fbd2e6f42d73f4fce31618c633bfc884bbb9a865f6c487a04855760e1f78",
+          "diff": "--- a/api/contracts.go\n+++ b/api/contracts.go\n@@ -1,7 +1,7 @@\n package api\n \n type First interface {\n-\tClick() int\n+\tPress() int\n \tOne()\n }\n \n@@ -17,13 +17,13 @@\n \n type Both struct{}\n \n-func (Both) Click() int { return 1 }\n+func (Both) Press() int { return 1 }\n func (Both) One()       {}\n func (Both) Two()       {}\n \n type Pointer struct{}\n \n-func (*Pointer) Click() int { return 2 }\n+func (*Pointer) Press() int { return 2 }\n func (*Pointer) One()       {}\n \n type Wrapped struct{ Both }\n"
+        },
+        {
+          "path": "client/client.go",
+          "beforeSha256": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+          "afterSha256": "836ac059a5c5982139be06a7e2b0e83d80f348ed5cacaf6ef47f4c397e0657b3",
+          "diff": "--- a/client/client.go\n+++ b/client/client.go\n@@ -10,9 +10,9 @@\n }\n \n func Clicks(first api.First, second api.Second, both *api.Both) int {\n-\treturn first.Click() + second.Click() + both.Click()\n+\treturn first.Press() + second.Click() + both.Press()\n }\n \n func Promoted(value api.Extended, wrapped api.Wrapped) int {\n-\treturn value.Click() + wrapped.Click()\n+\treturn value.Press() + wrapped.Press()\n }\n"
+        }
+      ],
+      "matchesPlannedFiles": false,
+      "goTest": {
+        "exitCode": 1,
+        "output": "ok  \texample.test/renames/api\t0.512s\nFAIL\texample.test/renames/client [build failed]\nFAIL\n# example.test/renames/client_test [example.test/renames/client.test]\nclient\\client_test.go:14:38: cannot use api.Both{} (value of struct type api.Both) as api.Second value in argument to client.Clicks: api.Both does not implement api.Second (missing method Click)\n"
+      }
+    },
+    {
+      "case": "method-second",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenameMethodProcessor"
+      ],
+      "scope": [
+        "interface specification and implementations"
+      ],
+      "scopeSource": [
+        "programmatic method chooser callback"
+      ],
+      "selected": [
+        "api/contracts.go@84"
+      ],
+      "declaration": [
+        "api/contracts.go@84",
+        "api/contracts.go@183"
+      ],
+      "changes": [
+        {
+          "path": "api/contracts.go",
+          "beforeSha256": "9e986f3598666479ab8484c6d726d8811f6b9ae699c29142aeef9962ad6a0ce5",
+          "afterSha256": "789973d2c047c71cab15cd2d039801926ee817b88de585e88cfc84dc3bd6e0e9",
+          "diff": "--- a/api/contracts.go\n+++ b/api/contracts.go\n@@ -6,7 +6,7 @@\n }\n \n type Second interface {\n-\tClick() int\n+\tPress() int\n \tTwo()\n }\n \n@@ -17,7 +17,7 @@\n \n type Both struct{}\n \n-func (Both) Click() int { return 1 }\n+func (Both) Press() int { return 1 }\n func (Both) One()       {}\n func (Both) Two()       {}\n \n"
+        },
+        {
+          "path": "client/client.go",
+          "beforeSha256": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+          "afterSha256": "e17acdfb8f671fbccb1c7af0303c9a81a770e41bfcbfff27abaa119cd3510c15",
+          "diff": "--- a/client/client.go\n+++ b/client/client.go\n@@ -10,9 +10,9 @@\n }\n \n func Clicks(first api.First, second api.Second, both *api.Both) int {\n-\treturn first.Click() + second.Click() + both.Click()\n+\treturn first.Click() + second.Press() + both.Press()\n }\n \n func Promoted(value api.Extended, wrapped api.Wrapped) int {\n-\treturn value.Click() + wrapped.Click()\n+\treturn value.Click() + wrapped.Press()\n }\n"
+        }
+      ],
+      "matchesPlannedFiles": false,
+      "goTest": {
+        "exitCode": 1,
+        "output": "ok  \texample.test/renames/api\t0.886s\nFAIL\texample.test/renames/client [build failed]\nFAIL\n# example.test/renames/client_test [example.test/renames/client.test]\nclient\\client_test.go:14:26: cannot use api.Both{} (value of struct type api.Both) as api.First value in argument to client.Clicks: api.Both does not implement api.First (missing method Click)\n"
+      }
+    },
+    {
+      "case": "method-concrete",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenameMethodProcessor"
+      ],
+      "scope": [
+        "interface specification and implementations"
+      ],
+      "scopeSource": [
+        "programmatic method chooser callback"
+      ],
+      "selected": [
+        "api/contracts.go@37"
+      ],
+      "declaration": [
+        "api/contracts.go@37",
+        "api/contracts.go@183",
+        "api/contracts.go@302"
+      ],
+      "changes": [
+        {
+          "path": "api/contracts.go",
+          "beforeSha256": "9e986f3598666479ab8484c6d726d8811f6b9ae699c29142aeef9962ad6a0ce5",
+          "afterSha256": "25d4fbd2e6f42d73f4fce31618c633bfc884bbb9a865f6c487a04855760e1f78",
+          "diff": "--- a/api/contracts.go\n+++ b/api/contracts.go\n@@ -1,7 +1,7 @@\n package api\n \n type First interface {\n-\tClick() int\n+\tPress() int\n \tOne()\n }\n \n@@ -17,13 +17,13 @@\n \n type Both struct{}\n \n-func (Both) Click() int { return 1 }\n+func (Both) Press() int { return 1 }\n func (Both) One()       {}\n func (Both) Two()       {}\n \n type Pointer struct{}\n \n-func (*Pointer) Click() int { return 2 }\n+func (*Pointer) Press() int { return 2 }\n func (*Pointer) One()       {}\n \n type Wrapped struct{ Both }\n"
+        },
+        {
+          "path": "client/client.go",
+          "beforeSha256": "c88134d05823136d4c5eb20445ec0a1a264eb6c156c84769a69adef7b108cd04",
+          "afterSha256": "836ac059a5c5982139be06a7e2b0e83d80f348ed5cacaf6ef47f4c397e0657b3",
+          "diff": "--- a/client/client.go\n+++ b/client/client.go\n@@ -10,9 +10,9 @@\n }\n \n func Clicks(first api.First, second api.Second, both *api.Both) int {\n-\treturn first.Click() + second.Click() + both.Click()\n+\treturn first.Press() + second.Click() + both.Press()\n }\n \n func Promoted(value api.Extended, wrapped api.Wrapped) int {\n-\treturn value.Click() + wrapped.Click()\n+\treturn value.Press() + wrapped.Press()\n }\n"
+        }
+      ],
+      "matchesPlannedFiles": false,
+      "goTest": {
+        "exitCode": 1,
+        "output": "ok  \texample.test/renames/api\t0.869s\nFAIL\texample.test/renames/client [build failed]\nFAIL\n# example.test/renames/client_test [example.test/renames/client.test]\nclient\\client_test.go:14:38: cannot use api.Both{} (value of struct type api.Both) as api.Second value in argument to client.Clicks: api.Both does not implement api.Second (missing method Click)\n"
+      }
+    },
+    {
+      "case": "method-independent",
+      "outcome": "applied",
+      "processor": [
+        "com.goide.refactor.rename.GoRenameMethodProcessor"
+      ],
+      "scope": [
+        "current method"
+      ],
+      "scopeSource": [
+        "programmatic method chooser callback"
+      ],
+      "selected": [
+        "api/contracts.go@457"
+      ],
+      "declaration": [
+        "api/contracts.go@457"
+      ],
+      "changes": [
+        {
+          "path": "api/contracts.go",
+          "beforeSha256": "9e986f3598666479ab8484c6d726d8811f6b9ae699c29142aeef9962ad6a0ce5",
+          "afterSha256": "063265987fcb530b017cae2e4611b5b22e6eeebf55571ed027b79e2dc8ef5939",
+          "diff": "--- a/api/contracts.go\n+++ b/api/contracts.go\n@@ -32,4 +32,4 @@\n \n type Different struct{}\n \n-func (Different) Click(x int) int { return x }\n+func (Different) Step(x int) int { return x }\n"
+        }
+      ],
+      "matchesPlannedFiles": true,
+      "goTest": {
+        "exitCode": 0,
+        "output": "ok  \texample.test/renames/api\t0.622s\nok  \texample.test/renames/client\t0.624s\n"
+      }
+    }
+  ]
+}

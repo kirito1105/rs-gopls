@@ -2,6 +2,21 @@ use super::super::*;
 
 type MethodLocation = (PathBuf, Range);
 
+/// The declaration selected by a receiver's method set and, for an interface,
+/// the full requirements against which a potential implementer must be tested.
+pub(in crate::semantic) struct RenameMethod {
+    pub(in crate::semantic) location: MethodLocation,
+    pub(in crate::semantic) is_predeclared_error: bool,
+    key: MethodKey,
+    required: Option<InterfaceMethods>,
+}
+
+impl RenameMethod {
+    pub(in crate::semantic) fn is_interface(&self) -> bool {
+        self.required.is_some()
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct MethodKey {
     name: String,
@@ -104,7 +119,87 @@ struct InterfaceContext<'w> {
     substitutions: Substitutions<'w>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MethodQuery {
+    Navigation,
+    Rename,
+}
+
 impl<'w> Resolver<'w, '_> {
+    pub(in crate::semantic) fn rename_method(
+        &mut self,
+        receiver: &TypeIdentity<'w>,
+        name: &str,
+        declaring_package: &Package,
+    ) -> Result<Option<RenameMethod>> {
+        let key = MethodKey::new(name, declaring_package);
+        let receiver = self.with_receiver_parameters(receiver.clone())?;
+        let required = self.interface_methods(&receiver)?;
+        let concrete;
+        let method = if let Some(interface) = &required {
+            let method = interface.methods.get(&key);
+            if method.is_some() || self.direct_member(&receiver, name, false)?.is_some() {
+                anyhow::ensure!(
+                    interface.complete && !interface.has_type_terms,
+                    "incomplete interface method set for {name}"
+                );
+            }
+            method
+        } else {
+            concrete = self.concrete_method(&receiver, &key, true, MethodQuery::Rename)?;
+            concrete.as_ref()
+        };
+        let Some(method) = method else {
+            return Ok(None);
+        };
+        let signature = &method.signature;
+        let is_predeclared_error = name == "Error"
+            && signature.parameters.is_empty()
+            && matches!(signature.results.as_slice(), [TypeShape::Builtin(s)] if s == "string");
+        Ok(Some(RenameMethod {
+            location: method.location.clone(),
+            is_predeclared_error,
+            key,
+            required,
+        }))
+    }
+
+    pub(in crate::semantic) fn rename_satisfies(
+        &mut self,
+        interface: &RenameMethod,
+        candidate: &TypeIdentity<'w>,
+        pointer: bool,
+    ) -> Result<bool> {
+        let Some(required) = interface.required.as_ref() else {
+            return Ok(false);
+        };
+        let mut candidate = candidate.clone();
+        candidate.pointers = u8::from(pointer);
+        Ok(self
+            .match_method_set(
+                required,
+                &candidate,
+                Some(&interface.key),
+                pointer,
+                MethodQuery::Rename,
+            )?
+            .is_some())
+    }
+
+    pub(in crate::semantic) fn rename_value_has_method(
+        &mut self,
+        ty: &TypeIdentity<'w>,
+        method: &RenameMethod,
+    ) -> Result<bool> {
+        if method.is_interface() {
+            return Ok(true);
+        }
+        let ty = self.with_receiver_parameters(ty.clone())?;
+        Ok(self
+            .concrete_method(&ty, &method.key, false, MethodQuery::Rename)?
+            .is_some())
+    }
+
     pub(super) fn concrete_method_shapes(
         &mut self,
         ty: &TypeIdentity<'w>,
@@ -306,6 +401,23 @@ impl<'w> Resolver<'w, '_> {
         selected: Option<&MethodKey>,
         allow_pointer: bool,
     ) -> Result<Option<MatchingMethods>> {
+        self.match_method_set(
+            required,
+            candidate,
+            selected,
+            allow_pointer,
+            MethodQuery::Navigation,
+        )
+    }
+
+    fn match_method_set(
+        &mut self,
+        required: &InterfaceMethods,
+        candidate: &TypeIdentity<'w>,
+        selected: Option<&MethodKey>,
+        allow_pointer: bool,
+        query: MethodQuery,
+    ) -> Result<Option<MatchingMethods>> {
         if !required.complete
             || required.methods.is_empty()
             || selected.is_some_and(|key| !required.methods.contains_key(key))
@@ -327,7 +439,7 @@ impl<'w> Resolver<'w, '_> {
             let method = match &candidate_interface {
                 Some(interface) => interface.methods.get(key),
                 None => {
-                    owned = self.concrete_method(&candidate, key, allow_pointer)?;
+                    owned = self.concrete_method(&candidate, key, allow_pointer, query)?;
                     owned.as_ref()
                 }
             };
@@ -468,6 +580,7 @@ impl<'w> Resolver<'w, '_> {
         candidate: &TypeIdentity<'w>,
         key: &MethodKey,
         allow_pointer: bool,
+        query: MethodQuery,
     ) -> Result<Option<Method>> {
         if candidate.pointers > 1 {
             return Ok(None);
@@ -482,10 +595,24 @@ impl<'w> Resolver<'w, '_> {
                 let mut inherited = false;
                 while let Some(owner_key) = owner.key() {
                     if visited.contains(&owner_key) || visited.len() >= MAX_TYPE_DEPTH {
+                        anyhow::ensure!(
+                            query != MethodQuery::Rename || visited.len() < MAX_TYPE_DEPTH,
+                            "method {} exceeds the supported embedding depth",
+                            key.name
+                        );
                         break;
                     }
                     visited.push(owner_key);
                     let Some((file, details, substitutions)) = self.type_context(&owner)? else {
+                        if query == MethodQuery::Rename
+                            && let TypeKind::Named { name, .. } = &owner.kind
+                            && !is_predeclared_type(name)
+                        {
+                            anyhow::bail!(
+                                "cannot verify embedded type {name} when resolving method {}",
+                                key.name
+                            );
+                        }
                         break;
                     };
 
@@ -506,6 +633,11 @@ impl<'w> Resolver<'w, '_> {
                             ..InterfaceMethods::default()
                         };
                         self.collect_interface_methods(context, &mut methods, &mut Vec::new(), 0)?;
+                        anyhow::ensure!(
+                            query != MethodQuery::Rename || methods.complete,
+                            "incomplete embedded interface when resolving method {}",
+                            key.name
+                        );
                         if methods.complete
                             && let Some(method) = methods.methods.remove(key)
                         {
@@ -517,14 +649,32 @@ impl<'w> Resolver<'w, '_> {
                         break;
                     }
 
+                    if query == MethodQuery::Rename
+                        && !inherited
+                        && key.accessible_from(owner.package)
+                        && let TypeKind::Named { name, .. } = &owner.kind
+                    {
+                        self.check_alias_receivers(&owner, name, key)?;
+                    }
                     if key.accessible_from(owner.package)
                         && let Some(symbol) = self.direct_member(&owner, &key.name, inherited)?
                     {
+                        anyhow::ensure!(
+                            query != MethodQuery::Rename || details.alias.is_none(),
+                            "cannot verify method {} declared on a receiver alias",
+                            key.name
+                        );
                         if found.is_some() || (symbol.symbol.pointer_receiver && !indirect) {
                             return Ok(None);
                         }
                         // Fields block promoted methods at this depth as well.
+                        let is_method = matches!(symbol.symbol.kind, SymbolKind::Function(_));
                         let Some(method) = self.normalized_method(Some(symbol), &owner, 0)? else {
+                            anyhow::ensure!(
+                                query != MethodQuery::Rename || !is_method,
+                                "unable to verify the signature of method {}",
+                                key.name
+                            );
                             return Ok(None);
                         };
                         found = Some(method);
@@ -538,6 +688,11 @@ impl<'w> Resolver<'w, '_> {
                         let Some(mut base) =
                             self.implementation_type(owner.package, &file, base, &substitutions)?
                         else {
+                            anyhow::ensure!(
+                                query != MethodQuery::Rename,
+                                "cannot resolve underlying type when checking method {}",
+                                key.name
+                            );
                             break;
                         };
                         if base.pointers > 1 || (inherited && base.pointers != 0) {
@@ -556,6 +711,11 @@ impl<'w> Resolver<'w, '_> {
                             &substitutions,
                         )?
                         else {
+                            anyhow::ensure!(
+                                query != MethodQuery::Rename,
+                                "cannot resolve embedded type when checking method {}",
+                                key.name
+                            );
                             continue;
                         };
                         let implicit_pointer = indirect || ty.pointers == 1;
@@ -572,7 +732,53 @@ impl<'w> Resolver<'w, '_> {
             }
             frontier = next;
         }
+        anyhow::ensure!(
+            query != MethodQuery::Rename,
+            "method {} exceeds the supported embedding depth",
+            key.name
+        );
         Ok(None)
+    }
+
+    // Go permits methods to be attached through a local non-generic alias.
+    // The declaration index groups them under the written receiver name.
+    // A lookup on the underlying type must not treat such a method as absent.
+    fn check_alias_receivers(
+        &mut self,
+        receiver: &TypeIdentity<'w>,
+        name: &str,
+        key: &MethodKey,
+    ) -> Result<()> {
+        let mut owners = HashSet::new();
+        for file in self.indexes.files(receiver.package).iter() {
+            let symbols = &self.indexes.file_index(file)?.symbols;
+            owners.extend(
+                symbols
+                    .member_owners(&key.name)
+                    .filter(|other| {
+                        *other != name
+                            && symbols
+                                .member(other, &key.name)
+                                .is_some_and(|s| matches!(s.kind, SymbolKind::Function(_)))
+                    })
+                    .map(str::to_owned),
+            );
+        }
+        for alias in owners {
+            if self
+                .type_info(receiver.package, &alias)?
+                .is_some_and(|(_, details)| details.alias.is_some())
+            {
+                let base = self.resolve_alias(TypeIdentity::named(receiver.package, &alias))?;
+                anyhow::ensure!(
+                    base.as_ref()
+                        .is_some_and(|base| base.key() != receiver.key()),
+                    "cannot verify method {} declared through receiver alias {alias}",
+                    key.name
+                );
+            }
+        }
+        Ok(())
     }
 
     fn normalized_method(

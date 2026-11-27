@@ -52,7 +52,7 @@ enum State {
 struct Running {
     engine: Engine,
     watch_files: bool,
-    hierarchical_document_symbols: bool,
+    client_features: dispatch::ClientFeatures,
     scheduler: Scheduler,
 }
 
@@ -189,7 +189,7 @@ fn handle_request(connection: &Connection, state: &mut State, request: Request) 
                 connection,
                 &mut running.engine,
                 &mut running.scheduler,
-                running.hierarchical_document_symbols,
+                running.client_features,
                 Request { id, method, params },
             );
         }
@@ -206,12 +206,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         .as_ref()
         .and_then(|workspace| workspace.did_change_watched_files.as_ref())
         .is_some_and(|watches| watches.dynamic_registration == Some(true));
-    let hierarchical_document_symbols = params
-        .capabilities
-        .text_document
-        .as_ref()
-        .and_then(|document| document.document_symbol.as_ref())
-        .is_some_and(|symbols| symbols.hierarchical_document_symbol_support == Some(true));
+    let client_features = dispatch::ClientFeatures::from_capabilities(&params.capabilities);
     let root = workspace_root(params)?;
     ensure!(
         root.is_dir(),
@@ -230,7 +225,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
         )),
         ..Default::default()
     };
-    dispatch::write_capabilities(&mut capabilities);
+    dispatch::write_capabilities(&mut capabilities, client_features);
     let result = serde_json::to_value(InitializeResult {
         capabilities,
         server_info: Some(ServerInfo {
@@ -241,7 +236,7 @@ fn initialize(params: Value) -> Result<(Running, Value)> {
     Ok((
         Running {
             watch_files,
-            hierarchical_document_symbols,
+            client_features,
             engine: Engine::new(root),
             scheduler: Scheduler::default(),
         },

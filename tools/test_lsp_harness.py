@@ -209,6 +209,13 @@ class LspHarnessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "error failed: .*bad parameters"):
             client.request("error")
 
+    def test_rename_capabilities_can_be_negotiated_independently(self):
+        self.client.initialize(document_changes=True, prepare_rename=False)
+        initialize, _ = self.client.request("transcript")
+        capabilities = initialize["params"]["capabilities"]
+        self.assertEqual(capabilities["workspace"]["workspaceEdit"], {"documentChanges": True})
+        self.assertEqual(capabilities["textDocument"]["rename"], {"prepareSupport": False})
+
     def test_timeout_uses_snapshot_and_late_replies_do_not_match_retries(self):
         client = self.client
         client.timeout = 0.02

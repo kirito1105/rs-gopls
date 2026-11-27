@@ -22,6 +22,7 @@ mod method_sets;
 pub(super) use candidates::InterfaceSources;
 use candidates::{CandidatePackages, PackageProbe, PackageProbeKey};
 use interface_index::{IndexedInterface, InterfaceIndex};
+pub(in crate::semantic) use method_sets::RenameMethod;
 use method_sets::{InterfaceMethods, MethodKey, MethodShape};
 
 type Location = (PathBuf, Range);

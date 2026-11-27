@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {"id":"local", "path":"api/api.go", "anchor":"map[int]int{[[value]]: 8}", "new":"amount", "edits":"local"},
+    {"id":"field", "path":"client/alias.go", "anchor":"Item{[[Label]]:", "new":"Score", "edits":"field"},
+    {"id":"exported", "path":"client/client.go", "anchor":"item.Label + api.[[Bonus]]", "new":"Award", "edits":"exported"},
+    {"id":"explicit-import", "path":"client/alias.go", "anchor":"import [[helper]]", "new":"model", "edits":"explicit-import"},
+    {"id":"implicit-import", "path":"client/client.go", "anchor":"item [[api]].Item", "new":"model", "edits":"implicit-import"},
+    {"id":"capture-existing", "path":"api/api.go", "anchor":"[[result]] := input", "new":"total", "edits":null},
+    {"id":"capture-target", "path":"api/api.go", "anchor":"func Inner([[seed]]", "new":"active", "edits":null},
+    {"id":"visibility", "path":"api/api.go", "anchor":"const [[Bonus]]", "new":"bonus", "edits":null},
+    {"id":"method-first", "path":"api/contracts.go", "anchor":"type First interface {\n\t[[Click]]", "new":"Press", "edits":"method-family"},
+    {"id":"method-second", "path":"api/contracts.go", "anchor":"type Second interface {\n\t[[Click]]", "new":"Press", "edits":"method-family"},
+    {"id":"method-concrete", "path":"api/contracts.go", "anchor":"func (Both) [[Click]]", "new":"Press", "edits":"method-family"},
+    {"id":"method-independent", "path":"api/contracts.go", "anchor":"func (Different) [[Click]]", "new":"Step", "edits":"method-independent"}
+  ],
+  "edits": {
+    "local": {"api/api.go":["[[value]] := seed","[[value]], extra := [[value]]+1","map[int]int{[[value]]:","return [[value]] + byKey[[[value]]]"]},
+    "field": {"api/api.go":["[[Label]] int"],"client/alias.go":["Item{[[Label]]: helper.Bonus}.[[Label]]"],"client/client.go":["item.[[Label]]"],"client/client_test.go":["Item{[[Label]]:"]},
+    "exported": {"api/api.go":["const [[Bonus]]"],"client/alias.go":["helper.[[Bonus]]"],"client/client.go":["api.[[Bonus]]"]},
+    "explicit-import": {"client/alias.go":["import [[helper]]","return [[helper]].Item{Label: [[helper]].Bonus}"]},
+    "implicit-import": {"client/client.go":["import [[]]\"example.test/renames/api\"","item [[api]].Item","item.Label + [[api]].Bonus","first [[api]].First, second [[api]].Second, both *[[api]].Both","value [[api]].Extended, wrapped [[api]].Wrapped"]},
+    "method-family": {"api/contracts.go":["type First interface {\n\t[[Click]]","type Second interface {\n\t[[Click]]","func (Both) [[Click]]","func (*Pointer) [[Click]]"],"client/client.go":["first.[[Click]]() + second.[[Click]]() + both.[[Click]]()","value.[[Click]]() + wrapped.[[Click]]()"]},
+    "method-independent": {"api/contracts.go":["func (Different) [[Click]]"]}
+  }
+}

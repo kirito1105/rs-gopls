@@ -9,6 +9,8 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde::Deserialize;
 
 use crate::workspace_roots::list_roots;
+mod inputs;
+use inputs::PackageInputs;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WorkspaceLoad {
@@ -28,6 +30,7 @@ pub struct Package {
 }
 
 pub struct Workspace {
+    rename_inputs: Option<Result<PackageInputs, String>>,
     roots: Vec<PathBuf>,
     packages: BTreeMap<String, Package>,
     file_packages: HashMap<PathBuf, String>,
@@ -38,12 +41,22 @@ pub struct Workspace {
 
 impl Workspace {
     pub fn load(root: &Path, include_tests: bool) -> Result<Self> {
+        Self::load_graph(root, include_tests, false)
+    }
+
+    pub(crate) fn load_for_rename(root: &Path, include_tests: bool) -> Result<Self> {
+        Self::load_graph(root, include_tests, true)
+    }
+
+    fn load_graph(root: &Path, include_tests: bool, watch_inputs: bool) -> Result<Self> {
         ensure!(
             root.is_dir(),
             "Go workspace root is not a directory: {}",
             root.display()
         );
         let roots = list_roots(root)?;
+        let inputs =
+            watch_inputs.then(|| PackageInputs::capture(root, &roots).map_err(|e| e.to_string()));
         let patterns = roots.iter().map(|directory| {
             if directory == root {
                 "./...".to_owned()
@@ -101,7 +114,9 @@ impl Workspace {
                 )
             })
             .collect();
-        Ok(Self::from_listing(roots, listing, include_tests))
+        let mut workspace = Self::from_listing(roots, listing, include_tests);
+        workspace.rename_inputs = inputs;
+        Ok(workspace)
     }
 
     fn from_listing(roots: Vec<PathBuf>, listing: PackageListing, includes_tests: bool) -> Self {
@@ -126,6 +141,7 @@ impl Workspace {
             }
         }
         Self {
+            rename_inputs: None,
             roots,
             packages,
             file_packages,
@@ -141,11 +157,23 @@ impl Workspace {
         listing: &str,
         includes_tests: bool,
     ) -> Self {
-        Self::from_listing(
+        let mut workspace = Self::from_listing(
             roots.iter().map(|root| path_key(root)).collect(),
             read_packages(listing.as_bytes()).unwrap(),
             includes_tests,
-        )
+        );
+        workspace.rename_inputs = roots
+            .first()
+            .map(|root| PackageInputs::capture(root, roots).map_err(|e| e.to_string()));
+        workspace
+    }
+
+    pub(crate) fn rename_inputs_current(&self) -> Result<bool> {
+        match &self.rename_inputs {
+            None => Ok(false),
+            Some(Ok(inputs)) => inputs.current(&self.roots),
+            Some(Err(reason)) => bail!("cannot verify the package inputs: {reason}"),
+        }
     }
 
     pub(crate) fn builtin_source(&self, root: &Path) -> Result<&Path> {

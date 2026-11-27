@@ -62,6 +62,28 @@ The server provides `textDocument/hover` and `textDocument/signatureHelp` (trigg
 
 `textDocument/documentSymbol` lists the current file's declarations in source order as a nested or flat outline, according to client capabilities. `workspace/symbol` searches active project and test packages by simple or qualified name and returns exact declaration locations. Both use unsaved editor buffers. [GoLand symbol baseline and benchmarks](docs/goland-symbols-baseline.md)
 
+## Try safe rename in VS Code on Windows
+
+After building the release executable, run these commands from the repository root. They create a fresh copy of the two-package Go example and open it in a dedicated VS Code profile. The Generic LSP Client starts this repository's release binary over stdio.
+
+```powershell
+$target = (cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json).target_directory
+$demo = python -B tools/fixtures/rename/replay.py copy
+$workspace = Join-Path (Split-Path -Parent $demo) 'rs-gopls.code-workspace'
+@{
+    folders = @(@{ path = 'workspace' })
+    settings = @{
+        'glspc.server.command' = (Join-Path $target 'release/rs-gopls.exe')
+        'glspc.server.languageId' = @('go')
+    }
+    extensions = @{ recommendations = @('zsol.vscode-glspc') }
+} | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 -LiteralPath $workspace
+code --profile 'rs-gopls Demo' --new-window $workspace --goto "${demo}/client/client.go:9:26"
+code --profile 'rs-gopls Demo' --install-extension zsol.vscode-glspc
+```
+
+Trust the example workspace when prompted. In `client/client.go`, press **F12** on `Bonus` to jump to its declaration, or press **F2** and rename it to `Award` to update three files. To try a rejected rename, open `Capture` in `api/api.go` and rename `result` to `total`. The server reports the reference whose binding would change. Run `go test ./...` in the example's terminal to check your edits. [GoLand and rs-gopls rename results](docs/goland-rename-baseline.md)
+
 ## Test in Zed on Windows
 
 The extension uses Zed's existing Go language mode and registers `rs-gopls` as an opt-in language server. It accepts the worktree environment, including Go toolchain and GOPATH settings.
